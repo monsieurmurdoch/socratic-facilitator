@@ -1,0 +1,75 @@
+# Local Jitsi Meet Server
+# Start with: docker compose up -d
+# Access at: http://localhost:8443
+
+version: '3.8'
+
+services:
+  # Web frontend
+  web:
+    image: jitsi/web:stable-8922
+    environment:
+      - ENABLE_AUTH=0
+      - ENABLE_GUESTS=1
+      - ENABLE_LOBBY=0
+      - PUBLIC_URL=http://localhost:8443
+      - XMPP_SERVER=xmpp.meet.jitsi
+      - JICOFO_COMPONENT_SECRET=jicofo-secret
+      - JVB_AUTH_USER=jvb
+      - JVB_AUTH_PASSWORD=jvb-password
+      - JICOFO_AUTH_USER=focus
+      - JICOFO_AUTH_PASSWORD=focus-password
+    networks:
+      meet.jitsi:
+        aliases:
+          - meet.jitsi
+    ports:
+      - "8443:80"
+    restart: unless-stopped
+
+  # XMPP server (internal messaging)
+  xmpp:
+    image: jitsi/prosody:stable-8922
+    environment:
+      - XMPP_SERVER=xmpp.meet.jitsi
+    networks:
+      meet.jitsi:
+        aliases:
+          - xmpp.meet.jitsi
+    restart: unless-stopped
+
+  # Focus component (coordinates calls)
+  jicofo:
+    image: jitsi/jicofo:stable-8922
+    environment:
+      - XMPP_SERVER=xmpp.meet.jitsi
+      - JICOFO_COMPONENT_SECRET=jicofo-secret
+      - JICOFO_AUTH_USER=focus
+      - JICOFO_AUTH_PASSWORD=focus-password
+    depends_on:
+      - xmpp
+    networks:
+      - meet.jitsi
+    restart: unless-stopped
+
+  # Video bridge (media routing)
+  jvb:
+    image: jitsi/jvb:stable-8922
+    environment:
+      - XMPP_SERVER=xmpp.meet.jitsi
+      - JVB_AUTH_USER=jvb
+      - JVB_AUTH_PASSWORD=jvb-password
+      - JVB_BREWERY_MUC=jvbbrewery
+      - PUBLIC_URL=http://localhost:8443
+      - DOCKER_HOST_ADDRESS=127.0.0.1
+    ports:
+      - "10000:10000/udp"
+    depends_on:
+      - xmpp
+    networks:
+      - meet.jitsi
+    restart: unless-stopped
+
+networks:
+  meet.jitsi:
+    driver: bridge

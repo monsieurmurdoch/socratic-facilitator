@@ -1,0 +1,31 @@
+{
+  "name": "socratic-facilitator",
+  "version": "0.1.0",
+  "description": "Multi-party Socratic conversation facilitator powered by AI",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "bot": "node server/jitsi-bot/run-bot.js",
+    "bot:headful": "node server/jitsi-bot/run-bot.js --headful",
+    "jitsi:start": "cd jitsi/docker-jitsi-meet && docker compose up -d",
+    "jitsi:stop": "cd jitsi/docker-jitsi-meet && docker compose down",
+    "jitsi:logs": "cd jitsi/docker-jitsi-meet && docker compose logs -f",
+    "setup": "bash ./jitsi/setup.sh && npm install",
+    "local": "bash ./start-local.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "multer": "^2.1.1",
+    "node-fetch": "^2.7.0",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.20.0",
+    "puppeteer": "^24.37.5",
+    "puppeteer-stream": "^3.0.22",
+    "redis": "^5.11.0",
+    "uuid": "^10.0.0",
+    "ws": "^8.19.0"
+  }
+}

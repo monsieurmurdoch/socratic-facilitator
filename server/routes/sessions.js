@@ -1,0 +1,298 @@
+/**
+ * Sessions API Routes
+ */
+
+const express = require('express');
+const router = express.Router();
+const sessionsRepo = require('../db/repositories/sessions');
+const participantsRepo = require('../db/repositories/participants');
+const messagesRepo = require('../db/repositories/messages');
+const materialsRepo = require('../db/repositories/materials');
+const primedContextRepo = require('../db/repositories/primedContext');
+const storage = require('../storage');
+const contentExtractor = require('../content/extractor');
+const sessionPrimer = require('../content/primer');
+const { DISCUSSION_TOPICS } = require('../config');
+
+// Enable JSON body parsing
+router.use(express.json({ limit: '10mb' }));
+router.use(express.urlencoded({ extended: true }));
+
+/**
+ * Create a new session
+ * POST /api/sessions
+ */
+router.post('/', async (req, res) => {
+  try {
+    const { title, openingQuestion, conversationGoal, topicId } = req.body;
+
+    // If topicId provided, use that topic's data
+    let sessionTitle = title;
+    let sessionQuestion = openingQuestion;
+
+    if (topicId) {
+      const topic = DISCUSSION_TOPICS.find(t => t.id === topicId);
+      if (topic) {
+        sessionTitle = sessionTitle || topic.title;
+        sessionQuestion = sessionQuestion || topic.openingQuestion;
+      }
+    }
+
+    if (!sessionTitle) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+
+    const session = await sessionsRepo.create({
+      title: sessionTitle,
+      openingQuestion: sessionQuestion,
+      conversationGoal
+    });
+
+    res.status(201).json({
+      id: session.id,
+      shortCode: session.short_code,
+      title: session.title,
+      openingQuestion: session.opening_question,
+      conversationGoal: session.conversation_goal,
+      status: session.status,
+      createdAt: session.created_at
+    });
+  } catch (error) {
+    console.error('Create session error:', error);
+    res.status(500).json({ error: 'Failed to create session' });
+  }
+});
+
+/**
+ * Get session by short code
+ * GET /api/sessions/:code
+ */
+router.get('/:code', async (req, res) => {
+  try {
+    const session = await sessionsRepo.findByShortCode(req.params.code);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const participants = await participantsRepo.getBySession(session.id);
+    const materials = await materialsRepo.getBySession(session.id);
+    const primedContext = await primedContextRepo.getBySession(session.id);
+
+    res.json({
+      id: session.id,
+      shortCode: session.short_code,
+      title: session.title,
+      openingQuestion: session.opening_question,
+      conversationGoal: session.conversation_goal,
+      status: session.status,
+      createdAt: session.created_at,
+      startedAt: session.started_at,
+      endedAt: session.ended_at,
+      participants: participants.map(p => ({
+        id: p.id,
+        name: p.name,
+        age: p.age,
+        role: p.role
+      })),
+      materials: materials.map(m => ({
+        id: m.id,
+        filename: m.filename,
+        type: m.original_type
+      })),
+      primedContext: primedContext ? {
+        status: primedContext.comprehension_status,
+        summary: primedContext.summary,
+        keyThemes: primedContext.key_themes,
+        potentialTensions: primedContext.potential_tensions,
+        suggestedAngles: primedContext.suggested_angles
+      } : null
+    });
+  } catch (error) {
+    console.error('Get session error:', error);
+    res.status(500).json({ error: 'Failed to get session' });
+  }
+});
+
+/**
+ * Upload materials to a session
+ * POST /api/sessions/:code/materials
+ */
+router.post('/:code/materials', storage.upload.single('file'), async (req, res) => {
+  try {
+    const session = await sessionsRepo.findByShortCode(req.params.code);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const { type, url } = req.body;
+    let extractedText = '';
+    let filename = null;
+    let storagePath = null;
+    let originalType = type || 'other';
+
+    if (req.file) {
+      filename = req.file.sanitizedFilename;
+      storagePath = req.file.path;
+      originalType = contentExtractor.getFileType(filename, req.file.mimetype);
+      const extracted = await contentExtractor.extract(req.file.buffer, originalType);
+      extractedText = extracted.text;
+    } else if (url) {
+      originalType = 'url';
+      filename = url.substring(0, 255);
+      const extracted = await contentExtractor.extract(null, 'url', { url });
+      extractedText = extracted.text;
+    } else {
+      return res.status(400).json({ error: 'Either file or URL is required' });
+    }
+
+    const material = await materialsRepo.add(session.id, {
+      filename,
+      originalType,
+      storagePath,
+      url: originalType === 'url' ? url : null,
+      extractedText
+    });
+
+    res.status(201).json({
+      id: material.id,
+      filename: material.filename,
+      type: material.original_type,
+      extractedLength: extractedText.length,
+      uploadedAt: material.uploaded_at
+    });
+  } catch (error) {
+    console.error('Upload material error:', error);
+    res.status(500).json({ error: 'Failed to upload material: ' + error.message });
+  }
+});
+
+/**
+ * Prime session materials
+ * POST /api/sessions/:code/prime
+ */
+router.post('/:code/prime', async (req, res) => {
+  try {
+    const session = await sessionsRepo.findByShortCode(req.params.code);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    let primedContext = await primedContextRepo.getBySession(session.id);
+    if (primedContext?.comprehension_status === 'complete') {
+      return res.json({
+        status: 'complete',
+        context: {
+          summary: primedContext.summary,
+          keyThemes: primedContext.key_themes,
+          potentialTensions: primedContext.potential_tensions,
+          suggestedAngles: primedContext.suggested_angles
+        }
+      });
+    }
+
+    const combinedText = await materialsRepo.getCombinedText(session.id);
+    if (!combinedText) {
+      return res.json({
+        status: 'ready',
+        message: 'No materials to prime',
+        context: null
+      });
+    }
+
+    if (!primedContext) {
+      primedContext = await primedContextRepo.create(session.id);
+    }
+
+    await primedContextRepo.markProcessing(primedContext.id);
+
+    try {
+      const result = await sessionPrimer.prime(combinedText, session.conversation_goal);
+      const updated = await primedContextRepo.complete(primedContext.id, result);
+
+      res.json({
+        status: 'complete',
+        context: {
+          summary: updated.summary,
+          keyThemes: updated.key_themes,
+          potentialTensions: updated.potential_tensions,
+          suggestedAngles: updated.suggested_angles
+        }
+      });
+    } catch (primeError) {
+      await primedContextRepo.markFailed(primedContext.id, primeError.message);
+      throw primeError;
+    }
+  } catch (error) {
+    console.error('Prime session error:', error);
+    res.status(500).json({ error: 'Failed to prime session: ' + error.message });
+  }
+});
+
+/**
+ * Get session messages
+ * GET /api/sessions/:code/messages
+ */
+router.get('/:code/messages', async (req, res) => {
+  try {
+    const session = await sessionsRepo.findByShortCode(req.params.code);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = parseInt(req.query.offset) || 0;
+    const messages = await messagesRepo.getBySession(session.id, { limit, offset });
+
+    res.json(messages.map(m => ({
+      id: m.id,
+      senderType: m.sender_type,
+      senderName: m.sender_name || m.participant_name,
+      content: m.content,
+      moveType: m.move_type,
+      targetParticipantName: m.target_participant_name,
+      createdAt: m.created_at
+    })));
+  } catch (error) {
+    console.error('Get messages error:', error);
+    res.status(500).json({ error: 'Failed to get messages' });
+  }
+});
+
+/**
+ * Delete a material
+ * DELETE /api/sessions/:code/materials/:materialId
+ */
+router.delete('/:code/materials/:materialId', async (req, res) => {
+  try {
+    const material = await materialsRepo.findById(req.params.materialId);
+    if (!material) {
+      return res.status(404).json({ error: 'Material not found' });
+    }
+
+    if (material.storage_path) {
+      await storage.delete(material.storage_path);
+    }
+
+    await materialsRepo.remove(material.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete material error:', error);
+    res.status(500).json({ error: 'Failed to delete material' });
+  }
+});
+
+/**
+ * Get available topics
+ * GET /api/topics
+ */
+router.get('/topics', (req, res) => {
+  res.json(DISCUSSION_TOPICS.map(t => ({
+    id: t.id,
+    title: t.title,
+    passage: t.passage,
+    ageRange: t.ageRange,
+    openingQuestion: t.openingQuestion
+  })));
+});
+
+module.exports = router;

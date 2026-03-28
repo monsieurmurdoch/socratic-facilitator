@@ -1,0 +1,52 @@
+name: socratic-facilitator
+services:
+  - name: web
+    source_dir: /
+    github:
+      repo: your-username/socratic-facilitator
+      branch: main
+    dockerfile_path: Dockerfile
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: DATABASE_URL
+        value: ${db.DATABASE_URL}
+      - key: ANTHROPIC_API_KEY
+        type: SECRET
+      - key: DEEPGRAM_API_KEY
+        type: SECRET
+      - key: ELEVENLABS_API_KEY
+        type: SECRET
+
+databases:
+  - name: db
+    engine: PG
+    production: true
+    cluster_name: socratic-facilitator-db
+    db_name: socratic_facilitator
+    db_user: socratic_user
+
+# Optional: Add managed Redis for scaling
+# - name: cache
+#   engine: REDIS
+#   production: true
+
+# Optional: Add persistent storage for file uploads
+# storage:
+#   - name: uploads
+#     mount_path: /app/uploads
+#     size_gb: 5
