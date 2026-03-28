@@ -651,6 +651,69 @@ body {
   gap: 12px;
 }
 
+/* ---- Share Link ---- */
+
+.share-link {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
+  margin-top: 8px;
+}
+
+.share-url-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  background: var(--bg);
+  color: var(--text-secondary);
+  cursor: text;
+}
+
+/* ---- Priming Status ---- */
+
+.priming-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  background: var(--facilitator-light);
+  border: 1.5px solid rgba(61, 107, 94, 0.2);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  color: var(--facilitator);
+  font-style: italic;
+}
+
+/* ---- Divider ---- */
+
+.divider {
+  width: 100%;
+  max-width: 320px;
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* ---- Setup subtitle ---- */
+
+.setup-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  text-align: center;
+  max-width: 480px;
+  line-height: 1.5;
+}
+
+.material-count {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 /* ---- Spinner ---- */
 
 .spinner {

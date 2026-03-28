@@ -51,7 +51,7 @@ app.use("/api/sessions", sessionsRouter);
 // Health check
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
-// Legacy topics endpoint
+// Legacy topics endpoint (kept for backward compatibility)
 app.get("/api/topics", (req, res) => {
   res.json(DISCUSSION_TOPICS.map(t => ({
     id: t.id,
@@ -390,25 +390,25 @@ wss.on("connection", (ws) => {
     switch (msg.type) {
 
       case "create_session": {
-        const topicId = msg.topicId || DISCUSSION_TOPICS[0].id;
-        const topic = DISCUSSION_TOPICS.find(t => t.id === topicId);
-        if (!topic) {
-          ws.send(JSON.stringify({ type: "error", text: "Unknown topic" }));
-          return;
-        }
+        // Legacy WS-based session creation (kept for backward compat)
+        // The primary flow now uses POST /api/sessions + join_session
+        const title = msg.title || "Open Discussion";
+        const openingQuestion = msg.openingQuestion || null;
 
-        // Create session in database
-        const session = await sessionsRepo.create({
-          title: topic.title,
-          openingQuestion: topic.openingQuestion
-        });
-
+        const session = await sessionsRepo.create({ title, openingQuestion });
         const shortCode = session.short_code;
 
-        // Create in-memory state tracker
         const SessionStateTracker = require("./stateTracker").SessionStateTracker;
         const stateTracker = new SessionStateTracker(session.id, session);
         await stateTracker.loadFromDatabase();
+
+        const topic = {
+          id: "custom",
+          title,
+          passage: "",
+          openingQuestion: openingQuestion || "",
+          followUpAngles: []
+        };
 
         activeSessions.set(shortCode, {
           dbSession: session,
@@ -422,9 +422,7 @@ wss.on("connection", (ws) => {
         ws.send(JSON.stringify({
           type: "session_created",
           sessionId: shortCode,
-          topicId: topic.id,
-          topicTitle: topic.title,
-          passage: topic.passage,
+          topicTitle: title,
           mode: "video"
         }));
         break;
@@ -587,7 +585,7 @@ wss.on("connection", (ws) => {
         }
 
         const opening = await enhancedEngine.generateOpening(
-          session.topic, names, ageCalibration
+          session.topic, names, ageCalibration, session.dbSession?.id
         );
 
         await session.stateTracker.recordAIMessage(opening, "opening");

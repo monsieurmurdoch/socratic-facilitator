@@ -23,6 +23,8 @@ const {
   getPlatoSystemPromptAddition,
   getPlatoDisplayConfig
 } = require("./platoIdentity");
+const sessionPrimer = require("./content/primer");
+const primedContextRepo = require("./db/repositories/primedContext");
 
 class EnhancedFacilitationEngine {
   constructor(apiKey) {
@@ -168,13 +170,24 @@ class EnhancedFacilitationEngine {
     const ages = Array.from(stateTracker.participants.values()).map(p => p.age);
     const ageProfile = this._getAgeProfile(ages);
 
+    // Fetch primed context from materials (if any)
+    let primedSnippet = null;
+    try {
+      const dbSessionId = stateTracker.session?.id || stateTracker.sessionId;
+      const primedCtx = await primedContextRepo.getBySession(dbSessionId);
+      primedSnippet = sessionPrimer.getContextSnippet(primedCtx);
+    } catch (e) {
+      // No primed context — that's fine, not all sessions have materials
+    }
+
     const systemPrompt = this._buildSystemPrompt(
       stateTracker.topic,
       ageCalibration,
       interventionType,
       llmContext,
       ageProfile,
-      participantCount
+      participantCount,
+      primedSnippet
     );
 
     const userMessage = this._buildUserMessage(
@@ -269,7 +282,7 @@ class EnhancedFacilitationEngine {
   /**
    * Build the system prompt.
    */
-  _buildSystemPrompt(topic, ageCalibration, interventionType, llmContext, ageProfile = 'middle', participantCount = 2) {
+  _buildSystemPrompt(topic, ageCalibration, interventionType, llmContext, ageProfile = 'middle', participantCount = 2, primedSnippet = null) {
     const isSolo = participantCount <= 1;
     const interventionGuidance = this._getInterventionGuidance(interventionType, llmContext);
     const platoIdentity = getPlatoSystemPromptAddition(ageProfile);
@@ -315,9 +328,10 @@ Coherence score: ${llmContext.coherenceScore}
 ${interventionGuidance}
 
 THE DISCUSSION TOPIC:
-Title: ${topic.title}
-Opening question: ${topic.openingQuestion}
-Possible follow-up angles: ${topic.followUpAngles?.join("; ") || 'None specified'}
+Title: ${topic.title || 'Open Discussion'}
+${topic.openingQuestion ? `Opening question: ${topic.openingQuestion}` : ''}
+${topic.followUpAngles?.length ? `Possible follow-up angles: ${topic.followUpAngles.join("; ")}` : ''}
+${primedSnippet ? `\nSOURCE MATERIALS (uploaded by the session creator — use these to ground your questions):\n${primedSnippet}` : ''}
 
 AGE CALIBRATION:
 - Vocabulary level: ${ageCalibration.vocabLevel}
@@ -432,18 +446,32 @@ Respond with ONLY the JSON.`;
   /**
    * Generate opening message (unchanged from original).
    */
-  async generateOpening(topic, participantNames, ageCalibration) {
+  async generateOpening(topic, participantNames, ageCalibration, dbSessionId = null) {
+    // Try to get primed context from materials
+    let materialsContext = '';
+    try {
+      if (dbSessionId) {
+        const primedCtx = await primedContextRepo.getBySession(dbSessionId);
+        const snippet = sessionPrimer.getContextSnippet(primedCtx);
+        if (snippet) {
+          materialsContext = `\nSOURCE MATERIALS SUMMARY:\n${snippet}\n`;
+        }
+      }
+    } catch (e) {
+      // No materials — that's fine
+    }
+
     const prompt = `You are opening a Socratic discussion with these participants: ${participantNames.join(", ")}.
 
-Topic: ${topic.title}
-Passage: ${topic.passage}
-Suggested opening question: ${topic.openingQuestion}
+Topic: ${topic.title || 'Open Discussion'}
+${topic.passage ? `Passage: ${topic.passage}` : ''}
+${topic.openingQuestion ? `Suggested opening question: ${topic.openingQuestion}` : ''}
 Age calibration: ${ageCalibration.vocabLevel}
-
+${materialsContext}
 Generate a brief, warm opening that:
 1. Welcomes everyone by name
-2. Presents or references the passage/scenario briefly
-3. Asks the opening question
+2. ${materialsContext ? 'Briefly references what the materials are about' : 'Introduces the topic naturally'}
+3. Asks ${topic.openingQuestion ? 'the opening question' : 'a thought-provoking opening question based on the topic/materials'}
 4. Keeps it to 3-4 sentences maximum
 
 Do NOT explain what Socratic discussion is. Do NOT give rules. Just open naturally.

@@ -12,7 +12,7 @@
   <!-- WELCOME SCREEN -->
   <div id="welcome-screen" class="screen active">
     <h1>Socratic Facilitator</h1>
-    <p>A space for discussion guided by questions, not answers. Powered by Plato, your AI Socratic facilitator.</p>
+    <p>Upload materials. Start a discussion. Plato does the rest.</p>
 
     <div class="form-group">
       <label for="name-input">Your Name</label>
@@ -24,10 +24,7 @@
       <input type="number" id="age-input" value="12" min="5" max="100" autocomplete="off">
     </div>
 
-    <div class="form-group">
-      <label for="topic-select">Topic</label>
-      <select id="topic-select"></select>
-    </div>
+    <div class="divider"></div>
 
     <div class="btn-row">
       <button id="create-btn" class="btn btn-primary">Create Room</button>
@@ -43,43 +40,36 @@
     </div>
   </div>
 
-  <!-- SETUP SCREEN (for creating sessions with materials) -->
+  <!-- SETUP SCREEN (materials + optional title) -->
   <div id="setup-screen" class="screen">
-    <h2>Session Setup</h2>
+    <h2>What should we discuss?</h2>
+    <p class="setup-subtitle">Upload files or paste links for Plato to read before the discussion. Or just set a topic and go.</p>
 
     <div class="setup-section">
-      <h3>Discussion Details</h3>
-
       <div class="form-group" style="max-width: 100%;">
-        <label for="session-title">Title</label>
-        <input type="text" id="session-title" placeholder="Discussion topic title">
+        <label for="session-title">Discussion Title</label>
+        <input type="text" id="session-title" placeholder="e.g. The Trolley Problem, Chapter 3 of Hamlet...">
       </div>
 
       <div class="form-group" style="max-width: 100%;">
         <label for="opening-question">Opening Question (optional)</label>
         <textarea id="opening-question" placeholder="What question should Plato open with?"></textarea>
       </div>
-
-      <div class="form-group" style="max-width: 100%;">
-        <label for="conversation-goal">Conversation Goal (optional)</label>
-        <textarea id="conversation-goal" placeholder="What should this discussion explore or accomplish?"></textarea>
-      </div>
     </div>
 
     <div class="setup-section">
-      <h3>Materials (optional)</h3>
-      <p class="helper-text">Upload documents or add URLs for Plato to reference during the discussion.</p>
+      <h3>Materials <span class="material-count" id="material-count">(0/5)</span></h3>
 
       <div id="upload-area" class="upload-area">
         <div class="upload-icon">+</div>
         <p>Drop files here or click to upload</p>
-        <p class="upload-hint">PDF, TXT, DOCX</p>
+        <p class="upload-hint">PDF, TXT, DOCX — up to 5 files</p>
       </div>
       <input type="file" id="file-input" accept=".pdf,.txt,.docx,.doc" multiple hidden>
 
       <div class="url-input-row">
         <input type="text" id="url-input" placeholder="https://example.com/article">
-        <button id="add-url-btn" class="btn btn-small btn-secondary">Add URL</button>
+        <button id="add-url-btn" class="btn btn-small btn-secondary">Add Link</button>
       </div>
 
       <div id="materials-list" class="materials-list"></div>
@@ -92,10 +82,6 @@
 
     <div class="setup-actions">
       <button id="back-to-welcome-btn" class="btn btn-secondary">Back</button>
-      <button id="prime-btn" class="btn btn-secondary" disabled>
-        <span id="prime-btn-text">Prime Materials</span>
-        <span id="prime-spinner" class="spinner" style="display: none;"></span>
-      </button>
       <button id="start-session-btn" class="btn btn-primary">Create Session</button>
     </div>
   </div>
@@ -107,9 +93,13 @@
     <div class="session-code" id="session-code">------</div>
     <p style="color: var(--text-secondary); font-size: 0.85rem;">Share this code so others can join</p>
 
-    <div class="passage-preview">
+    <div id="lobby-topic-section" class="passage-preview" style="display:none;">
       <h3 id="lobby-topic">Topic</h3>
       <p id="lobby-passage"></p>
+    </div>
+
+    <div id="priming-status" class="priming-status" style="display:none;">
+      <span class="spinner"></span> Plato is reading your materials...
     </div>
 
     <div class="participant-list" id="participant-chips"></div>
@@ -121,12 +111,10 @@
   <!-- VIDEO SCREEN (Jitsi + Facilitator) -->
   <div id="video-screen" class="screen">
     <div class="video-layout">
-      <!-- Jitsi fills the main area -->
       <div class="video-main">
         <div id="jitsi-container"></div>
       </div>
 
-      <!-- Facilitator sidebar -->
       <div class="video-sidebar">
         <div class="sidebar-header">
           <img class="plato-avatar-small" src="/images/plato-statue.jpg"

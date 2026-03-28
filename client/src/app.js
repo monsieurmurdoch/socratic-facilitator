@@ -1,8 +1,7 @@
 /**
  * Socratic Facilitator — Client (Video Mode)
  *
- * Handles: WebSocket connection, session creation/joining,
- * file uploads, Jitsi Meet embedding, and facilitator display.
+ * Flow: Upload materials → Create room → Share link/code → Join Jitsi → Plato facilitates
  */
 
 (function () {
@@ -14,6 +13,8 @@
   let participants = [];
   let isHost = false;
   let jitsiApi = null;
+  let materials = [];
+  const MAX_MATERIALS = 5;
 
   // ---- DOM Elements ----
   const screens = {
@@ -28,13 +29,34 @@
     if (screens[name]) screens[name].classList.add("active");
   }
 
+  // ---- Check URL for direct join ----
+  function checkDirectJoin() {
+    const params = new URLSearchParams(window.location.search);
+    const joinCode = params.get("join");
+    if (joinCode) {
+      // Pre-fill the join code and show join section
+      document.getElementById("join-code-input").value = joinCode;
+      document.getElementById("join-section").style.display = "flex";
+      // Focus on name input
+      document.getElementById("name-input").focus();
+    }
+  }
+
   // ---- WebSocket ----
   function connect() {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(`${protocol}//${location.host}`);
     ws.binaryType = "arraybuffer";
 
-    ws.onopen = () => console.log("Connected to server");
+    ws.onopen = () => {
+      console.log("Connected to server");
+      // If we have a pending join from URL, auto-join once connected
+      const params = new URLSearchParams(window.location.search);
+      const joinCode = params.get("join");
+      if (joinCode && myName) {
+        send({ type: "join_session", sessionId: joinCode, name: myName, age: getAge() });
+      }
+    };
     ws.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
         playAudioBuffer(event.data);
@@ -77,7 +99,7 @@
     }
 
     const container = document.getElementById("jitsi-container");
-    const domain = "meet.jit.si"; // or self-hosted domain from config
+    const domain = "meet.jit.si";
 
     jitsiApi = new JitsiMeetExternalAPI(domain, {
       roomName: `socratic-${roomName}`,
@@ -110,7 +132,6 @@
       }
     });
 
-    // Track participants joining/leaving
     jitsiApi.addEventListener('participantJoined', (event) => {
       console.log('[Jitsi] Participant joined:', event);
     });
@@ -119,7 +140,6 @@
       console.log('[Jitsi] Participant left:', event);
     });
 
-    // Track when video conference ends
     jitsiApi.addEventListener('readyToClose', () => {
       console.log('[Jitsi] Conference ended');
       send({ type: "end_discussion" });
@@ -135,14 +155,47 @@
     }
   }
 
+  // ---- Share Link ----
+  function getShareLink(sessionId) {
+    const base = `${window.location.origin}${window.location.pathname}`;
+    return `${base}?join=${sessionId}`;
+  }
+
+  function showShareInfo(sessionId) {
+    document.getElementById("session-code").textContent = sessionId;
+
+    // Update URL without reload
+    const shareUrl = getShareLink(sessionId);
+    window.history.replaceState({}, '', `?join=${sessionId}`);
+
+    // Create or update share link display
+    let shareEl = document.getElementById("share-link");
+    if (!shareEl) {
+      shareEl = document.createElement("div");
+      shareEl.id = "share-link";
+      shareEl.className = "share-link";
+      document.getElementById("session-code").after(shareEl);
+    }
+    shareEl.innerHTML = `
+      <input type="text" value="${shareUrl}" readonly id="share-url-input" class="share-url-input">
+      <button class="btn btn-small btn-secondary" id="copy-link-btn">Copy</button>
+    `;
+
+    document.getElementById("copy-link-btn").addEventListener("click", () => {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        document.getElementById("copy-link-btn").textContent = "Copied!";
+        setTimeout(() => {
+          document.getElementById("copy-link-btn").textContent = "Copy";
+        }, 2000);
+      });
+    });
+  }
+
   // ---- Message Handlers ----
   function handleServerMessage(msg) {
     switch (msg.type) {
       case "session_created":
         currentSessionId = msg.sessionId;
-        document.getElementById("session-code").textContent = msg.sessionId;
-        document.getElementById("lobby-topic").textContent = msg.topicTitle;
-        document.getElementById("lobby-passage").textContent = msg.passage;
         send({ type: "join_session", sessionId: msg.sessionId, name: myName, age: getAge() });
         isHost = true;
         break;
@@ -152,12 +205,17 @@
         myId = msg.yourId;
         participants = msg.participants;
         updateParticipantList();
-        if (!isHost) {
-          document.getElementById("session-code").textContent = msg.sessionId;
+        showShareInfo(msg.sessionId);
+        if (msg.topicTitle) {
           document.getElementById("lobby-topic").textContent = msg.topicTitle;
-          document.getElementById("lobby-passage").textContent = msg.passage;
+          document.getElementById("lobby-topic-section").style.display = "block";
         }
         showScreen("lobby");
+
+        // If host, prime materials now that session exists
+        if (isHost && materials.length > 0) {
+          primeMaterials();
+        }
         break;
 
       case "participant_joined":
@@ -173,7 +231,6 @@
         break;
 
       case "discussion_started":
-        // Launch Jitsi and show video screen
         showScreen("video");
         launchJitsi(currentSessionId, myName);
         break;
@@ -189,7 +246,6 @@
       case "facilitator_message":
         addFacilitatorMessage(msg.text, msg.move);
         setFacilitatorStatus("speaking");
-        // Reset to listening after a delay
         setTimeout(() => setFacilitatorStatus("listening"), 3000);
         break;
 
@@ -201,6 +257,83 @@
       case "error":
         alert(msg.text);
         break;
+    }
+  }
+
+  // ---- Materials Upload & Priming ----
+
+  async function primeMaterials() {
+    if (!currentSessionId || materials.length === 0) return;
+
+    const primingStatus = document.getElementById("priming-status");
+    if (primingStatus) primingStatus.style.display = "flex";
+
+    try {
+      // Upload each material
+      for (const m of materials) {
+        if (m.type === "file") {
+          const formData = new FormData();
+          formData.append("file", m.file);
+          await fetch(`/api/sessions/${currentSessionId}/materials`, {
+            method: "POST",
+            body: formData
+          });
+        } else if (m.type === "url") {
+          await apiPost(`/api/sessions/${currentSessionId}/materials`, { url: m.url });
+        }
+      }
+
+      // Prime the session
+      const result = await apiPost(`/api/sessions/${currentSessionId}/prime`, {});
+
+      if (primingStatus) primingStatus.style.display = "none";
+
+      if (result.status === "complete" && result.context) {
+        showPrimedContext(result.context);
+      }
+    } catch (error) {
+      console.error("Priming error:", error);
+      if (primingStatus) {
+        primingStatus.innerHTML = "Failed to process materials — Plato will discuss the topic directly.";
+      }
+    }
+  }
+
+  function showPrimedContext(context) {
+    const preview = document.getElementById("primed-preview");
+    const themes = document.getElementById("primed-themes");
+    if (preview && themes && context.keyThemes && context.keyThemes.length > 0) {
+      themes.innerHTML = context.keyThemes.map(t => `<span class="theme-chip">${escapeHtml(t)}</span>`).join("");
+      preview.style.display = "block";
+    }
+  }
+
+  function renderMaterials() {
+    const container = document.getElementById("materials-list");
+    const countEl = document.getElementById("material-count");
+    container.innerHTML = "";
+    countEl.textContent = `(${materials.length}/${MAX_MATERIALS})`;
+
+    materials.forEach((m, i) => {
+      const div = document.createElement("div");
+      div.className = "material-item";
+      const icon = m.type === "url" ? "&#128279;" : "&#128196;";
+      div.innerHTML = `
+        <span class="material-icon">${icon}</span>
+        <span class="material-name">${escapeHtml(m.name)}</span>
+        <button class="material-remove" data-index="${i}">&times;</button>
+      `;
+      container.appendChild(div);
+    });
+
+    // Disable upload if at limit
+    const uploadArea = document.getElementById("upload-area");
+    if (materials.length >= MAX_MATERIALS) {
+      uploadArea.style.opacity = "0.5";
+      uploadArea.style.pointerEvents = "none";
+    } else {
+      uploadArea.style.opacity = "1";
+      uploadArea.style.pointerEvents = "auto";
     }
   }
 
@@ -216,19 +349,9 @@
     });
   }
 
-  // Plato configuration
-  const PLATO = {
-    name: 'Plato',
-    avatar: {
-      src: '/images/plato-statue.jpg',
-      fallbackSrc: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Plato_Silanion_Musei_Capitolini_MC1377.jpg/440px-Plato_Silanion_Musei_Capitolini_MC1377.jpg'
-    }
-  };
-
   function addFacilitatorMessage(text, move) {
     const container = document.getElementById("facilitator-messages");
     if (!container) return;
-
     const div = document.createElement("div");
     div.className = "facilitator-bubble";
     div.innerHTML = `
@@ -242,9 +365,7 @@
   function addTranscriptEntry(name, text, isSelf) {
     const container = document.getElementById("transcript-messages");
     if (!container) return;
-
     const div = document.createElement("div");
-
     if (name === "system") {
       div.className = "transcript-system";
       div.textContent = text;
@@ -252,7 +373,6 @@
       div.className = `transcript-entry ${isSelf ? "self" : ""}`;
       div.innerHTML = `<strong>${escapeHtml(name)}:</strong> ${escapeHtml(text)}`;
     }
-
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
   }
@@ -260,8 +380,6 @@
   function updatePartialTranscript(name, text) {
     const container = document.getElementById("transcript-messages");
     if (!container) return;
-
-    // Update or create partial entry
     let partial = container.querySelector(`.transcript-partial[data-name="${name}"]`);
     if (!partial) {
       partial = document.createElement("div");
@@ -291,32 +409,33 @@
     return parseInt(val) || 12;
   }
 
-  // ---- Materials Management ----
-  let materials = [];
+  // ---- Event Listeners ----
 
-  function renderMaterials() {
-    const container = document.getElementById("materials-list");
-    container.innerHTML = "";
+  // Show/hide join section
+  document.getElementById("join-toggle-btn").addEventListener("click", () => {
+    const section = document.getElementById("join-section");
+    section.style.display = section.style.display === "none" ? "flex" : "none";
+  });
 
-    materials.forEach((m, i) => {
-      const div = document.createElement("div");
-      div.className = "material-item";
-      div.innerHTML = `
-        <span class="material-name">${escapeHtml(m.name)}</span>
-        <button class="material-remove" data-index="${i}">&times;</button>
-      `;
-      container.appendChild(div);
-    });
+  // Create button → setup screen
+  document.getElementById("create-btn").addEventListener("click", () => {
+    myName = document.getElementById("name-input").value.trim();
+    if (!myName) { alert("Enter your name"); return; }
+    showScreen("setup");
+  });
 
-    const primeBtn = document.getElementById("prime-btn");
-    primeBtn.disabled = materials.length === 0;
-  }
+  // Back from setup
+  document.getElementById("back-to-welcome-btn")?.addEventListener("click", () => {
+    showScreen("welcome");
+  });
 
   // File upload
   const uploadArea = document.getElementById("upload-area");
   const fileInput = document.getElementById("file-input");
 
-  uploadArea.addEventListener("click", () => fileInput.click());
+  uploadArea.addEventListener("click", () => {
+    if (materials.length < MAX_MATERIALS) fileInput.click();
+  });
   uploadArea.addEventListener("dragover", (e) => {
     e.preventDefault();
     uploadArea.classList.add("dragover");
@@ -329,13 +448,13 @@
     uploadArea.classList.remove("dragover");
     handleFiles(e.dataTransfer.files);
   });
-
   fileInput.addEventListener("change", () => {
     handleFiles(fileInput.files);
   });
 
-  async function handleFiles(files) {
+  function handleFiles(files) {
     for (const file of files) {
+      if (materials.length >= MAX_MATERIALS) break;
       materials.push({ type: "file", name: file.name, file: file });
     }
     renderMaterials();
@@ -343,10 +462,13 @@
 
   // URL input
   document.getElementById("add-url-btn").addEventListener("click", () => {
+    if (materials.length >= MAX_MATERIALS) return;
     const input = document.getElementById("url-input");
     const url = input.value.trim();
     if (url) {
-      materials.push({ type: "url", name: url, url: url });
+      // Truncate display name
+      const displayName = url.length > 50 ? url.substring(0, 47) + "..." : url;
+      materials.push({ type: "url", name: displayName, url: url });
       input.value = "";
       renderMaterials();
     }
@@ -361,97 +483,25 @@
     }
   });
 
-  // ---- Session Creation Flow ----
-
-  // Show/hide join section
-  document.getElementById("join-toggle-btn").addEventListener("click", () => {
-    const section = document.getElementById("join-section");
-    section.style.display = section.style.display === "none" ? "flex" : "none";
-  });
-
-  // Create button - go to setup screen
-  document.getElementById("create-btn").addEventListener("click", () => {
-    myName = document.getElementById("name-input").value.trim();
-    if (!myName) { alert("Enter your name"); return; }
-
-    const topicSelect = document.getElementById("topic-select");
-    const selectedTopic = topicSelect.options[topicSelect.selectedIndex];
-    document.getElementById("session-title").value = selectedTopic?.text || "";
-    showScreen("setup");
-  });
-
-  // Back button from setup
-  document.getElementById("back-to-welcome-btn")?.addEventListener("click", () => {
-    showScreen("welcome");
-  });
-
-  // Prime materials button
-  document.getElementById("prime-btn").addEventListener("click", async () => {
-    if (!currentSessionId || materials.length === 0) return;
-
-    const btn = document.getElementById("prime-btn");
-    const btnText = document.getElementById("prime-btn-text");
-    const spinner = document.getElementById("prime-spinner");
-
-    btn.disabled = true;
-    btnText.textContent = "Processing...";
-    spinner.style.display = "inline-block";
-
-    try {
-      for (const m of materials) {
-        if (m.type === "file") {
-          const formData = new FormData();
-          formData.append("file", m.file);
-          await fetch(`/api/sessions/${currentSessionId}/materials`, {
-            method: "POST",
-            body: formData
-          });
-        } else if (m.type === "url") {
-          await apiPost(`/api/sessions/${currentSessionId}/materials`, { url: m.url });
-        }
-      }
-
-      const result = await apiPost(`/api/sessions/${currentSessionId}/prime`, {});
-      if (result.status === "complete" && result.context) {
-        btnText.textContent = "Ready!";
-        showPrimedContext(result.context);
-      } else {
-        btnText.textContent = "Prime Materials";
-      }
-    } catch (error) {
-      console.error("Priming error:", error);
-      btnText.textContent = "Error - Retry";
-    } finally {
-      spinner.style.display = "none";
-      btn.disabled = false;
-    }
-  });
-
-  function showPrimedContext(context) {
-    const preview = document.getElementById("primed-preview");
-    const themes = document.getElementById("primed-themes");
-    if (context.keyThemes && context.keyThemes.length > 0) {
-      themes.innerHTML = context.keyThemes.map(t => `<span class="theme-chip">${escapeHtml(t)}</span>`).join("");
-      preview.style.display = "block";
-    }
-  }
-
-  // Create session and proceed to lobby
+  // Create session
   document.getElementById("start-session-btn").addEventListener("click", () => {
     const title = document.getElementById("session-title").value.trim();
     const question = document.getElementById("opening-question").value.trim();
-    const goal = document.getElementById("conversation-goal").value.trim();
 
-    if (!title) { alert("Enter a title"); return; }
+    if (!title && materials.length === 0) {
+      alert("Enter a discussion title or upload some materials");
+      return;
+    }
+
+    const sessionTitle = title || "Open Discussion";
 
     apiPost("/api/sessions", {
-      title,
+      title: sessionTitle,
       openingQuestion: question || null,
-      conversationGoal: goal || null
+      conversationGoal: null
     }).then(session => {
       currentSessionId = session.shortCode;
       isHost = true;
-
       send({
         type: "join_session",
         sessionId: session.shortCode,
@@ -464,29 +514,28 @@
     });
   });
 
-  // ---- Join Existing Session ----
+  // Join existing session
   document.getElementById("join-btn").addEventListener("click", () => {
     myName = document.getElementById("name-input").value.trim();
     const code = document.getElementById("join-code-input").value.trim().toLowerCase();
     if (!myName) { alert("Enter your name"); return; }
     if (!code) { alert("Enter a session code"); return; }
-
     send({ type: "join_session", sessionId: code, name: myName, age: getAge() });
   });
 
-  // ---- Start Discussion ----
+  // Start discussion
   document.getElementById("start-btn").addEventListener("click", () => {
     send({ type: "start_discussion" });
   });
 
-  // ---- End Discussion ----
+  // End discussion
   document.getElementById("video-end-btn").addEventListener("click", () => {
     if (confirm("End the discussion for everyone?")) {
       send({ type: "end_discussion" });
     }
   });
 
-  // ---- Audio (for TTS playback from server) ----
+  // ---- Audio (TTS playback from server) ----
   let playbackContext;
 
   function playAudioBuffer(arrayBuffer) {
@@ -503,25 +552,9 @@
     });
   }
 
-  // ---- Load Topics ----
-  async function loadTopics() {
-    try {
-      const topics = await apiGet("/api/topics");
-      const select = document.getElementById("topic-select");
-      select.innerHTML = "";
-      topics.forEach(t => {
-        const opt = document.createElement("option");
-        opt.value = t.id;
-        opt.textContent = t.title;
-        select.appendChild(opt);
-      });
-    } catch (e) {
-      console.error("Failed to load topics:", e);
-    }
-  }
-
   // ---- Init ----
   showScreen("welcome");
   connect();
-  loadTopics();
+  checkDirectJoin();
+  renderMaterials();
 })();
