@@ -59,6 +59,52 @@ const WEIGHT_PROFILES = {
     },
     bias: -0.1,      // biased toward silence
     threshold: 0.55  // higher bar to intervene
+  },
+
+  // ── Solo mode profiles ──
+  // In 1-on-1 dialogue, the AI is much more conversational.
+  // Dominance is irrelevant. Silence gets faster attention.
+
+  solo_young: {
+    weights: {
+      engagementScore:    -0.3,   // less suppression — we WANT to talk
+      coherenceScore:     -0.3,
+      topicRelevance:     -0.3,
+      anchorDrift:         0.5,
+      factualError:        1.2,
+      silenceDepth:        0.9,   // react to silence quickly
+      dominanceImbalance:  0.0,   // irrelevant in solo
+    },
+    bias: 0.5,       // strongly biased toward speaking
+    threshold: 0.35  // very low bar — dialogue mode
+  },
+
+  solo_middle: {
+    weights: {
+      engagementScore:    -0.4,
+      coherenceScore:     -0.4,
+      topicRelevance:     -0.4,
+      anchorDrift:         0.6,
+      factualError:        1.2,
+      silenceDepth:        0.8,
+      dominanceImbalance:  0.0,
+    },
+    bias: 0.4,
+    threshold: 0.4
+  },
+
+  solo_older: {
+    weights: {
+      engagementScore:    -0.5,
+      coherenceScore:     -0.5,
+      topicRelevance:     -0.4,
+      anchorDrift:         0.6,
+      factualError:        1.2,
+      silenceDepth:        0.7,
+      dominanceImbalance:  0.0,
+    },
+    bias: 0.3,
+    threshold: 0.42
   }
 };
 

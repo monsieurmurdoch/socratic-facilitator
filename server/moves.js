@@ -226,19 +226,93 @@ const MOVES = {
       "There's a lot of energy here. {name}, you look like you have something to add.",
       "This is getting interesting — you're all seeing different pieces of it."
     ]
+  },
+
+  // ─── SOLO MODE MOVES ────────────────────────────────────────────────────────
+  // These are used when there's only one participant in a 1-on-1 dialogue.
+
+  CHALLENGE_ASSUMPTION: {
+    id: "challenge_assumption",
+    name: "Challenge Assumption",
+    description: "Identify and gently challenge an unstated assumption underlying the participant's reasoning. Used in solo mode to replace the natural challenging that peers would provide.",
+    conditions: [
+      "The participant made a claim that rests on an unexamined assumption",
+      "The assumption is worth examining for the discussion",
+      "The participant seems ready for a challenge"
+    ],
+    priority: 2,
+    soloOnly: true,
+    examples: [
+      "You seem to be assuming {assumption} — is that always true?",
+      "What if {assumption} weren't the case? Would your answer change?",
+      "That's interesting — but what are you taking for granted there?"
+    ]
+  },
+
+  TEST_LOGIC: {
+    id: "test_logic",
+    name: "Test Logic",
+    description: "Present a thought experiment or edge case that tests the participant's reasoning. Forces them to consider whether their principle holds up under pressure.",
+    conditions: [
+      "The participant has stated a general principle or rule",
+      "There exists a plausible counterexample or edge case",
+      "Testing the logic would deepen their understanding"
+    ],
+    priority: 2,
+    soloOnly: true,
+    examples: [
+      "What if someone applied your rule to {edge_case}? Would it still work?",
+      "Let's test that: imagine {thought_experiment}. Does your answer hold?",
+      "If that's true, then what do you make of {counterexample}?"
+    ]
+  },
+
+  EXPLORE_IMPLICATIONS: {
+    id: "explore_implications",
+    name: "Explore Implications",
+    description: "Push the participant to follow their own reasoning to its logical conclusion. Used to help them see where their thinking leads.",
+    conditions: [
+      "The participant has committed to a position",
+      "The implications of that position haven't been explored",
+      "Following the logic would produce interesting results"
+    ],
+    priority: 2,
+    soloOnly: true,
+    examples: [
+      "If that's true, what else would have to be true?",
+      "Follow that thought — where does it lead?",
+      "And if you take that one step further... what happens?"
+    ]
   }
 };
 
 /**
  * Returns the move taxonomy as a formatted string for the LLM system prompt.
+ *
+ * @param {object} opts
+ * @param {boolean} opts.solo        If true, excludes group-only moves and includes solo-only moves
+ * @param {string[]} opts.exclude    Move IDs to exclude (e.g. SOLO_EXCLUDED_MOVES from config)
  */
-function getMoveTaxonomyPrompt() {
-  const moveDescriptions = Object.values(MOVES).map(move => {
-    const examples = move.examples.length > 0
-      ? `\n    Example phrasings: ${move.examples.map(e => `"${e}"`).join("; ")}`
-      : "";
-    return `  - ${move.name} (${move.id}): ${move.description}${examples}`;
-  }).join("\n\n");
+function getMoveTaxonomyPrompt(opts = {}) {
+  const { solo = false, exclude = [] } = opts;
+
+  const moveDescriptions = Object.values(MOVES)
+    .filter(move => {
+      // In solo mode: exclude group-only moves, include solo-only moves
+      if (solo) {
+        if (exclude.includes(move.id)) return false;
+        return true;  // include everything else (including soloOnly moves)
+      }
+      // In group mode: exclude solo-only moves
+      if (move.soloOnly) return false;
+      return true;
+    })
+    .map(move => {
+      const examples = move.examples.length > 0
+        ? `\n    Example phrasings: ${move.examples.map(e => `"${e}"`).join("; ")}`
+        : "";
+      return `  - ${move.name} (${move.id}): ${move.description}${examples}`;
+    }).join("\n\n");
 
   return moveDescriptions;
 }

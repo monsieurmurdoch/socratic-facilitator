@@ -26,6 +26,8 @@ const { AnchorTracker } = require('./anchorTracker');
 const { ClaimAssessor } = require('./claimAssessor');
 const { InterventionNeuron } = require('./interventionNeuron');
 const { HumanDeference } = require('./humanDeference');
+const { fastLLM } = require('./fastLLMProvider');
+const { stalenessGuard } = require('./stalenessGuard');
 
 class ConversationAnalyzer {
   /**
@@ -247,6 +249,10 @@ class ConversationAnalyzer {
 
   /**
    * Make one LLM call that assesses the message across ALL dimensions.
+   *
+   * Strategy: Try fast LLM (ChatJimmy) first for low latency.
+   * If unavailable or times out, fall back to Claude.
+   * Both paths are wrapped in a staleness guard.
    */
   async _analyzeMessage(messageIndex, participantName, text, responseLatencyMs) {
     const recentHistory = this._getRecentHistoryForPrompt(15);
@@ -306,20 +312,42 @@ IMPORTANT RULES:
 
 Return ONLY the JSON, no other text.`;
 
-    try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 800,
-        messages: [{ role: 'user', content: prompt }]
-      });
+    // ── Strategy: Fast LLM first, Claude fallback, heuristic safety net ──
+    const defaultAnalysis = this._getDefaultAnalysis();
 
-      const raw = response.content[0].text.trim();
-      const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      return JSON.parse(jsonStr);
-    } catch (error) {
-      console.error('[ConversationAnalyzer] LLM analysis error:', error.message);
-      return this._getDefaultAnalysis();
+    // Try fast LLM (ChatJimmy) if available
+    if (fastLLM.isAvailable()) {
+      const fastResult = await stalenessGuard.guard(
+        () => fastLLM.completeJSON({ prompt, maxTokens: 800, temperature: 0.3 }),
+        { timeoutMs: 3000, fallback: null, label: 'fastLLM_analysis' }
+      );
+
+      if (!fastResult.stale && fastResult.result?.data) {
+        console.log(`[ConversationAnalyzer] Fast LLM analysis in ${fastResult.latencyMs}ms`);
+        return fastResult.result.data;
+      }
     }
+
+    // Fall back to Claude, wrapped in staleness guard
+    const claudeResult = await stalenessGuard.guard(
+      async () => {
+        const response = await this.client.messages.create({
+          model: this.model,
+          max_tokens: 800,
+          messages: [{ role: 'user', content: prompt }]
+        });
+        const raw = response.content[0].text.trim();
+        const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        return JSON.parse(jsonStr);
+      },
+      { timeoutMs: 8000, fallback: defaultAnalysis, label: 'claude_analysis' }
+    );
+
+    if (claudeResult.stale) {
+      console.warn(`[ConversationAnalyzer] Both fast LLM and Claude timed out — using heuristics`);
+    }
+
+    return claudeResult.result;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

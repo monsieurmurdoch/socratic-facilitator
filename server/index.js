@@ -30,6 +30,8 @@ const { FacilitationEngine } = require("./facilitator");
 const { EnhancedFacilitationEngine, getPlatoDisplayConfig } = require("./enhancedFacilitator");
 const { FacilitationOrchestrator } = require("./analysis/facilitationOrchestrator");
 const { MessageAssessor } = require("./analysis/messageAssessor");
+const { fastLLM } = require("./analysis/fastLLMProvider");
+const { stalenessGuard } = require("./analysis/stalenessGuard");
 const { DISCUSSION_TOPICS, FACILITATION_PARAMS, getAgeCalibration } = require("./config");
 
 // Routes
@@ -73,6 +75,15 @@ app.get("/api/session/:sessionId/orchestrator", (req, res) => {
     return res.status(404).json({ error: "Session orchestrator not found" });
   }
   res.json(state);
+});
+
+// Latency telemetry endpoint — shows fast LLM and staleness guard stats
+app.get("/api/telemetry", (req, res) => {
+  res.json({
+    fastLLM: fastLLM.getStats(),
+    stalenessGuard: stalenessGuard.getStats(),
+    enhancedSystem: USE_ENHANCED_SYSTEM
+  });
 });
 
 // ---- In-Memory Session State (for active WebSocket connections) ----
@@ -254,8 +265,11 @@ async function handleParticipantMessage(sessionShortCode, clientId, text) {
 
   // Use enhanced engine with orchestrator if enabled
   let decision;
+  const pipelineStart = Date.now();
+
   if (USE_ENHANCED_SYSTEM) {
     // Assess the message through LLM for engagement, anchors, claims
+    // (FastLLMProvider + StalenessGuard are wired inside messageAssessor)
     const previousMessage = session.stateTracker.messages.length > 1
       ? session.stateTracker.messages[session.stateTracker.messages.length - 2]
       : null;
@@ -281,7 +295,15 @@ async function handleParticipantMessage(sessionShortCode, clientId, text) {
     decision = await facilitationEngine.decide(session.stateTracker);
   }
 
+  const pipelineLatencyMs = Date.now() - pipelineStart;
+
   if (decision.shouldSpeak && decision.message) {
+    // Staleness guard on message delivery: if the entire pipeline took too long,
+    // log it but still deliver (the message is already generated)
+    if (pipelineLatencyMs > 10000) {
+      console.warn(`[${sessionShortCode}] ⚠ Pipeline latency: ${pipelineLatencyMs}ms — consider tuning timeouts`);
+    }
+
     const delay = 1500 + Math.random() * 2000;
     setTimeout(async () => {
       await handleFacilitatorMessage(sessionShortCode, decision);

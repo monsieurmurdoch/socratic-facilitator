@@ -123,6 +123,38 @@ const FACILITATION_PARAMS = {
   sessionDurationMin: 25
 };
 
+/**
+ * Solo mode parameters — when there's only one participant.
+ * The facilitator becomes a 1-on-1 Socratic dialogue partner.
+ * Faster response cadence, higher talk ratio, no group-only moves.
+ */
+const SOLO_FACILITATION_PARAMS = {
+  minInterventionGapSec: 5,
+  minMessagesBetweenInterventions: 1,
+  silenceTimeoutSec: 25,
+  dominanceThreshold: 1.0,    // N/A for solo
+  quietThreshold: 999,        // N/A for solo
+  maxAITalkRatio: 0.45,       // Much more conversational in 1-on-1
+  sessionDurationMin: 25
+};
+
+/**
+ * Moves that require multiple participants and should be excluded in solo mode.
+ */
+const SOLO_EXCLUDED_MOVES = [
+  'redirect',
+  'surface_tension',
+  'connect',
+  'acknowledge_heat'
+];
+
+/**
+ * Get appropriate facilitation params based on participant count.
+ */
+function getFacilitationParams(participantCount) {
+  return participantCount <= 1 ? SOLO_FACILITATION_PARAMS : FACILITATION_PARAMS;
+}
+
 function getAgeCalibration(ages) {
   if (!ages || ages.length === 0) return AGE_CALIBRATION.middle;
   const avg = ages.reduce((a, b) => a + b, 0) / ages.length;
@@ -135,5 +167,8 @@ module.exports = {
   DISCUSSION_TOPICS,
   AGE_CALIBRATION,
   FACILITATION_PARAMS,
-  getAgeCalibration
+  SOLO_FACILITATION_PARAMS,
+  SOLO_EXCLUDED_MOVES,
+  getAgeCalibration,
+  getFacilitationParams
 };

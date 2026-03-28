@@ -8,7 +8,7 @@
 const messagesRepo = require('./db/repositories/messages');
 const participantsRepo = require('./db/repositories/participants');
 const conversationStateRepo = require('./db/repositories/conversationState');
-const { FACILITATION_PARAMS } = require('./config');
+const { FACILITATION_PARAMS, getFacilitationParams } = require('./config');
 
 class ParticipantState {
   constructor(id, name, age) {
@@ -251,7 +251,11 @@ class SessionStateTracker {
   /**
    * Hard constraints check - rules that don't require LLM judgment
    */
-  async getHardConstraints(params = FACILITATION_PARAMS) {
+  async getHardConstraints(params = null) {
+    // Auto-detect solo mode and use appropriate params
+    if (!params) {
+      params = getFacilitationParams(this.participants.size);
+    }
     const snapshot = await this.getStateSnapshot();
     const constraints = {
       canSpeak: true,

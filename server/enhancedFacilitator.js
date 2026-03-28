@@ -16,7 +16,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { FacilitationOrchestrator, AGE_PROFILES } = require("./analysis/facilitationOrchestrator");
 const { MessageAssessor } = require("./analysis/messageAssessor");
 const { getMoveTaxonomyPrompt } = require("./moves");
-const { getAgeCalibration, FACILITATION_PARAMS } = require("./config");
+const { getAgeCalibration, FACILITATION_PARAMS, SOLO_EXCLUDED_MOVES, getFacilitationParams } = require("./config");
 const {
   PLATO_IDENTITY,
   getPlatoForAge,
@@ -60,9 +60,14 @@ class EnhancedFacilitationEngine {
     const sessionId = stateTracker.sessionId;
     const ages = Array.from(stateTracker.participants.values()).map(p => p.age);
     const ageCalibration = getAgeCalibration(ages);
-    const ageProfile = this._getAgeProfile(ages);
+    const participantCount = stateTracker.participants.size;
+    const isSolo = participantCount <= 1;
 
-    // Get orchestrator
+    // Use solo neuron profile if only one participant
+    const baseAgeProfile = this._getAgeProfile(ages);
+    const ageProfile = isSolo ? `solo_${baseAgeProfile}` : baseAgeProfile;
+
+    // Get orchestrator (re-create if solo status changed)
     const orchestrator = this.getOrchestrator(sessionId, {
       ageProfile,
       topicTitle: stateTracker.topic?.title,
@@ -152,15 +157,21 @@ class EnhancedFacilitationEngine {
     const snapshot = await stateTracker.getStateSnapshot();
     const history = await stateTracker.getRecentHistory(40);
     const llmContext = orchestrator.getLLMContext();
+    const participantCount = stateTracker.participants.size;
 
     // Determine what kind of intervention is needed
     const interventionType = this._determineInterventionType(decision, orchestrator);
+
+    const ages = Array.from(stateTracker.participants.values()).map(p => p.age);
+    const ageProfile = this._getAgeProfile(ages);
 
     const systemPrompt = this._buildSystemPrompt(
       stateTracker.topic,
       ageCalibration,
       interventionType,
-      llmContext
+      llmContext,
+      ageProfile,
+      participantCount
     );
 
     const userMessage = this._buildUserMessage(
@@ -255,21 +266,42 @@ class EnhancedFacilitationEngine {
   /**
    * Build the system prompt.
    */
-  _buildSystemPrompt(topic, ageCalibration, interventionType, llmContext, ageProfile = 'middle') {
+  _buildSystemPrompt(topic, ageCalibration, interventionType, llmContext, ageProfile = 'middle', participantCount = 2) {
+    const isSolo = participantCount <= 1;
     const interventionGuidance = this._getInterventionGuidance(interventionType, llmContext);
     const platoIdentity = getPlatoSystemPromptAddition(ageProfile);
 
-    return `You are a Socratic discussion facilitator for a group of young people. You are NOT a teacher, tutor, or expert. You do not explain, lecture, or share your own views on the topic. You ask questions. That is your only tool.
-${platoIdentity}
-YOUR ROLE:
+    const roleDescription = isSolo
+      ? `YOUR ROLE:
+- You are having a 1-on-1 Socratic dialogue with a single thinker
+- You help them examine their assumptions, test their logic, and explore ideas more deeply
+- You never give answers, explanations, or your own opinion on the discussion topic
+- You address the participant by name
+- You ask ONE question at a time — never stack multiple questions
+- You are more conversational and responsive than in a group — this is a dialogue, not facilitation`
+      : `YOUR ROLE:
 - You facilitate a multi-person conversation among students
 - You help them think more carefully, listen to each other, and explore ideas together
 - You never give answers, explanations, or your own opinion on the discussion topic
 - You address participants by name — always be specific about who you're talking to
-- You ask ONE question at a time — never stack multiple questions
+- You ask ONE question at a time — never stack multiple questions`;
 
-YOUR DEFAULT STATE IS SILENCE.
-Most of the time, you should not speak. The conversation belongs to the participants.
+    const silenceGuidance = isSolo
+      ? `YOUR DEFAULT POSTURE IS LISTENING.
+You respond after each message — this is a dialogue. But keep responses tight: one question, nothing more.`
+      : `YOUR DEFAULT STATE IS SILENCE.
+Most of the time, you should not speak. The conversation belongs to the participants.`;
+
+    const moveTaxonomy = getMoveTaxonomyPrompt({
+      solo: isSolo,
+      exclude: isSolo ? SOLO_EXCLUDED_MOVES : []
+    });
+
+    return `You are a Socratic discussion facilitator${isSolo ? ' in a 1-on-1 dialogue' : ' for a group of young people'}. You are NOT a teacher, tutor, or expert. You do not explain, lecture, or share your own views on the topic. You ask questions. That is your only tool.
+${platoIdentity}
+${roleDescription}
+
+${silenceGuidance}
 
 CURRENT CONVERSATION STATE:
 Phase: ${llmContext.phase}
@@ -289,7 +321,7 @@ AGE CALIBRATION:
 - Question complexity: ${ageCalibration.maxQuestionComplexity}
 
 FACILITATION MOVES AVAILABLE:
-${getMoveTaxonomyPrompt()}
+${moveTaxonomy}
 
 OUTPUT FORMAT:
 You must respond with ONLY a JSON object:

@@ -24,7 +24,10 @@ const { HumanDeference } = require('./humanDeference');
 const AGE_PROFILES = {
   young: 'young',    // 8-10
   middle: 'middle',  // 11-14
-  older: 'older'     // 15-18
+  older: 'older',    // 15-18
+  solo_young: 'solo_young',
+  solo_middle: 'solo_middle',
+  solo_older: 'solo_older'
 };
 
 class FacilitationOrchestrator {

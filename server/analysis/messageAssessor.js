@@ -10,6 +10,8 @@
  */
 
 const Anthropic = require('@anthropic-ai/sdk');
+const { fastLLM } = require('./fastLLMProvider');
+const { stalenessGuard } = require('./stalenessGuard');
 
 class MessageAssessor {
   constructor(apiKey) {
@@ -117,49 +119,72 @@ Only flag factual claims as inaccurate if you're confident (>70%). Never correct
 
 Respond with ONLY the JSON object, no other text.`;
 
+    // ── Strategy: Fast LLM first, Claude fallback, heuristic safety net ──
+    const parseAssessment = (assessment) => ({
+      engagement: {
+        specificity: this._clamp(assessment.engagement?.specificity ?? 0.5),
+        profoundness: this._clamp(assessment.engagement?.profoundness ?? 0.5),
+        coherence: this._clamp(assessment.engagement?.coherence ?? 0.5)
+      },
+      anchor: {
+        isAnchor: assessment.anchor?.isAnchor ?? false,
+        profundness: this._clamp(assessment.anchor?.profundness ?? 0.5),
+        summary: assessment.anchor?.summary || null
+      },
+      claims: (assessment.claims || []).map(c => ({
+        text: c.text,
+        classification: c.classification || 'normative',
+        isAccurate: c.isAccurate ?? null,
+        correction: c.correction || null,
+        confidence: this._clamp(c.confidence ?? 0.5)
+      })),
+      referencesAnchors: assessment.referencesAnchors || [],
+      briefReasoning: assessment.briefReasoning || ''
+    });
+
+    const heuristicFallback = this._heuristicAssessment(text, previousText);
+
+    // Try fast LLM first
+    if (fastLLM.isAvailable()) {
+      const fastResult = await stalenessGuard.guard(
+        () => fastLLM.completeJSON({ prompt, maxTokens: 800, temperature: 0.3 }),
+        { timeoutMs: 3000, fallback: null, label: 'fastLLM_messageAssess' }
+      );
+
+      if (!fastResult.stale && fastResult.result?.data) {
+        console.log(`[MessageAssessor] Fast LLM assessment in ${fastResult.latencyMs}ms`);
+        return parseAssessment(fastResult.result.data);
+      }
+    }
+
+    // Fall back to Claude
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 800,
-        messages: [{ role: 'user', content: prompt }]
-      });
-
-      const responseText = response.content[0].text.trim();
-      const jsonStr = responseText
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
-        .trim();
-
-      const assessment = JSON.parse(jsonStr);
-
-      // Normalize and validate
-      return {
-        engagement: {
-          specificity: this._clamp(assessment.engagement?.specificity ?? 0.5),
-          profoundness: this._clamp(assessment.engagement?.profoundness ?? 0.5),
-          coherence: this._clamp(assessment.engagement?.coherence ?? 0.5)
+      const claudeResult = await stalenessGuard.guard(
+        async () => {
+          const response = await this.client.messages.create({
+            model: this.model,
+            max_tokens: 800,
+            messages: [{ role: 'user', content: prompt }]
+          });
+          const responseText = response.content[0].text.trim();
+          const jsonStr = responseText
+            .replace(/```json\n?/g, '')
+            .replace(/```\n?/g, '')
+            .trim();
+          return JSON.parse(jsonStr);
         },
-        anchor: {
-          isAnchor: assessment.anchor?.isAnchor ?? false,
-          profundness: this._clamp(assessment.anchor?.profundness ?? 0.5),
-          summary: assessment.anchor?.summary || null
-        },
-        claims: (assessment.claims || []).map(c => ({
-          text: c.text,
-          classification: c.classification || 'normative',
-          isAccurate: c.isAccurate ?? null,
-          correction: c.correction || null,
-          confidence: this._clamp(c.confidence ?? 0.5)
-        })),
-        referencesAnchors: assessment.referencesAnchors || [],
-        briefReasoning: assessment.briefReasoning || ''
-      };
+        { timeoutMs: 8000, fallback: null, label: 'claude_messageAssess' }
+      );
+
+      if (!claudeResult.stale && claudeResult.result) {
+        return parseAssessment(claudeResult.result);
+      }
     } catch (error) {
       console.error('Message assessment error:', error.message);
-
-      // Return fallback heuristics
-      return this._heuristicAssessment(text, previousText);
     }
+
+    // Ultimate fallback: heuristics
+    return heuristicFallback;
   }
 
   /**
