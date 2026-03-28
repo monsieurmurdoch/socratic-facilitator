@@ -5,120 +5,98 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Socratic Facilitator</title>
   <link rel="stylesheet" href="/src/style.css">
+  <script src="https://meet.jit.si/external_api.js"></script>
 </head>
 <body>
 
   <!-- WELCOME SCREEN -->
   <div id="welcome-screen" class="screen active">
     <h1>Socratic Facilitator</h1>
-    <p>A space for group discussion guided by questions, not answers.</p>
-
-    <div class="mode-selector">
-      <button class="mode-btn active" data-mode="text">Text Chat</button>
-      <button class="mode-btn" data-mode="video">Video Call</button>
-    </div>
+    <p>A space for discussion guided by questions, not answers. Powered by Plato, your AI Socratic facilitator.</p>
 
     <div class="form-group">
       <label for="name-input">Your Name</label>
-      <input type="text" id="name-input" placeholder="Enter your first name" maxlength="20" autocomplete="off">
+      <input type="text" id="name-input" placeholder="Enter your name" autocomplete="off">
     </div>
 
     <div class="form-group">
       <label for="age-input">Your Age</label>
-      <input type="number" id="age-input" placeholder="12" min="6" max="18">
+      <input type="number" id="age-input" value="12" min="5" max="100" autocomplete="off">
     </div>
 
-    <!-- Text Mode: Topic Selection -->
-    <div id="text-mode-options">
-      <div class="form-group">
-        <label for="topic-select">Discussion Topic</label>
-        <select id="topic-select">
-          <option>Loading topics...</option>
-        </select>
-      </div>
+    <div class="form-group">
+      <label for="topic-select">Topic</label>
+      <select id="topic-select"></select>
+    </div>
 
-      <button id="create-btn" class="btn btn-primary">Create Session</button>
+    <div class="btn-row">
+      <button id="create-btn" class="btn btn-primary">Create Room</button>
+      <button id="join-toggle-btn" class="btn btn-secondary">Join Existing</button>
+    </div>
 
-      <p style="color: var(--text-muted); font-size: 0.88rem; margin: 16px 0;">— or join an existing session —</p>
-
+    <div id="join-section" style="display: none;">
       <div class="form-group">
         <label for="join-code-input">Session Code</label>
         <input type="text" id="join-code-input" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
       </div>
-
       <button id="join-btn" class="btn btn-secondary">Join Session</button>
-    </div>
-
-    <!-- Video Mode: Jitsi Integration -->
-    <div id="video-mode-options" style="display: none;">
-      <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
-        Video mode uses Jitsi Meet for real-time voice discussion with AI facilitation.
-      </p>
-
-      <div class="form-group">
-        <label for="video-room-input">Room Name</label>
-        <input type="text" id="video-room-input" placeholder="my-discussion-room" autocomplete="off">
-      </div>
-
-      <button id="join-video-btn" class="btn btn-primary">Join Video Room</button>
     </div>
   </div>
 
-  <!-- SESSION SETUP SCREEN (New - for creating sessions with materials) -->
+  <!-- SETUP SCREEN (for creating sessions with materials) -->
   <div id="setup-screen" class="screen">
     <h2>Session Setup</h2>
 
     <div class="setup-section">
       <h3>Discussion Details</h3>
 
-      <div class="form-group">
+      <div class="form-group" style="max-width: 100%;">
         <label for="session-title">Title</label>
-        <input type="text" id="session-title" placeholder="The Ethics of AI Art">
+        <input type="text" id="session-title" placeholder="Discussion topic title">
       </div>
 
-      <div class="form-group">
+      <div class="form-group" style="max-width: 100%;">
         <label for="opening-question">Opening Question (optional)</label>
-        <textarea id="opening-question" placeholder="What question should start the discussion?" rows="2"></textarea>
+        <textarea id="opening-question" placeholder="What question should Plato open with?"></textarea>
+      </div>
+
+      <div class="form-group" style="max-width: 100%;">
+        <label for="conversation-goal">Conversation Goal (optional)</label>
+        <textarea id="conversation-goal" placeholder="What should this discussion explore or accomplish?"></textarea>
       </div>
     </div>
 
     <div class="setup-section">
-      <h3>Source Materials (optional)</h3>
-      <p class="helper-text">Upload documents or add URLs for the AI to understand before discussion</p>
+      <h3>Materials (optional)</h3>
+      <p class="helper-text">Upload documents or add URLs for Plato to reference during the discussion.</p>
 
-      <div class="upload-area" id="upload-area">
+      <div id="upload-area" class="upload-area">
         <div class="upload-icon">+</div>
         <p>Drop files here or click to upload</p>
-        <p class="upload-hint">PDF, TXT supported</p>
-        <input type="file" id="file-input" accept=".pdf,.txt,.docx" multiple hidden>
+        <p class="upload-hint">PDF, TXT, DOCX</p>
       </div>
+      <input type="file" id="file-input" accept=".pdf,.txt,.docx,.doc" multiple hidden>
 
       <div class="url-input-row">
         <input type="text" id="url-input" placeholder="https://example.com/article">
-        <button id="add-url-btn" class="btn btn-small">Add URL</button>
+        <button id="add-url-btn" class="btn btn-small btn-secondary">Add URL</button>
       </div>
 
       <div id="materials-list" class="materials-list"></div>
     </div>
 
-    <div class="setup-section">
-      <h3>Conversation Goal (optional)</h3>
-      <div class="form-group">
-        <textarea id="conversation-goal" placeholder="What do you want participants to explore or understand?" rows="3"></textarea>
-      </div>
+    <div id="primed-preview" class="primed-preview" style="display: none;">
+      <h4>Plato has prepared</h4>
+      <div id="primed-themes" class="primed-themes"></div>
     </div>
 
     <div class="setup-actions">
+      <button id="back-to-welcome-btn" class="btn btn-secondary">Back</button>
       <button id="prime-btn" class="btn btn-secondary" disabled>
         <span id="prime-btn-text">Prime Materials</span>
         <span id="prime-spinner" class="spinner" style="display: none;"></span>
       </button>
       <button id="start-session-btn" class="btn btn-primary">Create Session</button>
-    </div>
-
-    <div id="primed-preview" class="primed-preview" style="display: none;">
-      <h4>AI Understanding</h4>
-      <div id="primed-themes" class="primed-themes"></div>
     </div>
   </div>
 
@@ -126,64 +104,51 @@
   <div id="lobby-screen" class="screen">
     <h2>Waiting Room</h2>
 
-    <div class="session-code" id="session-code">--------</div>
-    <p style="color: var(--text-muted); font-size: 0.88rem;">Share this code with other participants</p>
+    <div class="session-code" id="session-code">------</div>
+    <p style="color: var(--text-secondary); font-size: 0.85rem;">Share this code so others can join</p>
 
     <div class="passage-preview">
       <h3 id="lobby-topic">Topic</h3>
-      <p id="lobby-passage">Loading passage...</p>
+      <p id="lobby-passage"></p>
     </div>
 
-    <div id="primed-context-preview" style="display: none;">
-      <h4>Discussion Themes</h4>
-      <div id="lobby-themes" class="theme-chips"></div>
-    </div>
+    <div class="participant-list" id="participant-chips"></div>
+    <p id="participant-count" style="color: var(--text-muted); font-size: 0.85rem;">0 participants</p>
 
-    <div>
-      <p style="color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 8px;" id="participant-count">1 participant</p>
-      <div class="participant-list" id="participant-chips"></div>
-    </div>
-
-    <button id="start-btn" class="btn btn-primary">Begin Discussion</button>
+    <button id="start-btn" class="btn btn-primary">Start Discussion</button>
   </div>
 
-  <!-- CHAT SCREEN -->
-  <div id="chat-screen" class="screen">
-    <div class="chat-header">
-      <h2 id="chat-topic">Discussion</h2>
-      <button id="end-btn" class="end-session-btn">End Session</button>
-    </div>
-
-    <div class="chat-messages" id="chat-messages"></div>
-
-    <div class="chat-input-area">
-      <input type="text" id="message-input" placeholder="Share your thoughts..." autocomplete="off">
-      <button id="send-btn">Send</button>
-    </div>
-  </div>
-
-  <!-- VIDEO SCREEN (Jitsi Integration) -->
+  <!-- VIDEO SCREEN (Jitsi + Facilitator) -->
   <div id="video-screen" class="screen">
-    <div class="video-header">
-      <h2 id="video-topic">Discussion</h2>
-      <div class="video-controls">
-        <button id="video-mute-btn" class="video-control-btn">Mute</button>
-        <button id="video-end-btn" class="video-control-btn end">End</button>
+    <div class="video-layout">
+      <!-- Jitsi fills the main area -->
+      <div class="video-main">
+        <div id="jitsi-container"></div>
       </div>
-    </div>
 
-    <div class="video-container">
-      <div id="jitsi-container"></div>
-    </div>
+      <!-- Facilitator sidebar -->
+      <div class="video-sidebar">
+        <div class="sidebar-header">
+          <img class="plato-avatar-small" src="/images/plato-statue.jpg"
+               onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Plato_Silanion_Musei_Capitolini_MC1377.jpg/440px-Plato_Silanion_Musei_Capitolini_MC1377.jpg'"
+               alt="Plato">
+          <div>
+            <h3>Plato</h3>
+            <span id="facilitator-status" class="status-badge listening">Listening</span>
+          </div>
+        </div>
 
-    <div class="video-transcript">
-      <h4>Live Transcript</h4>
-      <div id="transcript-messages"></div>
-    </div>
+        <div id="facilitator-messages" class="facilitator-messages"></div>
 
-    <div class="video-facilitator">
-      <div id="facilitator-status" class="facilitator-status listening">Facilitator is listening...</div>
-      <div id="facilitator-response" class="facilitator-response" style="display: none;"></div>
+        <div class="sidebar-transcript">
+          <h4>Live Transcript</h4>
+          <div id="transcript-messages" class="transcript-feed"></div>
+        </div>
+
+        <div class="sidebar-controls">
+          <button id="video-end-btn" class="btn btn-end">End Discussion</button>
+        </div>
+      </div>
     </div>
   </div>
 

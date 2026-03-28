@@ -377,12 +377,8 @@ wss.on("connection", (ws) => {
   let currentSessionShortCode = null;
 
   ws.on("message", async (raw, isBinary) => {
-    if (isBinary || Buffer.isBuffer(raw)) {
-      if (ws.stt && !ws.stt.killed) {
-        ws.stt.stdin.write(raw);
-      }
-      return;
-    }
+    // Skip binary data (no longer using local STT process)
+    if (isBinary || Buffer.isBuffer(raw)) return;
 
     let msg;
     try {
@@ -420,7 +416,7 @@ wss.on("connection", (ws) => {
           clients: [],
           active: false,
           topic,
-          mode: msg.mode || "text"  // Track session mode (text/video)
+          mode: "video"
         });
 
         ws.send(JSON.stringify({
@@ -429,7 +425,7 @@ wss.on("connection", (ws) => {
           topicId: topic.id,
           topicTitle: topic.title,
           passage: topic.passage,
-          mode: msg.mode || "text"
+          mode: "video"
         }));
         break;
       }
@@ -510,31 +506,9 @@ wss.on("connection", (ws) => {
           participantCount: session.stateTracker.participants.size
         });
 
-        // Initialize STT Process for Voice
-        const STT_PYTHON = process.env.STT_PYTHON || 'server/venv/bin/python';
-        const STT_SCRIPT = process.env.STT_SCRIPT || 'server/stt.py';
-        const stt = spawn(STT_PYTHON, [STT_SCRIPT]);
-        stt.on('error', (err) => {
-          console.warn(`[STT] Failed to start for ${name}:`, err.message);
-        });
-        stt.stdout.on('data', (data) => {
-          const lines = data.toString().split('\n').filter(l => l.trim().length > 0);
-          for (const line of lines) {
-            try {
-              const res = JSON.parse(line);
-              if (res.text && res.text.trim()) {
-                handleParticipantMessage(currentSessionShortCode, clientId, res.text);
-              } else if (res.partial && res.partial.trim()) {
-                broadcastToSession(currentSessionShortCode, {
-                  type: "participant_partial",
-                  name: name,
-                  text: res.partial
-                });
-              }
-            } catch (e) { }
-          }
-        });
-        ws.stt = stt;
+        // Note: STT is handled by the Jitsi bot (Deepgram) in video mode.
+        // Text messages from the WebSocket "message" handler still work for
+        // any typed chat input if needed.
 
         const participants = Array.from(session.stateTracker.participants.values())
           .map(p => ({ name: p.name, id: p.id }));
@@ -570,28 +544,6 @@ wss.on("connection", (ws) => {
         session.clients = session.clients.filter(c => c.clientId !== clientId);
         session.clients.push({ ws, clientId, name: participant.name });
 
-        // Kill any existing STT process before spawning a new one
-        if (ws.stt && !ws.stt.killed) {
-          ws.stt.kill();
-        }
-
-        const sttRejoin = spawn(process.env.STT_PYTHON || 'server/venv/bin/python', [process.env.STT_SCRIPT || 'server/stt.py']);
-        sttRejoin.on('error', (err) => {
-          console.warn(`[STT] Failed to start for rejoin:`, err.message);
-        });
-        sttRejoin.stdout.on('data', (data) => {
-          const lines = data.toString().split('\n').filter(l => l.trim().length > 0);
-          for (const line of lines) {
-            try {
-              const res = JSON.parse(line);
-              if (res.text && res.text.trim()) {
-                handleParticipantMessage(currentSessionShortCode, clientId, res.text);
-              }
-            } catch (e) { }
-          }
-        });
-        ws.stt = sttRejoin;
-
         const participants = Array.from(session.stateTracker.participants.values())
           .map(p => ({ name: p.name, id: p.id }));
 
@@ -624,9 +576,9 @@ wss.on("connection", (ws) => {
         const ages = Array.from(session.stateTracker.participants.values()).map(p => p.age);
         const ageCalibration = getAgeCalibration(ages);
 
-        // Launch Jitsi bot for video mode
-        if (session.mode === "video" && jitsiLauncher) {
-          console.log(`[${currentSessionShortCode}] Starting video mode with Jitsi bot...`);
+        // Launch Jitsi bot (handles STT via Deepgram, TTS, and voice facilitation)
+        if (jitsiLauncher) {
+          console.log(`[${currentSessionShortCode}] Starting Jitsi bot...`);
           session.jitsiBot = jitsiLauncher.startJitsiBot(currentSessionShortCode, {
             roomName: `socratic-${currentSessionShortCode}`,
             topic: session.topic?.title,
@@ -642,7 +594,7 @@ wss.on("connection", (ws) => {
 
         broadcastToSession(currentSessionShortCode, {
           type: "discussion_started",
-          mode: session.mode || "text"
+          mode: "video"
         });
 
         broadcastToSession(currentSessionShortCode, {
@@ -652,10 +604,8 @@ wss.on("connection", (ws) => {
           timestamp: Date.now()
         });
 
-        // Only start silence checker for text mode (Jitsi handles its own)
-        if (session.mode !== "video") {
-          startSilenceChecker(currentSessionShortCode);
-        }
+        // Start silence checker as a safety net
+        startSilenceChecker(currentSessionShortCode);
         break;
       }
 
@@ -708,10 +658,6 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    if (ws.stt) {
-      ws.stt.kill();
-    }
-
     if (currentSessionShortCode) {
       const session = activeSessions.get(currentSessionShortCode);
       if (session) {

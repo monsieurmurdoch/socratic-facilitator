@@ -1,8 +1,8 @@
 /**
- * Socratic Facilitator — Client
+ * Socratic Facilitator — Client (Video Mode)
  *
  * Handles: WebSocket connection, session creation/joining,
- * file uploads, URL materials, and real-time chat.
+ * file uploads, Jitsi Meet embedding, and facilitator display.
  */
 
 (function () {
@@ -13,14 +13,13 @@
   let currentSessionId = null;
   let participants = [];
   let isHost = false;
-  let sessionMode = "text"; // "text" or "video"
+  let jitsiApi = null;
 
   // ---- DOM Elements ----
   const screens = {
     welcome: document.getElementById("welcome-screen"),
     setup: document.getElementById("setup-screen"),
     lobby: document.getElementById("lobby-screen"),
-    chat: document.getElementById("chat-screen"),
     video: document.getElementById("video-screen")
   };
 
@@ -28,18 +27,6 @@
     Object.values(screens).forEach(s => s && s.classList.remove("active"));
     if (screens[name]) screens[name].classList.add("active");
   }
-
-  // ---- Mode Selection ----
-  document.querySelectorAll(".mode-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      sessionMode = btn.dataset.mode;
-
-      document.getElementById("text-mode-options").style.display = sessionMode === "text" ? "block" : "none";
-      document.getElementById("video-mode-options").style.display = sessionMode === "video" ? "block" : "none";
-    });
-  });
 
   // ---- WebSocket ----
   function connect() {
@@ -83,6 +70,71 @@
     return res.json();
   }
 
+  // ---- Jitsi Integration ----
+  function launchJitsi(roomName, displayName) {
+    if (jitsiApi) {
+      jitsiApi.dispose();
+    }
+
+    const container = document.getElementById("jitsi-container");
+    const domain = "meet.jit.si"; // or self-hosted domain from config
+
+    jitsiApi = new JitsiMeetExternalAPI(domain, {
+      roomName: `socratic-${roomName}`,
+      parentNode: container,
+      userInfo: {
+        displayName: displayName
+      },
+      configOverwrite: {
+        startWithAudioMuted: false,
+        startWithVideoMuted: false,
+        prejoinPageEnabled: false,
+        disableDeepLinking: true,
+        toolbarButtons: [
+          'microphone', 'camera', 'desktop', 'fullscreen',
+          'raisehand', 'tileview', 'participants-pane',
+          'toggle-camera'
+        ],
+        disableInviteFunctions: true,
+        hideConferenceSubject: true,
+        disableThirdPartyRequests: true
+      },
+      interfaceConfigOverwrite: {
+        SHOW_JITSI_WATERMARK: false,
+        SHOW_WATERMARK_FOR_GUESTS: false,
+        SHOW_BRAND_WATERMARK: false,
+        TOOLBAR_ALWAYS_VISIBLE: true,
+        DISABLE_JOIN_LEAVE_NOTIFICATIONS: false,
+        MOBILE_APP_PROMO: false,
+        HIDE_INVITE_MORE_HEADER: true
+      }
+    });
+
+    // Track participants joining/leaving
+    jitsiApi.addEventListener('participantJoined', (event) => {
+      console.log('[Jitsi] Participant joined:', event);
+    });
+
+    jitsiApi.addEventListener('participantLeft', (event) => {
+      console.log('[Jitsi] Participant left:', event);
+    });
+
+    // Track when video conference ends
+    jitsiApi.addEventListener('readyToClose', () => {
+      console.log('[Jitsi] Conference ended');
+      send({ type: "end_discussion" });
+    });
+
+    console.log('[Jitsi] Launched room:', roomName);
+  }
+
+  function destroyJitsi() {
+    if (jitsiApi) {
+      jitsiApi.dispose();
+      jitsiApi = null;
+    }
+  }
+
   // ---- Message Handlers ----
   function handleServerMessage(msg) {
     switch (msg.type) {
@@ -100,7 +152,6 @@
         myId = msg.yourId;
         participants = msg.participants;
         updateParticipantList();
-        document.getElementById("chat-topic").textContent = msg.topicTitle;
         if (!isHost) {
           document.getElementById("session-code").textContent = msg.sessionId;
           document.getElementById("lobby-topic").textContent = msg.topicTitle;
@@ -118,26 +169,33 @@
       case "participant_left":
         participants = participants.filter(p => p.name !== msg.name);
         updateParticipantList();
-        addSystemMessage(`${msg.name} left the discussion`);
+        addTranscriptEntry("system", `${msg.name} left the discussion`);
         break;
 
       case "discussion_started":
-        showScreen("chat");
-        document.getElementById("message-input").focus();
+        // Launch Jitsi and show video screen
+        showScreen("video");
+        launchJitsi(currentSessionId, myName);
         break;
 
       case "participant_message":
-        addParticipantMessage(msg.name, msg.text, msg.name === myName);
+        addTranscriptEntry(msg.name, msg.text, msg.name === myName);
+        break;
+
+      case "participant_partial":
+        updatePartialTranscript(msg.name, msg.text);
         break;
 
       case "facilitator_message":
         addFacilitatorMessage(msg.text, msg.move);
+        setFacilitatorStatus("speaking");
+        // Reset to listening after a delay
+        setTimeout(() => setFacilitatorStatus("listening"), 3000);
         break;
 
       case "discussion_ended":
-        addSystemMessage("The discussion has ended. Thank you for participating.");
-        document.getElementById("message-input").disabled = true;
-        document.getElementById("send-btn").disabled = true;
+        addFacilitatorMessage("The discussion has ended. Thank you for participating.", "closing");
+        destroyJitsi();
         break;
 
       case "error":
@@ -158,15 +216,6 @@
     });
   }
 
-  function addParticipantMessage(name, text, isSelf) {
-    const container = document.getElementById("chat-messages");
-    const div = document.createElement("div");
-    div.className = `message ${isSelf ? "message-self" : "message-participant"}`;
-    div.innerHTML = `<span class="sender">${escapeHtml(name)}</span><span class="message-text">${escapeHtml(text)}</span>`;
-    container.appendChild(div);
-    scrollToBottom();
-  }
-
   // Plato configuration
   const PLATO = {
     name: 'Plato',
@@ -177,34 +226,58 @@
   };
 
   function addFacilitatorMessage(text, move) {
-    const container = document.getElementById("chat-messages");
+    const container = document.getElementById("facilitator-messages");
+    if (!container) return;
+
     const div = document.createElement("div");
-    div.className = "message message-facilitator";
+    div.className = "facilitator-bubble";
     div.innerHTML = `
-      <img class="avatar plato-avatar" src="${PLATO.avatar.src}"
-           onerror="this.src='${PLATO.avatar.fallbackSrc}'"
-           alt="${PLATO.name}">
-      <div class="message-content">
-        <span class="sender">${PLATO.name}</span>
-        <span class="message-text">${escapeHtml(text)}</span>
-      </div>
+      <span class="facilitator-move">${move || ''}</span>
+      <span class="facilitator-text">${escapeHtml(text)}</span>
     `;
     container.appendChild(div);
-    scrollToBottom();
-  }
-
-  function addSystemMessage(text) {
-    const container = document.getElementById("chat-messages");
-    const div = document.createElement("div");
-    div.className = "message message-system";
-    div.textContent = text;
-    container.appendChild(div);
-    scrollToBottom();
-  }
-
-  function scrollToBottom() {
-    const container = document.getElementById("chat-messages");
     container.scrollTop = container.scrollHeight;
+  }
+
+  function addTranscriptEntry(name, text, isSelf) {
+    const container = document.getElementById("transcript-messages");
+    if (!container) return;
+
+    const div = document.createElement("div");
+
+    if (name === "system") {
+      div.className = "transcript-system";
+      div.textContent = text;
+    } else {
+      div.className = `transcript-entry ${isSelf ? "self" : ""}`;
+      div.innerHTML = `<strong>${escapeHtml(name)}:</strong> ${escapeHtml(text)}`;
+    }
+
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function updatePartialTranscript(name, text) {
+    const container = document.getElementById("transcript-messages");
+    if (!container) return;
+
+    // Update or create partial entry
+    let partial = container.querySelector(`.transcript-partial[data-name="${name}"]`);
+    if (!partial) {
+      partial = document.createElement("div");
+      partial.className = "transcript-partial";
+      partial.dataset.name = name;
+      container.appendChild(partial);
+    }
+    partial.innerHTML = `<strong>${escapeHtml(name)}:</strong> <em>${escapeHtml(text)}</em>`;
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function setFacilitatorStatus(status) {
+    const badge = document.getElementById("facilitator-status");
+    if (!badge) return;
+    badge.className = `status-badge ${status}`;
+    badge.textContent = status === "speaking" ? "Speaking" : "Listening";
   }
 
   function escapeHtml(text) {
@@ -229,14 +302,12 @@
       const div = document.createElement("div");
       div.className = "material-item";
       div.innerHTML = `
-        <span class="material-icon">${m.type === "url" ? "🔗" : "📄"}</span>
         <span class="material-name">${escapeHtml(m.name)}</span>
-        <button class="material-remove" data-index="${i}">×</button>
+        <button class="material-remove" data-index="${i}">&times;</button>
       `;
       container.appendChild(div);
     });
 
-    // Enable prime button if materials exist
     const primeBtn = document.getElementById("prime-btn");
     primeBtn.disabled = materials.length === 0;
   }
@@ -265,11 +336,7 @@
 
   async function handleFiles(files) {
     for (const file of files) {
-      materials.push({
-        type: "file",
-        name: file.name,
-        file: file
-      });
+      materials.push({ type: "file", name: file.name, file: file });
     }
     renderMaterials();
   }
@@ -296,6 +363,12 @@
 
   // ---- Session Creation Flow ----
 
+  // Show/hide join section
+  document.getElementById("join-toggle-btn").addEventListener("click", () => {
+    const section = document.getElementById("join-section");
+    section.style.display = section.style.display === "none" ? "flex" : "none";
+  });
+
   // Create button - go to setup screen
   document.getElementById("create-btn").addEventListener("click", () => {
     myName = document.getElementById("name-input").value.trim();
@@ -303,7 +376,6 @@
 
     const topicSelect = document.getElementById("topic-select");
     const selectedTopic = topicSelect.options[topicSelect.selectedIndex];
-
     document.getElementById("session-title").value = selectedTopic?.text || "";
     showScreen("setup");
   });
@@ -326,7 +398,6 @@
     spinner.style.display = "inline-block";
 
     try {
-      // Upload materials first
       for (const m of materials) {
         if (m.type === "file") {
           const formData = new FormData();
@@ -340,9 +411,7 @@
         }
       }
 
-      // Prime the session
       const result = await apiPost(`/api/sessions/${currentSessionId}/prime`, {});
-
       if (result.status === "complete" && result.context) {
         btnText.textContent = "Ready!";
         showPrimedContext(result.context);
@@ -361,7 +430,6 @@
   function showPrimedContext(context) {
     const preview = document.getElementById("primed-preview");
     const themes = document.getElementById("primed-themes");
-
     if (context.keyThemes && context.keyThemes.length > 0) {
       themes.innerHTML = context.keyThemes.map(t => `<span class="theme-chip">${escapeHtml(t)}</span>`).join("");
       preview.style.display = "block";
@@ -376,7 +444,6 @@
 
     if (!title) { alert("Enter a title"); return; }
 
-    // Create session via REST API only — do NOT also send create_session over WS
     apiPost("/api/sessions", {
       title,
       openingQuestion: question || null,
@@ -385,7 +452,6 @@
       currentSessionId = session.shortCode;
       isHost = true;
 
-      // Join via WebSocket using the session code from the REST response
       send({
         type: "join_session",
         sessionId: session.shortCode,
@@ -413,43 +479,27 @@
     send({ type: "start_discussion" });
   });
 
-  // ---- Send Message ----
-  function sendMessage() {
-    const input = document.getElementById("message-input");
-    const text = input.value.trim();
-    if (!text) return;
-    send({ type: "message", text });
-    input.value = "";
-    input.focus();
-  }
-
-  document.getElementById("send-btn").addEventListener("click", sendMessage);
-  document.getElementById("message-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-
   // ---- End Discussion ----
-  document.getElementById("end-btn").addEventListener("click", () => {
+  document.getElementById("video-end-btn").addEventListener("click", () => {
     if (confirm("End the discussion for everyone?")) {
       send({ type: "end_discussion" });
     }
   });
 
-  // ---- Audio ----
+  // ---- Audio (for TTS playback from server) ----
   let playbackContext;
 
   function playAudioBuffer(arrayBuffer) {
     if (!playbackContext) {
       playbackContext = new (window.AudioContext || window.webkitAudioContext)();
     }
-    playbackContext.decodeAudioData(arrayBuffer, (buffer) => {
+    playbackContext.decodeAudioData(arrayBuffer.slice(0), (buffer) => {
       const source = playbackContext.createBufferSource();
       source.buffer = buffer;
       source.connect(playbackContext.destination);
       source.start(0);
+    }, (err) => {
+      console.warn('[Audio] Failed to decode audio:', err);
     });
   }
 
