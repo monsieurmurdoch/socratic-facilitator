@@ -93,7 +93,35 @@
   }
 
   // ---- Jitsi Integration ----
-  function launchJitsi(roomName, displayName) {
+  let jitsiScriptLoaded = false;
+
+  function loadJitsiScript() {
+    return new Promise((resolve, reject) => {
+      if (jitsiScriptLoaded || window.JitsiMeetExternalAPI) {
+        jitsiScriptLoaded = true;
+        resolve();
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://meet.jit.si/external_api.js";
+      script.onload = () => {
+        jitsiScriptLoaded = true;
+        resolve();
+      };
+      script.onerror = () => reject(new Error("Failed to load Jitsi API"));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function launchJitsi(roomName, displayName) {
+    try {
+      await loadJitsiScript();
+    } catch (e) {
+      console.error("[Jitsi] Failed to load script:", e);
+      alert("Failed to load video call. Check your connection and try again.");
+      return;
+    }
+
     if (jitsiApi) {
       jitsiApi.dispose();
     }
