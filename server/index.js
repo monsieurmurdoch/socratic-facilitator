@@ -105,10 +105,49 @@ const messageAssessor = new MessageAssessor(process.env.ANTHROPIC_API_KEY);
 const USE_ENHANCED_SYSTEM = process.env.USE_ENHANCED_SYSTEM !== 'false';  // Default to true
 
 // ---- Voice Integration: TTS Helper ----
+// Priority: ElevenLabs (cloud, high quality) → Piper (local, free) → silent
 const PIPER_PATH = process.env.PIPER_PATH || 'server/models/tts/piper/piper';
 const PIPER_MODEL_PATH = process.env.PIPER_MODEL_PATH || 'server/models/tts/en_US-lessac-medium.onnx';
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'; // Rachel
 
-function generateTTS(text) {
+async function generateTTS(text) {
+  // Try ElevenLabs first (cloud, high quality)
+  if (ELEVENLABS_API_KEY) {
+    try {
+      const nodeFetch = require('node-fetch');
+      const response = await nodeFetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'xi-api-key': ELEVENLABS_API_KEY
+          },
+          body: JSON.stringify({
+            text,
+            model_id: 'eleven_monolingual_v1',
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75
+            }
+          })
+        }
+      );
+
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = Buffer.from(arrayBuffer);
+        console.log(`[TTS:ElevenLabs] Generated ${audioBuffer.length} bytes`);
+        return audioBuffer;
+      }
+      console.warn(`[TTS:ElevenLabs] API returned ${response.status}, falling back to Piper`);
+    } catch (err) {
+      console.warn('[TTS:ElevenLabs] Error:', err.message, '— falling back to Piper');
+    }
+  }
+
+  // Fall back to Piper (local)
   return new Promise((resolve, reject) => {
     const piper = spawn(PIPER_PATH, [
       '--model', PIPER_MODEL_PATH,
@@ -119,14 +158,17 @@ function generateTTS(text) {
     piper.stdout.on('data', chunk => audioData.push(chunk));
 
     piper.on('error', (err) => {
-      reject(new Error('Piper TTS not available: ' + err.message));
+      reject(new Error('TTS not available (no ElevenLabs key, Piper not installed): ' + err.message));
     });
 
     piper.stdin.write(text);
     piper.stdin.end();
 
     piper.on('close', code => {
-      if (code === 0) resolve(Buffer.concat(audioData));
+      if (code === 0) {
+        console.log(`[TTS:Piper] Generated ${Buffer.concat(audioData).length} bytes`);
+        resolve(Buffer.concat(audioData));
+      }
       else reject(new Error('Piper TTS failed with code ' + code));
     });
   });

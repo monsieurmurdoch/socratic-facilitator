@@ -13,19 +13,9 @@ RUN apk add --no-cache \
     libc6-compat \
     libstdc++
 
-# Install Piper TTS (for local voice synthesis)
-RUN mkdir -p /app/piper && \
-    cd /app/piper && \
-    wget -q https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_voice_linux-x86_64.tar.gz && \
-    tar -xzf piper_voice_linux-x86_64.tar.gz && \
-    rm piper_voice_linux-x86_64.tar.gz && \
-    ln -s /app/piper/piper /usr/local/bin/piper
-
-# Download a Piper voice model (English, lessac-medium)
-RUN mkdir -p /app/piper/models && \
-    cd /app/piper/models && \
-    wget -q https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx && \
-    wget -q https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json
+# Piper TTS is optional — ElevenLabs is the preferred cloud TTS provider.
+# If you want local TTS, install Piper manually or set PIPER_PATH.
+# The server auto-detects: ElevenLabs (if key set) → Piper (if binary exists) → silent.
 
 # Copy package files
 COPY package*.json ./
@@ -48,8 +38,6 @@ EXPOSE 3000
 
 # Set environment
 ENV NODE_ENV=production
-ENV PIPER_PATH=/app/piper/piper
-ENV PIPER_MODEL_PATH=/app/piper/models/en_US-lessac-medium.onnx
 
 # Start the server
 CMD ["node", "server/index.js"]
