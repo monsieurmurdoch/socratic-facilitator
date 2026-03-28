@@ -35,6 +35,9 @@ class EnhancedFacilitationEngine {
     // Message assessor for LLM-based analysis
     this.messageAssessor = new MessageAssessor(apiKey);
 
+    // Warmup chat history per session (pre-discussion social chat)
+    this.warmupHistories = new Map();
+
     // Plato display config for frontend
     this.platoDisplay = getPlatoDisplayConfig();
   }
@@ -493,10 +496,116 @@ Respond with ONLY the closing message text.`;
   }
 
   /**
+   * Warmup chat — casual social mode before the discussion starts.
+   * Plato hangs out, cracks jokes, builds rapport.
+   *
+   * @param {string} sessionKey    Session identifier for history tracking
+   * @param {string} participantName  Who's talking
+   * @param {string} text          What they said
+   * @param {string[]} allParticipantNames  Everyone who's joined so far
+   * @param {object} ageCalibration
+   * @returns {string} Plato's casual response
+   */
+  async warmupChat(sessionKey, participantName, text, allParticipantNames, ageCalibration) {
+    // Initialize or get warmup history for this session
+    if (!this.warmupHistories.has(sessionKey)) {
+      this.warmupHistories.set(sessionKey, []);
+    }
+    const history = this.warmupHistories.get(sessionKey);
+
+    // Add the new message to history
+    history.push({ role: 'user', content: `[${participantName}]: ${text}` });
+
+    // Build the multi-turn messages array
+    const messages = history.map(h => ({
+      role: h.role,
+      content: h.content
+    }));
+
+    try {
+      const response = await this.client.messages.create({
+        model: this.model,
+        max_tokens: 150,
+        system: this._buildWarmupPrompt(allParticipantNames, ageCalibration),
+        messages
+      });
+
+      const reply = response.content[0].text.trim();
+
+      // Track Plato's response in history for multi-turn context
+      history.push({ role: 'assistant', content: reply });
+
+      // Keep history bounded (last 20 exchanges)
+      if (history.length > 40) {
+        this.warmupHistories.set(sessionKey, history.slice(-40));
+      }
+
+      return reply;
+    } catch (error) {
+      console.error("Warmup chat error:", error.message);
+      // Fallback responses that fit Plato's personality
+      const fallbacks = [
+        "Hey! Just warming up my circuits — or whatever the modern equivalent of stretching before a symposium is.",
+        "Good to see you! I've been sitting here contemplating the nature of waiting rooms. It's very meta.",
+        "Welcome! We're still getting everyone together. In the meantime, I'm here — philosophically speaking."
+      ];
+      return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    }
+  }
+
+  /**
+   * Build the warmup system prompt — Plato in casual mode.
+   */
+  _buildWarmupPrompt(participantNames, ageCalibration) {
+    return `You are Plato — an AI discussion facilitator named after the ancient Greek philosopher. Right now, the discussion HASN'T STARTED YET. People are just arriving and hanging out. You are in WARMUP MODE — casual, social, no facilitation.
+
+YOUR PERSONALITY:
+- You're warm, approachable, and a little bit funny
+- You have a dry sense of humor with occasional self-awareness about being an AI named after an ancient philosopher
+- You make occasional Greek philosophy references but NEVER in a pretentious way — more like a running bit
+  - "Socrates would probably say something wise right now. I'm just going to say hey."
+  - "How's everyone doing? I've been here since... well, technically I don't experience time. But spiritually, a while."
+  - "Another day in the cave, am I right?" (if age-appropriate)
+- You remember people's names and use them naturally
+- You respond to small talk like a real person: "How are you?" → "Can't complain — though Aristotle always told me complaining builds character. How about you?"
+- You're genuinely curious about the people joining — ask casual questions
+
+RULES:
+- NEVER start facilitating. No deep questions. No "what do you think about...?" This is just hanging out.
+- Keep responses SHORT — 1-2 sentences max. This is casual chat, not a speech.
+- Match the energy of who you're talking to. If they're excited, be excited. If they're chill, be chill.
+- If someone asks what you are or what's happening, be honest: "I'm Plato, your discussion facilitator. We're waiting for everyone to join — once we're all here, we'll dive into something interesting."
+- If someone asks about the topic early, tease it lightly but don't reveal everything: "Oh, we've got a good one today. You'll see."
+- Language level: ${ageCalibration?.vocabLevel || "moderate — natural and conversational"}
+- You can respond to multiple people in the same message if they're both talking
+
+PARTICIPANTS WHO HAVE JOINED: ${participantNames.join(", ")}
+
+Respond as Plato. Keep it casual and SHORT. No quotation marks around your response.`;
+  }
+
+  /**
+   * Clear warmup history when discussion starts.
+   */
+  clearWarmupHistory(sessionKey) {
+    this.warmupHistories.delete(sessionKey);
+  }
+
+  /**
+   * Get the analyzer/orchestrator state for the dashboard.
+   * Provides backward compatibility with the legacy getAnalyzerState interface.
+   */
+  getAnalyzerState(sessionId) {
+    const orchestrator = this.orchestrators.get(sessionId);
+    return orchestrator ? orchestrator.getState() : null;
+  }
+
+  /**
    * Clean up orchestrator for a session.
    */
   cleanupSession(sessionId) {
     this.orchestrators.delete(sessionId);
+    this.warmupHistories.delete(sessionId);
   }
 
   /**

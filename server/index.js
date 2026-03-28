@@ -26,7 +26,6 @@ const materialsRepo = require("./db/repositories/materials");
 const primedContextRepo = require("./db/repositories/primedContext");
 
 // Services
-const { FacilitationEngine } = require("./facilitator");
 const { EnhancedFacilitationEngine, getPlatoDisplayConfig } = require("./enhancedFacilitator");
 const { FacilitationOrchestrator } = require("./analysis/facilitationOrchestrator");
 const { MessageAssessor } = require("./analysis/messageAssessor");
@@ -98,8 +97,7 @@ try {
   console.log("Jitsi bot module not available:", e.message);
 }
 
-// Initialize both engines - enhanced engine for new sessions, legacy for backward compat
-const facilitationEngine = new FacilitationEngine(process.env.ANTHROPIC_API_KEY);
+// Initialize enhanced engine
 const enhancedEngine = new EnhancedFacilitationEngine(process.env.ANTHROPIC_API_KEY);
 const messageAssessor = new MessageAssessor(process.env.ANTHROPIC_API_KEY);
 
@@ -153,7 +151,7 @@ function startSilenceChecker(sessionShortCode) {
     const silenceThreshold = ageCalibration.silenceToleranceSec || FACILITATION_PARAMS.silenceTimeoutSec;
 
     if (snapshot.silenceSinceLastActivitySec >= silenceThreshold) {
-      const decision = await facilitationEngine.decide(session.stateTracker);
+      const decision = await enhancedEngine.decide(session.stateTracker);
       if (decision.shouldSpeak && decision.message) {
         await handleFacilitatorMessage(sessionShortCode, decision);
       }
@@ -232,7 +230,7 @@ async function handleParticipantMessage(sessionShortCode, clientId, text) {
     const ages = Array.from(session.stateTracker.participants.values()).map(p => p.age);
     const ageCalibration = getAgeCalibration(ages);
 
-    const reply = await facilitationEngine.warmupChat(
+    const reply = await enhancedEngine.warmupChat(
       sessionShortCode, participant.name, text, names, ageCalibration
     );
 
@@ -291,8 +289,8 @@ async function handleParticipantMessage(sessionShortCode, clientId, text) {
       llmAssessment
     });
   } else {
-    // Fallback to legacy engine
-    decision = await facilitationEngine.decide(session.stateTracker);
+    // Fallback to legacy decide() path (still uses enhanced engine)
+    decision = await enhancedEngine.decide(session.stateTracker);
   }
 
   const pipelineLatencyMs = Date.now() - pipelineStart;
@@ -408,7 +406,7 @@ wss.on("connection", (ws) => {
         const snapshot = await session.stateTracker.getStateSnapshot();
 
         // Include analyzer state if available
-        const analyzerState = facilitationEngine.getAnalyzerState?.(sessionId) || null;
+        const analyzerState = enhancedEngine.getAnalyzerState?.(sessionId) || null;
 
         ws.send(JSON.stringify({
           type: "dashboard_joined",
@@ -578,7 +576,7 @@ wss.on("connection", (ws) => {
         await sessionsRepo.updateStatus(session.dbSession.id, 'active');
 
         // Clear warmup chat history — Plato is now in facilitator mode
-        facilitationEngine.clearWarmupHistory(currentSessionShortCode);
+        enhancedEngine.clearWarmupHistory(currentSessionShortCode);
 
         const names = Array.from(session.stateTracker.participants.values()).map(p => p.name);
         const ages = Array.from(session.stateTracker.participants.values()).map(p => p.age);
@@ -594,7 +592,7 @@ wss.on("connection", (ws) => {
           });
         }
 
-        const opening = await facilitationEngine.generateOpening(
+        const opening = await enhancedEngine.generateOpening(
           session.topic, names, ageCalibration
         );
 
@@ -645,9 +643,9 @@ wss.on("connection", (ws) => {
         }
 
         // Clean up facilitation engine session state
-        facilitationEngine.cleanupSession(session.stateTracker?.sessionId);
+        enhancedEngine.cleanupSession(session.stateTracker?.sessionId);
 
-        const closing = await facilitationEngine.generateClosing(session.stateTracker);
+        const closing = await enhancedEngine.generateClosing(session.stateTracker);
         await session.stateTracker.recordAIMessage(closing, "synthesize");
 
         broadcastToSession(currentSessionShortCode, {
