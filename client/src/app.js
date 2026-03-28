@@ -405,8 +405,7 @@
   }
 
   function getAge() {
-    const val = document.getElementById("age-input").value;
-    return parseInt(val) || 12;
+    return 25; // Default age — age input removed from UI
   }
 
   // ---- Event Listeners ----
