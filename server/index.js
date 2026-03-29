@@ -383,11 +383,14 @@ wss.on("connection", (ws, req) => {
 
   ws.on("message", async (raw, isBinary) => {
     // Skip binary data (no longer using local STT process)
-    if (isBinary || Buffer.isBuffer(raw)) return;
+    if (isBinary) return;
+
+    // Convert Buffer to string (ws library sends Buffers for text frames too)
+    const text = typeof raw === 'string' ? raw : raw.toString('utf8');
 
     let msg;
     try {
-      msg = JSON.parse(raw);
+      msg = JSON.parse(text);
     } catch {
       return;
     }
