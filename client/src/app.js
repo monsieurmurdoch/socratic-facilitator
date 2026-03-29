@@ -218,8 +218,10 @@
       configOverwrite: {
         startWithAudioMuted: false,
         startWithVideoMuted: false,
+        prejoinConfig: { enabled: false },
         prejoinPageEnabled: false,
         disableDeepLinking: true,
+        enableInsecureRoomNameWarning: false,
         toolbarButtons: [
           'microphone', 'camera', 'desktop', 'fullscreen',
           'raisehand', 'tileview', 'participants-pane',
@@ -227,7 +229,8 @@
         ],
         disableInviteFunctions: true,
         hideConferenceSubject: true,
-        disableThirdPartyRequests: true
+        disableThirdPartyRequests: true,
+        p2p: { enabled: true }
       },
       interfaceConfigOverwrite: {
         SHOW_JITSI_WATERMARK: false,
@@ -251,6 +254,14 @@
     jitsiApi.addEventListener('readyToClose', () => {
       console.log('[Jitsi] Conference ended');
       send({ type: "end_discussion" });
+    });
+
+    jitsiApi.addEventListener('videoConferenceLeft', () => {
+      console.log('[Jitsi] Left conference');
+    });
+
+    jitsiApi.addEventListener('errorOccurred', (event) => {
+      console.error('[Jitsi] Error:', event);
     });
 
     console.log('[Jitsi] Launched room:', roomName);
