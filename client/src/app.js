@@ -15,7 +15,6 @@
   let jitsiApi = null;
   let materials = [];
   const MAX_MATERIALS = 5;
-  const pendingMessages = [];
 
   // ---- DOM Elements ----
   const screens = {
@@ -51,12 +50,6 @@
 
     ws.onopen = () => {
       console.log("Connected to server");
-      // Send any queued messages
-      while (pendingMessages.length > 0) {
-        const msg = pendingMessages.shift();
-        ws.send(JSON.stringify(msg));
-        console.log("Sent queued message:", msg.type);
-      }
       // If we have a pending join from URL, auto-join once connected
       const params = new URLSearchParams(window.location.search);
       const joinCode = params.get("join");
@@ -81,20 +74,6 @@
   function send(msg) {
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify(msg));
-    } else {
-      console.warn("WebSocket not ready, State:", ws?.readyState);
-    }
-  }
-
-  // Queue for messages when WS is connecting
-  function sendWhenReady(msg) {
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify(msg));
-    } else if (ws && ws.readyState === 0) {
-      // Still connecting, queue the message
-      pendingMessages.push(msg);
-    } else {
-      console.warn("WebSocket not connected. State:", ws?.readyState);
     }
   }
 
@@ -107,7 +86,7 @@
     });
     const json = await res.json();
     if (!res.ok) {
-      throw new Error(json.error || `HTTP ${res.status}`);
+      throw new Error(json.error || `Server error ${res.status}`);
     }
     return json;
   }
@@ -116,7 +95,7 @@
     const res = await fetch(endpoint);
     const json = await res.json();
     if (!res.ok) {
-      throw new Error(json.error || `HTTP ${res.status}`);
+      throw new Error(json.error || `Server error ${res.status}`);
     }
     return json;
   }
@@ -550,26 +529,34 @@
     }
 
     const sessionTitle = title || "Open Discussion";
+    const btn = document.getElementById("start-session-btn");
+    btn.disabled = true;
+    btn.textContent = "Creating...";
+
+    console.log("[Session] Creating:", { title: sessionTitle, question });
 
     apiPost("/api/sessions", {
       title: sessionTitle,
       openingQuestion: question || null,
       conversationGoal: null
     }).then(session => {
-      if (!session || !session.shortCode) {
-        throw new Error("Invalid response from server");
+      console.log("[Session] Created:", session);
+      if (!session.shortCode) {
+        throw new Error("Server returned session without shortCode");
       }
       currentSessionId = session.shortCode;
       isHost = true;
-      sendWhenReady({
+      send({
         type: "join_session",
         sessionId: session.shortCode,
         name: myName,
         age: getAge()
       });
     }).catch(error => {
-      console.error("Session creation error:", error);
+      console.error("[Session] Creation error:", error);
       alert("Failed to create session: " + error.message);
+      btn.disabled = false;
+      btn.textContent = "Create Session";
     });
   });
 
