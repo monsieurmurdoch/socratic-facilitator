@@ -15,6 +15,7 @@
   let jitsiApi = null;
   let materials = [];
   const MAX_MATERIALS = 5;
+  const pendingMessages = [];
 
   // ---- DOM Elements ----
   const screens = {
@@ -50,6 +51,12 @@
 
     ws.onopen = () => {
       console.log("Connected to server");
+      // Send any queued messages
+      while (pendingMessages.length > 0) {
+        const msg = pendingMessages.shift();
+        ws.send(JSON.stringify(msg));
+        console.log("Sent queued message:", msg.type);
+      }
       // If we have a pending join from URL, auto-join once connected
       const params = new URLSearchParams(window.location.search);
       const joinCode = params.get("join");
@@ -74,6 +81,21 @@
   function send(msg) {
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify(msg));
+    } else {
+      console.warn("WebSocket not ready, State:", ws?.readyState);
+    }
+  }
+
+  // Queue for messages when WS is connecting
+  const pendingMessages = [];
+  function sendWhenReady(msg) {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify(msg));
+    } else if (ws && ws.readyState === 0) {
+      // Still connecting, queue the message
+      pendingMessages.push(msg);
+    } else {
+      console.warn("WebSocket not connected. State:", ws?.readyState);
     }
   }
 
@@ -540,7 +562,7 @@
       }
       currentSessionId = session.shortCode;
       isHost = true;
-      send({
+      sendWhenReady({
         type: "join_session",
         sessionId: session.shortCode,
         name: myName,
