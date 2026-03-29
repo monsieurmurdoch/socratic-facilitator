@@ -378,6 +378,7 @@
       case "discussion_started":
         showScreen("video");
         launchJitsi(currentSessionId, myName);
+        startSpeechRecognition();
         saveState();
         break;
 
@@ -397,6 +398,7 @@
 
       case "discussion_ended":
         addFacilitatorMessage("The discussion has ended. Thank you for participating.", "closing");
+        stopSpeechRecognition();
         destroyJitsi();
         clearState();
         break;
@@ -515,9 +517,27 @@
     container.scrollTop = container.scrollHeight;
   }
 
-  function addTranscriptEntry(name, text, isSelf) {
+  function addTranscriptEntry(name, text, isSelf, isInterim) {
     const container = document.getElementById("transcript-messages");
     if (!container) return;
+
+    // For interim (partial) STT results, update in place
+    if (isInterim) {
+      let partial = container.querySelector('.transcript-interim');
+      if (!partial) {
+        partial = document.createElement("div");
+        partial.className = "transcript-entry self transcript-interim";
+        container.appendChild(partial);
+      }
+      partial.innerHTML = `<strong>${escapeHtml(name)}:</strong> <em>${escapeHtml(text)}</em>`;
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
+
+    // Remove interim element when we get a final result
+    const interim = container.querySelector('.transcript-interim');
+    if (interim) interim.remove();
+
     const div = document.createElement("div");
     if (name === "system") {
       div.className = "transcript-system";
@@ -728,6 +748,102 @@
       send({ type: "end_discussion" });
     }
   });
+
+  // ---- Speech Recognition (client-side STT via Web Speech API) ----
+  let recognition = null;
+  let recognitionActive = false;
+
+  function startSpeechRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn("[STT] Web Speech API not supported in this browser");
+      return;
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.maxAlternatives = 1;
+
+    let finalTranscript = "";
+    let silenceTimer = null;
+
+    recognition.onstart = () => {
+      recognitionActive = true;
+      console.log("[STT] Listening...");
+    };
+
+    recognition.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript + " ";
+        } else {
+          interim += result[0].transcript;
+        }
+      }
+
+      // Show interim transcript in the transcript feed
+      if (interim) {
+        addTranscriptEntry(myName, interim + " ...", true, true);
+      }
+
+      // When we get final results, batch them and send after a pause
+      if (finalTranscript.trim()) {
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(() => {
+          const text = finalTranscript.trim();
+          if (text.length > 2) {
+            console.log("[STT] Sending:", text);
+            send({ type: "message", text });
+          }
+          finalTranscript = "";
+        }, 1500); // Wait 1.5s of silence before sending
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.warn("[STT] Error:", event.error);
+      // Auto-restart on non-fatal errors
+      if (event.error === "no-speech" || event.error === "aborted") {
+        restartRecognition();
+      }
+    };
+
+    recognition.onend = () => {
+      recognitionActive = false;
+      console.log("[STT] Ended");
+      // Auto-restart if we're still in a discussion
+      if (document.getElementById("video-screen").classList.contains("active")) {
+        restartRecognition();
+      }
+    };
+
+    recognition.start();
+  }
+
+  function restartRecognition() {
+    if (recognitionActive) return;
+    setTimeout(() => {
+      try {
+        if (recognition && document.getElementById("video-screen").classList.contains("active")) {
+          recognition.start();
+        }
+      } catch (e) {
+        console.warn("[STT] Restart failed:", e.message);
+      }
+    }, 300);
+  }
+
+  function stopSpeechRecognition() {
+    if (recognition) {
+      try { recognition.stop(); } catch (e) { /* already stopped */ }
+      recognition = null;
+      recognitionActive = false;
+    }
+  }
 
   // ---- Audio (TTS playback from server) ----
   let playbackContext;
