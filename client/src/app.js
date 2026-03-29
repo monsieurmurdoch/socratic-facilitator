@@ -87,7 +87,6 @@
   }
 
   // Queue for messages when WS is connecting
-  const pendingMessages = [];
   function sendWhenReady(msg) {
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify(msg));
