@@ -172,7 +172,8 @@
     return json;
   }
 
-  // ---- Jitsi Integration ----
+  // ---- Jitsi / JaaS Integration ----
+  const JAAS_APP_ID = "vpaas-magic-cookie-44bf27b66fab458bae6a8c271ea52a82";
   let jitsiScriptLoaded = false;
 
   function loadJitsiScript() {
@@ -183,12 +184,12 @@
         return;
       }
       const script = document.createElement("script");
-      script.src = "https://meet.jit.si/external_api.js";
+      script.src = `https://8x8.vc/${JAAS_APP_ID}/external_api.js`;
       script.onload = () => {
         jitsiScriptLoaded = true;
         resolve();
       };
-      script.onerror = () => reject(new Error("Failed to load Jitsi API"));
+      script.onerror = () => reject(new Error("Failed to load JaaS API"));
       document.head.appendChild(script);
     });
   }
@@ -207,10 +208,19 @@
     }
 
     const container = document.getElementById("jitsi-container");
-    const domain = "meet.jit.si";
 
-    jitsiApi = new JitsiMeetExternalAPI(domain, {
-      roomName: `socratic-${roomName}`,
+    // Fetch JWT from server for authenticated access
+    let jwt = null;
+    try {
+      const tokenData = await apiGet(`/api/jitsi-token?room=socratic-${roomName}&name=${encodeURIComponent(displayName)}&moderator=${isHost}`);
+      jwt = tokenData.token;
+      console.log("[Jitsi] Got JWT token");
+    } catch (e) {
+      console.warn("[Jitsi] No JWT token, joining without auth:", e.message);
+    }
+
+    const options = {
+      roomName: `${JAAS_APP_ID}/socratic-${roomName}`,
       parentNode: container,
       userInfo: {
         displayName: displayName
@@ -241,7 +251,13 @@
         MOBILE_APP_PROMO: false,
         HIDE_INVITE_MORE_HEADER: true
       }
-    });
+    };
+
+    if (jwt) {
+      options.jwt = jwt;
+    }
+
+    jitsiApi = new JitsiMeetExternalAPI("8x8.vc", options);
 
     jitsiApi.addEventListener('participantJoined', (event) => {
       console.log('[Jitsi] Participant joined:', event);
