@@ -77,13 +77,18 @@
   }
 
   // ---- WebSocket ----
+  let wsConnectedToServer = false;
+
   function connect() {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(`${protocol}//${location.host}`);
+    const url = `${protocol}//${location.host}`;
+    console.log("[WS] Connecting to:", url);
+    ws = new WebSocket(url);
     ws.binaryType = "arraybuffer";
+    wsConnectedToServer = false;
 
     ws.onopen = () => {
-      console.log("[WS] Connected to server");
+      console.log("[WS] Socket open (handshake complete)");
 
       // Try to restore saved session
       const saved = loadState();
@@ -298,6 +303,11 @@
   function handleServerMessage(msg) {
     console.log("[WS] Received:", msg.type, msg);
     switch (msg.type) {
+      case "connected":
+        wsConnectedToServer = true;
+        console.log("[WS] Server confirmed connection, clientId:", msg.clientId);
+        break;
+
       case "session_created":
         currentSessionId = msg.sessionId;
         send({ type: "join_session", sessionId: msg.sessionId, name: myName, age: getAge() });
