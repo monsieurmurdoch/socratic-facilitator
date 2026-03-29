@@ -84,12 +84,20 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
     });
-    return res.json();
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || `Server error ${res.status}`);
+    }
+    return json;
   }
 
   async function apiGet(endpoint) {
     const res = await fetch(endpoint);
-    return res.json();
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || `Server error ${res.status}`);
+    }
+    return json;
   }
 
   // ---- Jitsi Integration ----
@@ -521,12 +529,21 @@
     }
 
     const sessionTitle = title || "Open Discussion";
+    const btn = document.getElementById("start-session-btn");
+    btn.disabled = true;
+    btn.textContent = "Creating...";
+
+    console.log("[Session] Creating:", { title: sessionTitle, question });
 
     apiPost("/api/sessions", {
       title: sessionTitle,
       openingQuestion: question || null,
       conversationGoal: null
     }).then(session => {
+      console.log("[Session] Created:", session);
+      if (!session.shortCode) {
+        throw new Error("Server returned session without shortCode");
+      }
       currentSessionId = session.shortCode;
       isHost = true;
       send({
@@ -536,8 +553,10 @@
         age: getAge()
       });
     }).catch(error => {
-      console.error("Session creation error:", error);
-      alert("Failed to create session");
+      console.error("[Session] Creation error:", error);
+      alert("Failed to create session: " + error.message);
+      btn.disabled = false;
+      btn.textContent = "Create Session";
     });
   });
 
