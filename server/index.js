@@ -372,9 +372,14 @@ async function initialize() {
 
 initialize();
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  console.log(`[WS] New connection from ${ip} (total: ${wss.clients.size})`);
   let clientId = uuidv4();
   let currentSessionShortCode = null;
+
+  // Send a welcome message so client knows the WS is truly connected end-to-end
+  ws.send(JSON.stringify({ type: "connected", clientId }));
 
   ws.on("message", async (raw, isBinary) => {
     // Skip binary data (no longer using local STT process)
@@ -698,8 +703,7 @@ wss.on("connection", (ws) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  Socratic Facilitator running at http://localhost:${PORT}\n`);
-  console.log(`  Available topics:`);
-  DISCUSSION_TOPICS.forEach(t => console.log(`    - ${t.title} (${t.id})`));
-  console.log();
+  console.log(`\n  Socratic Facilitator running at http://localhost:${PORT}`);
+  console.log(`  WebSocket server attached to HTTP server`);
+  console.log(`  Ready.\n`);
 });
