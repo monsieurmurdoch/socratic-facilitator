@@ -51,6 +51,61 @@ app.use("/api/sessions", sessionsRouter);
 // Health check
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
+// JaaS JWT token generation
+const jwt = require("jsonwebtoken");
+const JAAS_APP_ID = process.env.JAAS_APP_ID || "vpaas-magic-cookie-44bf27b66fab458bae6a8c271ea52a82";
+const JAAS_API_KEY = process.env.JAAS_API_KEY || null;
+const JAAS_KEY_ID = process.env.JAAS_KEY_ID || null;
+
+app.get("/api/jitsi-token", (req, res) => {
+  if (!JAAS_API_KEY) {
+    return res.status(501).json({ error: "JaaS API key not configured" });
+  }
+
+  const { room, name, moderator } = req.query;
+  const userId = uuidv4();
+  const now = Math.floor(Date.now() / 1000);
+
+  const payload = {
+    aud: "jitsi",
+    iss: "chat",
+    iat: now,
+    exp: now + 7200, // 2 hours
+    nbf: now - 5,
+    sub: JAAS_APP_ID,
+    context: {
+      features: {
+        livestreaming: false,
+        "file-upload": false,
+        "outbound-call": false,
+        "sip-outbound-call": false,
+        transcription: false,
+        recording: false
+      },
+      user: {
+        "hidden-from-recorder": false,
+        moderator: moderator === "true",
+        name: name || "Participant",
+        id: userId,
+        avatar: "",
+        email: ""
+      }
+    },
+    room: room || "*"
+  };
+
+  const token = jwt.sign(payload, JAAS_API_KEY, {
+    algorithm: "RS256",
+    header: {
+      kid: JAAS_KEY_ID,
+      typ: "JWT",
+      alg: "RS256"
+    }
+  });
+
+  res.json({ token });
+});
+
 // Legacy topics endpoint (kept for backward compatibility)
 app.get("/api/topics", (req, res) => {
   res.json(DISCUSSION_TOPICS.map(t => ({
