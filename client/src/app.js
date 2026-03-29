@@ -392,7 +392,7 @@
       case "facilitator_message":
         addFacilitatorMessage(msg.text, msg.move);
         setFacilitatorStatus("speaking");
-        setTimeout(() => setFacilitatorStatus("listening"), 3000);
+        setPlatoTileSpeaking(msg.text);
         break;
 
       case "discussion_ended":
@@ -544,11 +544,42 @@
     container.scrollTop = container.scrollHeight;
   }
 
+  let platoSpeakingTimer = null;
+
   function setFacilitatorStatus(status) {
     const badge = document.getElementById("facilitator-status");
     if (!badge) return;
     badge.className = `status-badge ${status}`;
     badge.textContent = status === "speaking" ? "Speaking" : "Listening";
+  }
+
+  function setPlatoTileSpeaking(text) {
+    const tile = document.getElementById("plato-tile");
+    const tileStatus = document.getElementById("plato-tile-status");
+    const tileText = document.getElementById("plato-tile-text");
+    if (!tile) return;
+
+    // Clear any existing timer
+    if (platoSpeakingTimer) clearTimeout(platoSpeakingTimer);
+
+    tile.classList.add("speaking");
+    if (tileStatus) tileStatus.textContent = "Speaking";
+    if (tileText) {
+      // Show a preview of what Plato is saying
+      const preview = text.length > 100 ? text.substring(0, 97) + "..." : text;
+      tileText.textContent = preview;
+    }
+
+    // Estimate speaking duration: ~150 words per minute for TTS
+    const words = text.split(/\s+/).length;
+    const speakingMs = Math.max(3000, (words / 150) * 60 * 1000);
+
+    platoSpeakingTimer = setTimeout(() => {
+      tile.classList.remove("speaking");
+      if (tileStatus) tileStatus.textContent = "Listening";
+      if (tileText) tileText.textContent = "";
+      setFacilitatorStatus("listening");
+    }, speakingMs);
   }
 
   function escapeHtml(text) {
