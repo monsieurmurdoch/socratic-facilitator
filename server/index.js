@@ -387,6 +387,9 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    console.log(`[WS] Received: ${msg.type}`, msg.type === 'join_session' ? `sessionId=${msg.sessionId} name=${msg.name}` : '');
+
+    try {
     switch (msg.type) {
 
       case "create_session": {
@@ -455,16 +458,20 @@ wss.on("connection", (ws) => {
 
       case "join_session": {
         const { sessionId, name, age } = msg;
+        console.log(`[join_session] Looking up session: ${sessionId}`);
         let session = activeSessions.get(sessionId);
 
         // If not in memory, try loading from DB (supports REST-created sessions)
         if (!session) {
+          console.log(`[join_session] Not in memory, loading from DB...`);
           try {
             const dbSession = await sessionsRepo.findByShortCode(sessionId);
+            console.log(`[join_session] DB lookup result:`, dbSession ? `found (id=${dbSession.id})` : 'not found');
             if (dbSession) {
               const SessionStateTracker = require("./stateTracker").SessionStateTracker;
               const stateTracker = new SessionStateTracker(dbSession.id, dbSession);
               await stateTracker.loadFromDatabase();
+              console.log(`[join_session] State tracker loaded`);
 
               // Try to find a matching topic for context
               const topic = DISCUSSION_TOPICS.find(t => t.title === dbSession.title) || {
@@ -485,18 +492,21 @@ wss.on("connection", (ws) => {
               activeSessions.set(sessionId, session);
             }
           } catch (err) {
-            console.error("Error loading session from DB:", err);
+            console.error("[join_session] Error loading from DB:", err);
           }
         }
 
         if (!session) {
+          console.log(`[join_session] Session not found, sending error`);
           ws.send(JSON.stringify({ type: "error", text: "Session not found" }));
           return;
         }
 
+        console.log(`[join_session] Adding participant: ${name}`);
         currentSessionShortCode = sessionId;
         await session.stateTracker.addParticipant(clientId, name, age || 12);
         session.clients.push({ ws, clientId, name });
+        console.log(`[join_session] Sending session_joined response`);
 
         broadcastToSession(sessionId, {
           type: "participant_joined",
@@ -652,6 +662,12 @@ wss.on("connection", (ws) => {
         console.log(`[${currentSessionShortCode}] Discussion ended.`);
         break;
       }
+    }
+    } catch (err) {
+      console.error(`[WS] Error handling ${msg.type}:`, err);
+      try {
+        ws.send(JSON.stringify({ type: "error", text: "Server error: " + err.message }));
+      } catch (e) { /* ws may be closed */ }
     }
   });
 
