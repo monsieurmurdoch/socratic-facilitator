@@ -766,8 +766,8 @@
     recognition.lang = "en-US";
     recognition.maxAlternatives = 1;
 
-    let finalTranscript = "";
-    let silenceTimer = null;
+    let pendingText = "";
+    let flushTimer = null;
 
     recognition.onstart = () => {
       recognitionActive = true;
@@ -779,7 +779,21 @@
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          finalTranscript += result[0].transcript + " ";
+          // Send final results immediately
+          const text = result[0].transcript.trim();
+          if (text.length > 2) {
+            pendingText += text + " ";
+            // Flush quickly — just enough to catch multi-sentence bursts
+            clearTimeout(flushTimer);
+            flushTimer = setTimeout(() => {
+              const toSend = pendingText.trim();
+              if (toSend) {
+                console.log("[STT] Sending:", toSend);
+                send({ type: "message", text: toSend });
+                pendingText = "";
+              }
+            }, 300);
+          }
         } else {
           interim += result[0].transcript;
         }
@@ -788,19 +802,6 @@
       // Show interim transcript in the transcript feed
       if (interim) {
         addTranscriptEntry(myName, interim + " ...", true, true);
-      }
-
-      // When we get final results, batch them and send after a pause
-      if (finalTranscript.trim()) {
-        clearTimeout(silenceTimer);
-        silenceTimer = setTimeout(() => {
-          const text = finalTranscript.trim();
-          if (text.length > 2) {
-            console.log("[STT] Sending:", text);
-            send({ type: "message", text });
-          }
-          finalTranscript = "";
-        }, 1500); // Wait 1.5s of silence before sending
       }
     };
 
