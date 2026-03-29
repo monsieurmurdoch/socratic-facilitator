@@ -11,14 +11,16 @@ let pool = null;
 
 function getPool() {
   if (!pool) {
+    // Railway internal Postgres doesn't need SSL; external does
+    const isInternal = (process.env.DATABASE_URL || '').includes('.railway.internal');
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production'
+      ssl: (!isInternal && process.env.NODE_ENV === 'production')
         ? { rejectUnauthorized: false }
         : false,
       max: 20,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      connectionTimeoutMillis: 5000,
     });
 
     pool.on('error', (err) => {
@@ -69,17 +71,25 @@ async function initializeSchema() {
   const path = require('path');
   const schemaPath = path.join(__dirname, 'schema.sql');
 
+  console.log('[DB] Connecting to database...');
+  console.log('[DB] URL host:', (process.env.DATABASE_URL || '').replace(/\/\/.*@/, '//***@'));
+
   try {
+    // Test connection first
+    await query('SELECT NOW()');
+    console.log('[DB] Connection successful');
+
     const schema = fs.readFileSync(schemaPath, 'utf8');
     await query(schema);
-    console.log('Database schema initialized successfully');
+    console.log('[DB] Schema initialized successfully');
   } catch (error) {
     // Ignore "already exists" errors
-    if (!error.message.includes('already exists') && !error.message.includes('duplicate key')) {
-      console.error('Schema initialization error:', error.message);
+    if (error.message.includes('already exists') || error.message.includes('duplicate key')) {
+      console.log('[DB] Schema already exists');
+    } else {
+      console.error('[DB] Schema initialization error:', error.message);
       throw error;
     }
-    console.log('Database schema already exists');
   }
 }
 
