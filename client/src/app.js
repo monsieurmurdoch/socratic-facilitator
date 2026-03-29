@@ -84,12 +84,20 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data)
     });
-    return res.json();
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || `HTTP ${res.status}`);
+    }
+    return json;
   }
 
   async function apiGet(endpoint) {
     const res = await fetch(endpoint);
-    return res.json();
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || `HTTP ${res.status}`);
+    }
+    return json;
   }
 
   // ---- Jitsi Integration ----
@@ -527,6 +535,9 @@
       openingQuestion: question || null,
       conversationGoal: null
     }).then(session => {
+      if (!session || !session.shortCode) {
+        throw new Error("Invalid response from server");
+      }
       currentSessionId = session.shortCode;
       isHost = true;
       send({
@@ -537,7 +548,7 @@
       });
     }).catch(error => {
       console.error("Session creation error:", error);
-      alert("Failed to create session");
+      alert("Failed to create session: " + error.message);
     });
   });
 
