@@ -16,6 +16,40 @@
   let materials = [];
   const MAX_MATERIALS = 5;
 
+  // ---- State Persistence ----
+  const STORAGE_KEY = "socratic_state";
+
+  function saveState() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        myName,
+        myId,
+        currentSessionId,
+        isHost,
+        participants,
+        savedAt: Date.now()
+      }));
+    } catch (e) { /* storage full or unavailable */ }
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const state = JSON.parse(raw);
+      // Expire after 4 hours
+      if (Date.now() - state.savedAt > 4 * 60 * 60 * 1000) {
+        clearState();
+        return null;
+      }
+      return state;
+    } catch (e) { return null; }
+  }
+
+  function clearState() {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
   // ---- DOM Elements ----
   const screens = {
     welcome: document.getElementById("welcome-screen"),
@@ -49,7 +83,24 @@
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
-      console.log("Connected to server");
+      console.log("[WS] Connected to server");
+
+      // Try to restore saved session
+      const saved = loadState();
+      if (saved && saved.currentSessionId && saved.myId) {
+        console.log("[WS] Restoring session:", saved.currentSessionId, "as", saved.myName);
+        myName = saved.myName;
+        myId = saved.myId;
+        currentSessionId = saved.currentSessionId;
+        isHost = saved.isHost;
+        send({
+          type: "rejoin_session",
+          sessionId: saved.currentSessionId,
+          oldClientId: saved.myId
+        });
+        return;
+      }
+
       // If we have a pending join from URL, auto-join once connected
       const params = new URLSearchParams(window.location.search);
       const joinCode = params.get("join");
@@ -264,6 +315,10 @@
           document.getElementById("lobby-topic-section").style.display = "block";
         }
         showScreen("lobby");
+        saveState();
+
+        // Pre-fill name input in case we need it
+        document.getElementById("name-input").value = myName;
 
         // If host, prime materials now that session exists
         if (isHost && materials.length > 0) {
@@ -286,6 +341,7 @@
       case "discussion_started":
         showScreen("video");
         launchJitsi(currentSessionId, myName);
+        saveState();
         break;
 
       case "participant_message":
@@ -305,9 +361,16 @@
       case "discussion_ended":
         addFacilitatorMessage("The discussion has ended. Thank you for participating.", "closing");
         destroyJitsi();
+        clearState();
         break;
 
       case "error":
+        console.error("[Server] Error:", msg.text);
+        // If rejoin failed, clear stale state and go to welcome
+        if (msg.text.includes("not found") || msg.text.includes("expired")) {
+          clearState();
+          showScreen("welcome");
+        }
         alert(msg.text);
         break;
     }
@@ -616,7 +679,15 @@
   }
 
   // ---- Init ----
-  showScreen("welcome");
+  const savedState = loadState();
+  if (savedState && savedState.currentSessionId) {
+    // Show a loading state while we try to rejoin
+    showScreen("lobby");
+    document.getElementById("session-code").textContent = savedState.currentSessionId;
+    document.getElementById("participant-count").textContent = "Reconnecting...";
+  } else {
+    showScreen("welcome");
+  }
   connect();
   checkDirectJoin();
   renderMaterials();
