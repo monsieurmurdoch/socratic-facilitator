@@ -65,15 +65,31 @@
       const msg = JSON.parse(event.data);
       handleServerMessage(msg);
     };
-    ws.onclose = () => {
-      console.log("Disconnected. Reconnecting in 2s...");
+    ws.onclose = (event) => {
+      console.log("[WS] Disconnected. Code:", event.code, "Reason:", event.reason, "— reconnecting in 2s...");
       setTimeout(connect, 2000);
+    };
+    ws.onerror = (event) => {
+      console.error("[WS] Error:", event);
     };
   }
 
   function send(msg) {
+    console.log("[WS] Sending:", msg.type, "| readyState:", ws?.readyState);
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify(msg));
+    } else {
+      console.warn("[WS] Not connected (state:", ws?.readyState, ") — queuing retry for:", msg.type);
+      // Retry once after reconnect
+      const retryInterval = setInterval(() => {
+        if (ws && ws.readyState === 1) {
+          console.log("[WS] Retrying:", msg.type);
+          ws.send(JSON.stringify(msg));
+          clearInterval(retryInterval);
+        }
+      }, 500);
+      // Give up after 10s
+      setTimeout(() => clearInterval(retryInterval), 10000);
     }
   }
 
@@ -229,6 +245,7 @@
 
   // ---- Message Handlers ----
   function handleServerMessage(msg) {
+    console.log("[WS] Received:", msg.type, msg);
     switch (msg.type) {
       case "session_created":
         currentSessionId = msg.sessionId;
