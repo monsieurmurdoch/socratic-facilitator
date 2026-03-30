@@ -375,10 +375,19 @@
         addTranscriptEntry("system", `${msg.name} left the discussion`);
         break;
 
+      case "enter_video":
+        showScreen("video");
+        launchJitsi(currentSessionId, myName);
+        startSpeechRecognition();
+        document.getElementById("start-discussion-btn").style.display = "";
+        saveState();
+        break;
+
       case "discussion_started":
         showScreen("video");
         launchJitsi(currentSessionId, myName);
         startSpeechRecognition();
+        document.getElementById("start-discussion-btn").style.display = "none";
         saveState();
         break;
 
@@ -737,8 +746,13 @@
     send({ type: "join_session", sessionId: code, name: myName, age: getAge() });
   });
 
-  // Start discussion
-  document.getElementById("start-btn").addEventListener("click", () => {
+  // Enter video room (warmup mode)
+  document.getElementById("enter-video-btn").addEventListener("click", () => {
+    send({ type: "enter_video" });
+  });
+
+  // Start discussion (from within the video room)
+  document.getElementById("start-discussion-btn").addEventListener("click", () => {
     send({ type: "start_discussion" });
   });
 
@@ -768,11 +782,26 @@
 
     let pendingText = "";
     let flushTimer = null;
+    let interimFlushTimer = null;
+    let lastInterim = "";
+    let networkErrorCount = 0;
+    const MAX_NETWORK_RETRIES = 3;
 
     recognition.onstart = () => {
       recognitionActive = true;
+      networkErrorCount = 0;
       console.log("[STT] Listening...");
     };
+
+    function flushText() {
+      const toSend = pendingText.trim();
+      if (toSend) {
+        console.log("[STT] Sending:", toSend);
+        send({ type: "message", text: toSend });
+        pendingText = "";
+        lastInterim = "";
+      }
+    }
 
     recognition.onresult = (event) => {
       let interim = "";
@@ -783,16 +812,11 @@
           const text = result[0].transcript.trim();
           if (text.length > 2) {
             pendingText += text + " ";
+            lastInterim = "";
+            clearTimeout(interimFlushTimer);
             // Flush quickly — just enough to catch multi-sentence bursts
             clearTimeout(flushTimer);
-            flushTimer = setTimeout(() => {
-              const toSend = pendingText.trim();
-              if (toSend) {
-                console.log("[STT] Sending:", toSend);
-                send({ type: "message", text: toSend });
-                pendingText = "";
-              }
-            }, 300);
+            flushTimer = setTimeout(flushText, 300);
           }
         } else {
           interim += result[0].transcript;
@@ -802,13 +826,33 @@
       // Show interim transcript in the transcript feed
       if (interim) {
         addTranscriptEntry(myName, interim + " ...", true, true);
+        // Safari often never fires isFinal with continuous:true.
+        // If interim text stabilises for 1.5s, treat it as final.
+        lastInterim = interim;
+        clearTimeout(interimFlushTimer);
+        interimFlushTimer = setTimeout(() => {
+          const text = lastInterim.trim();
+          if (text.length > 2) {
+            pendingText += text + " ";
+            lastInterim = "";
+            clearTimeout(flushTimer);
+            flushTimer = setTimeout(flushText, 300);
+          }
+        }, 1500);
       }
     };
 
     recognition.onerror = (event) => {
       console.warn("[STT] Error:", event.error);
+      if (event.error === "network") {
+        networkErrorCount++;
+        if (networkErrorCount >= MAX_NETWORK_RETRIES) {
+          console.error("[STT] Speech recognition unavailable — browser may not support Web Speech API (common in Brave). Try Safari or Chrome.");
+          return; // stop retrying
+        }
+      }
       // Auto-restart on non-fatal errors
-      if (event.error === "no-speech" || event.error === "aborted") {
+      if (event.error === "no-speech" || event.error === "aborted" || event.error === "network") {
         restartRecognition();
       }
     };
@@ -816,6 +860,8 @@
     recognition.onend = () => {
       recognitionActive = false;
       console.log("[STT] Ended");
+      // Don't restart if we've exhausted network retries
+      if (networkErrorCount >= MAX_NETWORK_RETRIES) return;
       // Auto-restart if we're still in a discussion
       if (document.getElementById("video-screen").classList.contains("active")) {
         restartRecognition();

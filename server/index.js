@@ -629,7 +629,22 @@ wss.on("connection", (ws, req) => {
 
         if (session.active) {
           ws.send(JSON.stringify({ type: "discussion_started" }));
+        } else if (session.inVideoRoom) {
+          ws.send(JSON.stringify({ type: "enter_video" }));
         }
+        break;
+      }
+
+      case "enter_video": {
+        // Move everyone into the video room in warmup mode (session.active stays false)
+        const session = activeSessions.get(currentSessionShortCode);
+        if (!session) return;
+
+        session.inVideoRoom = true;
+
+        broadcastToSession(currentSessionShortCode, {
+          type: "enter_video"
+        });
         break;
       }
 
