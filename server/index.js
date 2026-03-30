@@ -333,13 +333,23 @@ async function handleParticipantMessage(sessionShortCode, clientId, text) {
 
     if (reply) {
       // Small delay to feel natural
-      setTimeout(() => {
+      setTimeout(async () => {
         broadcastToSession(sessionShortCode, {
           type: "facilitator_message",
           text: reply,
           move: "warmup",
           timestamp: Date.now()
         });
+
+        // TTS for warmup replies
+        try {
+          const wavBuffer = await generateTTS(reply);
+          for (const client of session.clients) {
+            if (client.ws.readyState === 1) client.ws.send(wavBuffer);
+          }
+        } catch (e) {
+          console.error("[TTS] Warmup TTS error:", e.message);
+        }
       }, 800 + Math.random() * 1200);
     }
 

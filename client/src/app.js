@@ -276,6 +276,15 @@
       console.log('[Jitsi] Left conference');
     });
 
+    jitsiApi.addEventListener('audioMuteStatusChanged', (event) => {
+      console.log('[Jitsi] Audio mute:', event.muted);
+      if (event.muted) {
+        stopSpeechRecognition();
+      } else {
+        startSpeechRecognition();
+      }
+    });
+
     jitsiApi.addEventListener('errorOccurred', (event) => {
       console.error('[Jitsi] Error:', event);
     });
@@ -384,9 +393,12 @@
         break;
 
       case "discussion_started":
-        showScreen("video");
-        launchJitsi(currentSessionId, myName);
-        startSpeechRecognition();
+        // If already in video room (warmup → active), just hide the start button
+        if (!document.getElementById("video-screen").classList.contains("active")) {
+          showScreen("video");
+          launchJitsi(currentSessionId, myName);
+          startSpeechRecognition();
+        }
         document.getElementById("start-discussion-btn").style.display = "none";
         saveState();
         break;
@@ -793,11 +805,16 @@
       console.log("[STT] Listening...");
     };
 
+    let lastSentText = "";
     function flushText() {
       const toSend = pendingText.trim();
-      if (toSend) {
+      if (toSend && toSend !== lastSentText) {
         console.log("[STT] Sending:", toSend);
         send({ type: "message", text: toSend });
+        lastSentText = toSend;
+        pendingText = "";
+        lastInterim = "";
+      } else {
         pendingText = "";
         lastInterim = "";
       }
