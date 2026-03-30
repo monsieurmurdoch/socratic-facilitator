@@ -912,15 +912,33 @@
   // ---- Audio (TTS playback from server) ----
   let playbackContext;
 
-  function playAudioBuffer(arrayBuffer) {
+  // Unlock AudioContext on first user gesture (required by Safari)
+  function ensureAudioContext() {
     if (!playbackContext) {
       playbackContext = new (window.AudioContext || window.webkitAudioContext)();
     }
-    playbackContext.decodeAudioData(arrayBuffer.slice(0), (buffer) => {
-      const source = playbackContext.createBufferSource();
+    if (playbackContext.state === "suspended") {
+      playbackContext.resume().then(() => {
+        console.log("[Audio] AudioContext resumed");
+      });
+    }
+    return playbackContext;
+  }
+
+  // Unlock on any user interaction
+  ["click", "touchstart", "keydown"].forEach(evt => {
+    document.addEventListener(evt, () => ensureAudioContext(), { once: false });
+  });
+
+  function playAudioBuffer(arrayBuffer) {
+    const ctx = ensureAudioContext();
+    console.log("[Audio] Received TTS buffer:", arrayBuffer.byteLength, "bytes, context state:", ctx.state);
+    ctx.decodeAudioData(arrayBuffer.slice(0), (buffer) => {
+      const source = ctx.createBufferSource();
       source.buffer = buffer;
-      source.connect(playbackContext.destination);
+      source.connect(ctx.destination);
       source.start(0);
+      console.log("[Audio] Playing TTS, duration:", buffer.duration.toFixed(1), "s");
     }, (err) => {
       console.warn('[Audio] Failed to decode audio:', err);
     });

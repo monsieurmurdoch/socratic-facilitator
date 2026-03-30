@@ -153,8 +153,11 @@ try {
 }
 
 // Initialize enhanced engine
-const enhancedEngine = new EnhancedFacilitationEngine(process.env.ANTHROPIC_API_KEY);
-const messageAssessor = new MessageAssessor(process.env.ANTHROPIC_API_KEY);
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+console.log(`[INIT] ANTHROPIC_API_KEY: ${ANTHROPIC_KEY ? ANTHROPIC_KEY.substring(0, 10) + '...' : 'NOT SET'}`);
+console.log(`[INIT] ELEVENLABS_API_KEY: ${process.env.ELEVENLABS_API_KEY ? 'SET' : 'NOT SET'}`);
+const enhancedEngine = new EnhancedFacilitationEngine(ANTHROPIC_KEY);
+const messageAssessor = new MessageAssessor(ANTHROPIC_KEY);
 
 // Feature flag for using enhanced system
 const USE_ENHANCED_SYSTEM = process.env.USE_ENHANCED_SYSTEM !== 'false';  // Default to true

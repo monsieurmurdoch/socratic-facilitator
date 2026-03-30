@@ -570,7 +570,7 @@ Respond with ONLY the closing message text.`;
 
       return reply;
     } catch (error) {
-      console.error("Warmup chat error:", error.message);
+      console.error("Warmup chat error:", error.message, error.status || '', error.error?.message || '');
       // Fallback responses that fit Plato's personality
       const fallbacks = [
         "Hey! Just warming up my circuits — or whatever the modern equivalent of stretching before a symposium is.",
