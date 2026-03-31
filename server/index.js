@@ -200,7 +200,8 @@ async function generateTTS(text) {
         console.log(`[TTS:ElevenLabs] Generated ${audioBuffer.length} bytes`);
         return audioBuffer;
       }
-      console.warn(`[TTS:ElevenLabs] API returned ${response.status}, falling back to Piper`);
+      const errBody = await response.text();
+      console.warn(`[TTS:ElevenLabs] API returned ${response.status}: ${errBody}, key starts with: ${ELEVENLABS_API_KEY.substring(0, 6)}...`);
     } catch (err) {
       console.warn('[TTS:ElevenLabs] Error:', err.message, '— falling back to Piper');
     }
