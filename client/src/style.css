@@ -776,6 +776,51 @@ body {
   padding: 4px 0;
 }
 
+/* Sidebar chat input */
+
+.sidebar-input {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-input form {
+  display: flex;
+  gap: 6px;
+}
+
+.sidebar-input input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+}
+
+.sidebar-input input:focus {
+  border-color: var(--accent);
+}
+
+.btn-send {
+  padding: 8px 14px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-send:hover {
+  opacity: 0.9;
+}
+
 /* Sidebar controls */
 
 .sidebar-controls {

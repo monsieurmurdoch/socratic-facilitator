@@ -783,6 +783,16 @@
   });
 
   // End discussion
+  // Chat text input (fallback when STT isn't available)
+  document.getElementById("chat-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = document.getElementById("chat-input");
+    const text = input.value.trim();
+    if (!text) return;
+    send({ type: "message", text });
+    input.value = "";
+  });
+
   document.getElementById("video-end-btn").addEventListener("click", () => {
     if (confirm("End the discussion for everyone?")) {
       send({ type: "end_discussion" });
