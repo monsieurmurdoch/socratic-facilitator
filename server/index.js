@@ -145,11 +145,15 @@ app.get("/api/telemetry", (req, res) => {
 const activeSessions = new Map();
 
 // Jitsi bot launcher (for video mode)
+// Disabled on Railway — Puppeteer/Chrome can't run in Alpine containers.
+// STT is handled client-side via Web Speech API instead.
 let jitsiLauncher = null;
-try {
-  jitsiLauncher = require("./jitsi-bot/start-session");
-} catch (e) {
-  console.log("Jitsi bot module not available:", e.message);
+if (process.env.ENABLE_JITSI_BOT === 'true') {
+  try {
+    jitsiLauncher = require("./jitsi-bot/start-session");
+  } catch (e) {
+    console.log("Jitsi bot module not available:", e.message);
+  }
 }
 
 // Initialize enhanced engine

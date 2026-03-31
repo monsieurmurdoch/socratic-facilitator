@@ -825,18 +825,21 @@
       }
     }
 
+    let gotFinal = false; // track if isFinal ever fires (Safari often doesn't)
+
     recognition.onresult = (event) => {
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          // Send final results immediately
+          gotFinal = true;
           const text = result[0].transcript.trim();
           if (text.length > 2) {
-            pendingText += text + " ";
+            // Clear any interim-accumulated text to avoid doubling
+            pendingText = "";
+            pendingText = text + " ";
             lastInterim = "";
             clearTimeout(interimFlushTimer);
-            // Flush quickly — just enough to catch multi-sentence bursts
             clearTimeout(flushTimer);
             flushTimer = setTimeout(flushText, 300);
           }
@@ -849,18 +852,20 @@
       if (interim) {
         addTranscriptEntry(myName, interim + " ...", true, true);
         // Safari often never fires isFinal with continuous:true.
-        // If interim text stabilises for 1.5s, treat it as final.
-        lastInterim = interim;
-        clearTimeout(interimFlushTimer);
-        interimFlushTimer = setTimeout(() => {
-          const text = lastInterim.trim();
-          if (text.length > 2) {
-            pendingText += text + " ";
-            lastInterim = "";
-            clearTimeout(flushTimer);
-            flushTimer = setTimeout(flushText, 300);
-          }
-        }, 1500);
+        // Only use interim fallback if we've never seen isFinal.
+        if (!gotFinal) {
+          lastInterim = interim;
+          clearTimeout(interimFlushTimer);
+          interimFlushTimer = setTimeout(() => {
+            const text = lastInterim.trim();
+            if (text.length > 2) {
+              pendingText += text + " ";
+              lastInterim = "";
+              clearTimeout(flushTimer);
+              flushTimer = setTimeout(flushText, 300);
+            }
+          }, 1500);
+        }
       }
     };
 
