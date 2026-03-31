@@ -526,12 +526,17 @@
   }
 
   function addFacilitatorMessage(text, move) {
-    const container = document.getElementById("facilitator-messages");
+    const container = document.getElementById("conversation-feed");
     if (!container) return;
+
+    // Remove any interim entry before adding facilitator message
+    const interim = container.querySelector('.transcript-interim');
+    if (interim) interim.remove();
+
     const div = document.createElement("div");
     div.className = "facilitator-bubble";
     div.innerHTML = `
-      <span class="facilitator-move">${move || ''}</span>
+      <div class="facilitator-label"><span class="plato-avatar-tiny">P</span> Plato <span class="facilitator-move">${move || ''}</span></div>
       <span class="facilitator-text">${escapeHtml(text)}</span>
     `;
     container.appendChild(div);
@@ -539,7 +544,7 @@
   }
 
   function addTranscriptEntry(name, text, isSelf, isInterim) {
-    const container = document.getElementById("transcript-messages");
+    const container = document.getElementById("conversation-feed");
     if (!container) return;
 
     // For interim (partial) STT results, update in place
@@ -572,7 +577,7 @@
   }
 
   function updatePartialTranscript(name, text) {
-    const container = document.getElementById("transcript-messages");
+    const container = document.getElementById("conversation-feed");
     if (!container) return;
     let partial = container.querySelector(`.transcript-partial[data-name="${name}"]`);
     if (!partial) {
