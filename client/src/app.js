@@ -426,6 +426,24 @@
         speakWithBrowserTTS(msg.text);
         break;
 
+      case "stt_transcript":
+        if (msg.isFinal) {
+          if (msg.text && msg.text.trim().length > 2) {
+            addTranscriptEntry(myName, msg.text, true, false);
+            send({ type: "message", text: msg.text });
+            console.log("[STT] Final:", msg.text);
+          }
+        } else {
+          if (msg.text && msg.text.trim()) {
+            addTranscriptEntry(myName, msg.text + " ...", true, true);
+          }
+        }
+        break;
+
+      case "stt_error":
+        console.warn("[STT] Server error:", msg.text);
+        break;
+
       case "discussion_ended":
         addFacilitatorMessage("The discussion has ended. Thank you for participating.", "closing");
         stopSpeechRecognition();
@@ -799,156 +817,93 @@
     }
   });
 
-  // ---- Speech Recognition (client-side STT via Web Speech API) ----
-  let recognition = null;
-  let recognitionActive = false;
+  // ---- Speech Recognition (Deepgram via server relay) ----
+  let sttStream = null;  // MediaStream
+  let sttNode = null;    // AudioWorklet or ScriptProcessor
+  let sttContext = null;  // AudioContext
+  let sttActive = false;
 
-  function startSpeechRecognition() {
-    // If already running, don't create a new instance
-    if (recognition && recognitionActive) {
-      console.log("[STT] Already active, skipping restart");
+  async function startSpeechRecognition() {
+    if (sttActive) {
+      console.log("[STT] Already active, skipping");
       return;
     }
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn("[STT] Web Speech API not supported in this browser");
+    try {
+      sttStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
+      });
+      console.log("[STT] Mic access granted");
+    } catch (e) {
+      console.warn("[STT] Mic access denied:", e.message);
       return;
     }
 
-    // Stop any existing instance before creating a new one
-    if (recognition) {
-      try { recognition.stop(); } catch (e) { /* already stopped */ }
-      recognition = null;
-      recognitionActive = false;
-    }
+    sttContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    const source = sttContext.createMediaStreamSource(sttStream);
 
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-    recognition.maxAlternatives = 1;
+    // Tell server to open Deepgram connection
+    send({ type: "stt_start" });
 
-    let pendingText = "";
-    let flushTimer = null;
-    let interimFlushTimer = null;
-    let lastInterim = "";
-    let networkErrorCount = 0;
-    const MAX_NETWORK_RETRIES = 3;
-
-    recognition.onstart = () => {
-      recognitionActive = true;
-      networkErrorCount = 0;
-      console.log("[STT] Listening...");
-    };
-
-    let lastSentText = "";
-    function flushText() {
-      const toSend = pendingText.trim();
-      if (toSend && toSend !== lastSentText) {
-        console.log("[STT] Sending:", toSend);
-        send({ type: "message", text: toSend });
-        lastSentText = toSend;
-        pendingText = "";
-        lastInterim = "";
-      } else {
-        pendingText = "";
-        lastInterim = "";
-      }
-    }
-
-    let gotFinal = false; // track if isFinal ever fires (Safari often doesn't)
-
-    recognition.onresult = (event) => {
-      let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          gotFinal = true;
-          const text = result[0].transcript.trim();
-          if (text.length > 2) {
-            // Clear any interim-accumulated text to avoid doubling
-            pendingText = "";
-            pendingText = text + " ";
-            lastInterim = "";
-            clearTimeout(interimFlushTimer);
-            clearTimeout(flushTimer);
-            flushTimer = setTimeout(flushText, 300);
+    // Try AudioWorklet, fall back to ScriptProcessor
+    if (window.AudioWorkletNode) {
+      try {
+        await sttContext.audioWorklet.addModule('/src/audio-processor.js');
+        sttNode = new AudioWorkletNode(sttContext, 'pcm-processor');
+        sttNode.port.onmessage = (e) => {
+          if (ws && ws.readyState === 1) {
+            ws.send(e.data); // send raw Int16 PCM buffer
           }
-        } else {
-          interim += result[0].transcript;
-        }
+        };
+        source.connect(sttNode);
+        sttNode.connect(sttContext.destination); // required to keep processing alive
+      } catch (e) {
+        console.warn("[STT] AudioWorklet failed, using ScriptProcessor:", e.message);
+        setupScriptProcessor(source);
       }
+    } else {
+      setupScriptProcessor(source);
+    }
 
-      // Show interim transcript in the transcript feed
-      if (interim) {
-        addTranscriptEntry(myName, interim + " ...", true, true);
-        // Safari often never fires isFinal with continuous:true.
-        // Only use interim fallback if we've never seen isFinal.
-        if (!gotFinal) {
-          lastInterim = interim;
-          clearTimeout(interimFlushTimer);
-          interimFlushTimer = setTimeout(() => {
-            const text = lastInterim.trim();
-            if (text.length > 2) {
-              pendingText += text + " ";
-              lastInterim = "";
-              clearTimeout(flushTimer);
-              flushTimer = setTimeout(flushText, 300);
-            }
-          }, 1500);
-        }
-      }
-    };
-
-    recognition.onerror = (event) => {
-      console.warn("[STT] Error:", event.error);
-      if (event.error === "network") {
-        networkErrorCount++;
-        if (networkErrorCount >= MAX_NETWORK_RETRIES) {
-          console.error("[STT] Speech recognition unavailable — browser may not support Web Speech API (common in Brave). Try Safari or Chrome.");
-          return; // stop retrying
-        }
-      }
-      // Auto-restart on non-fatal errors
-      if (event.error === "no-speech" || event.error === "aborted" || event.error === "network") {
-        restartRecognition();
-      }
-    };
-
-    recognition.onend = () => {
-      recognitionActive = false;
-      console.log("[STT] Ended");
-      // Don't restart if we've exhausted network retries
-      if (networkErrorCount >= MAX_NETWORK_RETRIES) return;
-      // Auto-restart if we're still in a discussion
-      if (document.getElementById("video-screen").classList.contains("active")) {
-        restartRecognition();
-      }
-    };
-
-    recognition.start();
+    sttActive = true;
+    console.log("[STT] Streaming to Deepgram via server, sampleRate:", sttContext.sampleRate);
   }
 
-  function restartRecognition() {
-    if (recognitionActive) return;
-    setTimeout(() => {
-      try {
-        if (recognition && document.getElementById("video-screen").classList.contains("active")) {
-          recognition.start();
+  function setupScriptProcessor(source) {
+    sttNode = sttContext.createScriptProcessor(2048, 1, 1);
+    sttNode.onaudioprocess = (e) => {
+      if (ws && ws.readyState === 1) {
+        const float32 = e.inputBuffer.getChannelData(0);
+        const int16 = new Int16Array(float32.length);
+        for (let i = 0; i < float32.length; i++) {
+          const s = Math.max(-1, Math.min(1, float32[i]));
+          int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
-      } catch (e) {
-        console.warn("[STT] Restart failed:", e.message);
+        ws.send(int16.buffer);
       }
-    }, 300);
+    };
+    source.connect(sttNode);
+    sttNode.connect(sttContext.destination);
   }
 
   function stopSpeechRecognition() {
-    if (recognition) {
-      try { recognition.stop(); } catch (e) { /* already stopped */ }
-      recognition = null;
-      recognitionActive = false;
+    if (sttNode) {
+      try { sttNode.disconnect(); } catch (e) {}
+      sttNode = null;
     }
+    if (sttContext) {
+      try { sttContext.close(); } catch (e) {}
+      sttContext = null;
+    }
+    if (sttStream) {
+      sttStream.getTracks().forEach(t => t.stop());
+      sttStream = null;
+    }
+    if (sttActive) {
+      send({ type: "stt_stop" });
+      sttActive = false;
+    }
+    console.log("[STT] Stopped");
   }
 
   // ---- Audio (TTS playback from server) ----

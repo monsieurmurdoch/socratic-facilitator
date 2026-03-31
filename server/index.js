@@ -12,6 +12,7 @@
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
+const WebSocket = require("ws");
 const { WebSocketServer } = require("ws");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
@@ -161,6 +162,7 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 console.log(`[INIT] ANTHROPIC_API_KEY: ${ANTHROPIC_KEY ? ANTHROPIC_KEY.substring(0, 10) + '...' : 'NOT SET'}`);
 console.log(`[INIT] ANTHROPIC_MODEL: ${process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514 (default)'}`);
 console.log(`[INIT] ELEVENLABS_API_KEY: ${process.env.ELEVENLABS_API_KEY ? 'SET' : 'NOT SET'}`);
+console.log(`[INIT] DEEPGRAM_API_KEY: ${process.env.DEEPGRAM_API_KEY ? 'SET' : 'NOT SET'}`);
 const enhancedEngine = new EnhancedFacilitationEngine(ANTHROPIC_KEY);
 const messageAssessor = new MessageAssessor(ANTHROPIC_KEY);
 
@@ -455,9 +457,17 @@ wss.on("connection", (ws, req) => {
   // Send a welcome message so client knows the WS is truly connected end-to-end
   ws.send(JSON.stringify({ type: "connected", clientId }));
 
+  // Per-client Deepgram relay state
+  let deepgramWs = null;
+
   ws.on("message", async (raw, isBinary) => {
-    // Skip binary data (no longer using local STT process)
-    if (isBinary) return;
+    // Binary data = audio frames for Deepgram relay
+    if (isBinary) {
+      if (deepgramWs && deepgramWs.readyState === WebSocket.OPEN) {
+        deepgramWs.send(raw);
+      }
+      return;
+    }
 
     // Convert Buffer to string (ws library sends Buffers for text frames too)
     const text = typeof raw === 'string' ? raw : raw.toString('utf8');
@@ -719,6 +729,68 @@ wss.on("connection", (ws, req) => {
         break;
       }
 
+      case "stt_start": {
+        const dgKey = process.env.DEEPGRAM_API_KEY;
+        if (!dgKey) {
+          ws.send(JSON.stringify({ type: "stt_error", text: "DEEPGRAM_API_KEY not configured" }));
+          break;
+        }
+        // Close existing connection if any
+        if (deepgramWs) {
+          try { deepgramWs.close(); } catch (e) {}
+        }
+        const dgUrl = `wss://api.deepgram.com/v1/listen?` +
+          `encoding=linear16&sample_rate=16000&channels=1` +
+          `&interim_results=true&punctuate=true&language=en-US`;
+        deepgramWs = new WebSocket(dgUrl, {
+          headers: { Authorization: `Token ${dgKey}` }
+        });
+        deepgramWs.on("open", () => {
+          console.log(`[STT:Deepgram] Connected for client ${clientId}`);
+        });
+        deepgramWs.on("message", (data) => {
+          try {
+            const result = JSON.parse(data.toString());
+            if (result.type === "Results" && result.channel) {
+              const alt = result.channel.alternatives;
+              if (alt && alt.length > 0 && alt[0].transcript) {
+                const transcript = alt[0].transcript;
+                const isFinal = result.is_final;
+                if (transcript.trim()) {
+                  ws.send(JSON.stringify({
+                    type: "stt_transcript",
+                    text: transcript,
+                    isFinal
+                  }));
+                }
+              }
+            }
+          } catch (e) {
+            console.error("[STT:Deepgram] Parse error:", e.message);
+          }
+        });
+        deepgramWs.on("error", (err) => {
+          console.error(`[STT:Deepgram] Error for ${clientId}:`, err.message);
+          ws.send(JSON.stringify({ type: "stt_error", text: err.message }));
+        });
+        deepgramWs.on("close", () => {
+          console.log(`[STT:Deepgram] Closed for ${clientId}`);
+          deepgramWs = null;
+        });
+        break;
+      }
+
+      case "stt_stop": {
+        if (deepgramWs) {
+          try {
+            deepgramWs.send(JSON.stringify({ type: "CloseStream" }));
+            deepgramWs.close();
+          } catch (e) {}
+          deepgramWs = null;
+        }
+        break;
+      }
+
       case "end_discussion": {
         const session = activeSessions.get(currentSessionShortCode);
         if (!session) return;
@@ -769,6 +841,11 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("close", () => {
+    // Clean up Deepgram connection
+    if (deepgramWs) {
+      try { deepgramWs.close(); } catch (e) {}
+      deepgramWs = null;
+    }
     if (currentSessionShortCode) {
       const session = activeSessions.get(currentSessionShortCode);
       if (session) {
