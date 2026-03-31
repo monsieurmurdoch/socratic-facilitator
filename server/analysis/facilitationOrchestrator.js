@@ -86,6 +86,9 @@ class FacilitationOrchestrator {
     // Update participant tracking
     this._updateParticipant(participantName);
 
+    // Update solo mode for human deference
+    this.humanDeference.isSolo = this.participants.size <= 1;
+
     // Notify human deference system
     this.humanDeference.humanStartedSpeaking(participantName);
 

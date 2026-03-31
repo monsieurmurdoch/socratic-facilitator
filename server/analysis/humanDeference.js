@@ -59,7 +59,9 @@ class HumanDeference {
     this.deferredAt = null;
 
     // Configuration
-    this.postSpeechBufferMs = 2500;  // Wait this long after human stops
+    this.postSpeechBufferMs = 2500;  // Wait this long after human stops (group mode)
+    this.soloPostSpeechBufferMs = 300;  // Much shorter in solo — no one else to defer to
+    this.isSolo = false;
     this.deferredMessageTTLms = 45000;  // Deferred messages expire after this
 
     // History for analysis
@@ -119,7 +121,8 @@ class HumanDeference {
     // Human just finished speaking - give them a buffer
     if (this.humanJustFinishedSpeaking) {
       const timeSinceSpeech = Date.now() - this.lastHumanSpeechAt;
-      if (timeSinceSpeech < this.postSpeechBufferMs && !this.humanInvitedAI) {
+      const bufferMs = this.isSolo ? this.soloPostSpeechBufferMs : this.postSpeechBufferMs;
+      if (timeSinceSpeech < bufferMs && !this.humanInvitedAI) {
         return { defer: true, reason: 'human_just_finished' };
       }
       this.humanJustFinishedSpeaking = false;
