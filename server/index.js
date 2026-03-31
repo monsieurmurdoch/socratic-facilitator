@@ -59,8 +59,17 @@ const JAAS_API_KEY = process.env.JAAS_API_KEY || null;
 const JAAS_KEY_ID = process.env.JAAS_KEY_ID || null;
 
 app.get("/api/jitsi-token", (req, res) => {
-  if (!JAAS_API_KEY) {
-    return res.status(501).json({ error: "JaaS API key not configured" });
+  // Check if we have the required JaaS credentials
+  if (!JAAS_API_KEY || !JAAS_KEY_ID) {
+    console.warn("[Jitsi] JAAS_API_KEY or JAAS_KEY_ID not configured - returning empty token");
+    // Return empty token - Jitsi will join without auth (public rooms work fine)
+    return res.json({ token: null, reason: "JaaS not configured" });
+  }
+
+  // Validate that API key looks like an RSA private key (starts with -----BEGIN)
+  if (!JAAS_API_KEY.includes('-----BEGIN')) {
+    console.error("[Jitsi] JAAS_API_KEY is not a valid RSA private key (missing PEM header)");
+    return res.status(500).json({ error: "Invalid JAAS_API_KEY format - must be RSA private key in PEM format" });
   }
 
   const { room, name, moderator } = req.query;
@@ -95,16 +104,20 @@ app.get("/api/jitsi-token", (req, res) => {
     room: room || "*"
   };
 
-  const token = jwt.sign(payload, JAAS_API_KEY, {
-    algorithm: "RS256",
-    header: {
-      kid: JAAS_KEY_ID,
-      typ: "JWT",
-      alg: "RS256"
-    }
-  });
-
-  res.json({ token });
+  try {
+    const token = jwt.sign(payload, JAAS_API_KEY, {
+      algorithm: "RS256",
+      header: {
+        kid: JAAS_KEY_ID,
+        typ: "JWT",
+        alg: "RS256"
+      }
+    });
+    res.json({ token });
+  } catch (err) {
+    console.error("[Jitsi] JWT signing failed:", err.message);
+    res.status(500).json({ error: "Failed to generate JWT token: " + err.message });
+  }
 });
 
 // Legacy topics endpoint (kept for backward compatibility)

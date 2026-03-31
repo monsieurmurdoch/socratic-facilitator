@@ -828,6 +828,8 @@
       console.log("[STT] Already active, skipping");
       return;
     }
+    // Set flag IMMEDIATELY to prevent race condition with Jitsi's audioMuteStatusChanged event
+    sttActive = true;
 
     try {
       sttStream = await navigator.mediaDevices.getUserMedia({
@@ -836,6 +838,7 @@
       console.log("[STT] Mic access granted");
     } catch (e) {
       console.warn("[STT] Mic access denied:", e.message);
+      sttActive = false; // Reset on failure
       return;
     }
 
@@ -865,7 +868,6 @@
       setupScriptProcessor(source);
     }
 
-    sttActive = true;
     console.log("[STT] Streaming to Deepgram via server, sampleRate:", sttContext.sampleRate);
   }
 
