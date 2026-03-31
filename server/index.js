@@ -55,7 +55,10 @@ app.get("/health", (req, res) => res.json({ status: "ok" }));
 // JaaS JWT token generation
 const jwt = require("jsonwebtoken");
 const JAAS_APP_ID = process.env.JAAS_APP_ID || "vpaas-magic-cookie-44bf27b66fab458bae6a8c271ea52a82";
-const JAAS_API_KEY = process.env.JAAS_API_KEY || null;
+// JaaS private key may have literal \n in env var — convert to real newlines
+const JAAS_API_KEY = process.env.JAAS_API_KEY
+  ? process.env.JAAS_API_KEY.replace(/\\n/g, '\n')
+  : null;
 const JAAS_KEY_ID = process.env.JAAS_KEY_ID || null;
 
 app.get("/api/jitsi-token", (req, res) => {
@@ -299,14 +302,15 @@ async function handleFacilitatorMessage(sessionShortCode, decision) {
     timestamp: Date.now()
   });
 
-  try {
-    const wavBuffer = await generateTTS(decision.message);
-    for (const client of session.clients) {
-      if (client.ws.readyState === 1) client.ws.send(wavBuffer);
-    }
-  } catch (e) {
-    console.error("TTS Error:", e);
-  }
+  // TTS disabled for beta — text-only Plato
+  // try {
+  //   const wavBuffer = await generateTTS(decision.message);
+  //   for (const client of session.clients) {
+  //     if (client.ws.readyState === 1) client.ws.send(wavBuffer);
+  //   }
+  // } catch (e) {
+  //   console.error("TTS Error:", e);
+  // }
 }
 
 function findParticipantIdByName(stateTracker, name) {
@@ -365,15 +369,15 @@ async function handleParticipantMessage(sessionShortCode, clientId, text) {
           timestamp: Date.now()
         });
 
-        // TTS for warmup replies
-        try {
-          const wavBuffer = await generateTTS(reply);
-          for (const client of session.clients) {
-            if (client.ws.readyState === 1) client.ws.send(wavBuffer);
-          }
-        } catch (e) {
-          console.error("[TTS] Warmup TTS error:", e.message);
-        }
+        // TTS disabled for beta — text-only Plato
+        // try {
+        //   const wavBuffer = await generateTTS(reply);
+        //   for (const client of session.clients) {
+        //     if (client.ws.readyState === 1) client.ws.send(wavBuffer);
+        //   }
+        // } catch (e) {
+        //   console.error("[TTS] Warmup TTS error:", e.message);
+        // }
       }, 800 + Math.random() * 1200);
     }
 

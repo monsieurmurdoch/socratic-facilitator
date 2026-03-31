@@ -114,8 +114,9 @@
       }
     };
     ws.onmessage = (event) => {
+      // TTS disabled for beta — ignore audio binary frames
       if (event.data instanceof ArrayBuffer) {
-        playAudioBuffer(event.data);
+        // playAudioBuffer(event.data);
         return;
       }
       const msg = JSON.parse(event.data);
@@ -411,7 +412,11 @@
         break;
 
       case "participant_message":
-        addTranscriptEntry(msg.name, msg.text, msg.name === myName);
+        // Own messages are already added locally from the STT handler,
+        // so skip them here to avoid duplicates in the chatbox.
+        if (msg.name !== myName) {
+          addTranscriptEntry(msg.name, msg.text, false);
+        }
         break;
 
       case "participant_partial":
@@ -422,8 +427,8 @@
         addFacilitatorMessage(msg.text, msg.move);
         setFacilitatorStatus("speaking");
         setPlatoTileSpeaking(msg.text);
-        // Use browser TTS as fallback when server TTS isn't available
-        speakWithBrowserTTS(msg.text);
+        // TTS disabled for beta — text-only Plato
+        // speakWithBrowserTTS(msg.text);
         break;
 
       case "stt_transcript":
@@ -822,14 +827,14 @@
   let sttNode = null;    // AudioWorklet or ScriptProcessor
   let sttContext = null;  // AudioContext
   let sttActive = false;
+  let sttStarting = false; // guard against concurrent starts
 
   async function startSpeechRecognition() {
-    if (sttActive) {
-      console.log("[STT] Already active, skipping");
+    if (sttActive || sttStarting) {
+      console.log("[STT] Already active/starting, skipping");
       return;
     }
-    // Set flag IMMEDIATELY to prevent race condition with Jitsi's audioMuteStatusChanged event
-    sttActive = true;
+    sttStarting = true;
 
     try {
       sttStream = await navigator.mediaDevices.getUserMedia({
@@ -838,7 +843,7 @@
       console.log("[STT] Mic access granted");
     } catch (e) {
       console.warn("[STT] Mic access denied:", e.message);
-      sttActive = false; // Reset on failure
+      sttStarting = false;
       return;
     }
 
@@ -868,6 +873,8 @@
       setupScriptProcessor(source);
     }
 
+    sttActive = true;
+    sttStarting = false;
     console.log("[STT] Streaming to Deepgram via server, sampleRate:", sttContext.sampleRate);
   }
 
@@ -905,6 +912,7 @@
       send({ type: "stt_stop" });
       sttActive = false;
     }
+    sttStarting = false;
     console.log("[STT] Stopped");
   }
 
