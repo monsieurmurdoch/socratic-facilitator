@@ -794,10 +794,23 @@
   let recognitionActive = false;
 
   function startSpeechRecognition() {
+    // If already running, don't create a new instance
+    if (recognition && recognitionActive) {
+      console.log("[STT] Already active, skipping restart");
+      return;
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       console.warn("[STT] Web Speech API not supported in this browser");
       return;
+    }
+
+    // Stop any existing instance before creating a new one
+    if (recognition) {
+      try { recognition.stop(); } catch (e) { /* already stopped */ }
+      recognition = null;
+      recognitionActive = false;
     }
 
     recognition = new SpeechRecognition();
