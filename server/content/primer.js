@@ -9,7 +9,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 class SessionPrimer {
   constructor() {
     this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    this.model = 'claude-sonnet-4-5-20250514';
+    this.model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
   }
 
   /**

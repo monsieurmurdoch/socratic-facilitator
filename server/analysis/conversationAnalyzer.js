@@ -40,7 +40,7 @@ class ConversationAnalyzer {
    */
   constructor(opts = {}) {
     this.client = new Anthropic({ apiKey: opts.apiKey || process.env.ANTHROPIC_API_KEY });
-    this.model = opts.model || 'claude-sonnet-4-5-20250514';
+    this.model = opts.model || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
     this.openingQuestion = opts.openingQuestion || '';
     this.topicTitle = opts.topicTitle || '';
 

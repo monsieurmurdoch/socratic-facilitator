@@ -155,6 +155,7 @@ try {
 // Initialize enhanced engine
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 console.log(`[INIT] ANTHROPIC_API_KEY: ${ANTHROPIC_KEY ? ANTHROPIC_KEY.substring(0, 10) + '...' : 'NOT SET'}`);
+console.log(`[INIT] ANTHROPIC_MODEL: ${process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514 (default)'}`);
 console.log(`[INIT] ELEVENLABS_API_KEY: ${process.env.ELEVENLABS_API_KEY ? 'SET' : 'NOT SET'}`);
 const enhancedEngine = new EnhancedFacilitationEngine(ANTHROPIC_KEY);
 const messageAssessor = new MessageAssessor(ANTHROPIC_KEY);

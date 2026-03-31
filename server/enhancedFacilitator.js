@@ -29,7 +29,7 @@ const primedContextRepo = require("./db/repositories/primedContext");
 class EnhancedFacilitationEngine {
   constructor(apiKey) {
     this.client = new Anthropic({ apiKey });
-    this.model = "claude-sonnet-4-5-20250514";
+    this.model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
 
     // Orchestrator instances per session
     this.orchestrators = new Map();

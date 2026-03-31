@@ -235,7 +235,7 @@ Remember: You are a facilitator, not a teacher. Ask questions, never lecture. Be
 
     try {
       const response = await this.client.messages.create({
-        model: "claude-sonnet-4-5-20250514",
+        model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
         max_tokens: 500,
         messages: [{ role: "user", content: prompt }]
       });

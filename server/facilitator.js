@@ -17,7 +17,7 @@ const { ConversationAnalyzer } = require("./analysis/conversationAnalyzer");
 class FacilitationEngine {
   constructor(apiKey) {
     this.client = new Anthropic({ apiKey });
-    this.model = "claude-sonnet-4-5-20250514";
+    this.model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
 
     // One analyzer per session
     this.analyzers = new Map();
