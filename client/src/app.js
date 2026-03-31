@@ -239,7 +239,7 @@
         ],
         disableInviteFunctions: true,
         hideConferenceSubject: true,
-        disableThirdPartyRequests: true,
+        disableThirdPartyRequests: false,
         p2p: { enabled: true }
       },
       interfaceConfigOverwrite: {
@@ -258,6 +258,13 @@
     }
 
     jitsiApi = new JitsiMeetExternalAPI("8x8.vc", options);
+
+    // Ensure iframe has audio/video permissions (Safari requires this)
+    const iframe = jitsiApi.getIFrame();
+    if (iframe) {
+      iframe.setAttribute('allow', 'camera *; microphone *; autoplay *; display-capture *; clipboard-write *');
+      console.log('[Jitsi] iframe permissions set');
+    }
 
     jitsiApi.addEventListener('participantJoined', (event) => {
       console.log('[Jitsi] Participant joined:', event);
@@ -415,6 +422,8 @@
         addFacilitatorMessage(msg.text, msg.move);
         setFacilitatorStatus("speaking");
         setPlatoTileSpeaking(msg.text);
+        // Use browser TTS as fallback when server TTS isn't available
+        speakWithBrowserTTS(msg.text);
         break;
 
       case "discussion_ended":
@@ -923,6 +932,28 @@
   let playbackContext;
 
   // Unlock AudioContext on first user gesture (required by Safari)
+  // ---- Browser TTS fallback (when server ElevenLabs isn't available) ----
+  let serverTTSReceived = false;
+
+  function speakWithBrowserTTS(text) {
+    if (!window.speechSynthesis) return;
+    // Wait briefly to see if server sends audio first
+    serverTTSReceived = false;
+    setTimeout(() => {
+      if (serverTTSReceived) return; // server audio arrived, skip browser TTS
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.95;
+      utterance.pitch = 0.9;
+      // Try to pick a good voice
+      const voices = speechSynthesis.getVoices();
+      const preferred = voices.find(v => v.name.includes('Daniel') || v.name.includes('Samantha') || (v.lang === 'en-US' && v.localService));
+      if (preferred) utterance.voice = preferred;
+      speechSynthesis.cancel(); // stop any previous
+      speechSynthesis.speak(utterance);
+      console.log("[TTS] Browser fallback speaking:", text.substring(0, 50) + "...");
+    }, 500);
+  }
+
   function ensureAudioContext() {
     if (!playbackContext) {
       playbackContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -941,6 +972,8 @@
   });
 
   function playAudioBuffer(arrayBuffer) {
+    serverTTSReceived = true;
+    speechSynthesis?.cancel(); // stop browser TTS if it started
     const ctx = ensureAudioContext();
     console.log("[Audio] Received TTS buffer:", arrayBuffer.byteLength, "bytes, context state:", ctx.state);
     ctx.decodeAudioData(arrayBuffer.slice(0), (buffer) => {
