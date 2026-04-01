@@ -696,8 +696,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  justify-content: flex-end;
-  min-height: 100%;
+  margin-top: auto; /* anchors to bottom but allows scrolling back up */
 }
 
 .facilitator-bubble {

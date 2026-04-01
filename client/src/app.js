@@ -434,13 +434,26 @@
       case "stt_transcript":
         if (msg.isFinal) {
           if (msg.text && msg.text.trim().length > 2) {
-            addTranscriptEntry(myName, msg.text, true, false);
-            send({ type: "message", text: msg.text });
-            console.log("[STT] Final:", msg.text);
+            // Batch consecutive finals so pauses mid-thought don't
+            // create separate messages. Accumulate and flush after
+            // 2s of silence.
+            sttBatchBuffer.push(msg.text.trim());
+            // Show latest partial accumulation
+            addTranscriptEntry(myName, sttBatchBuffer.join(" "), true, true);
+            clearTimeout(sttBatchTimer);
+            sttBatchTimer = setTimeout(() => {
+              const fullText = sttBatchBuffer.join(" ");
+              sttBatchBuffer = [];
+              addTranscriptEntry(myName, fullText, true, false);
+              send({ type: "message", text: fullText });
+              console.log("[STT] Batched final:", fullText);
+            }, 2000);
           }
         } else {
           if (msg.text && msg.text.trim()) {
-            addTranscriptEntry(myName, msg.text + " ...", true, true);
+            // Show interim alongside any accumulated batch
+            const prefix = sttBatchBuffer.length ? sttBatchBuffer.join(" ") + " " : "";
+            addTranscriptEntry(myName, prefix + msg.text + " ...", true, true);
           }
         }
         break;
@@ -801,7 +814,11 @@
   });
 
   // Start discussion (from within the video room)
-  document.getElementById("start-discussion-btn").addEventListener("click", () => {
+  document.getElementById("start-discussion-btn").addEventListener("click", (e) => {
+    const btn = e.currentTarget;
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = "Starting...";
     send({ type: "start_discussion" });
   });
 
@@ -821,6 +838,10 @@
       send({ type: "end_discussion" });
     }
   });
+
+  // ---- STT batching: accumulate rapid finals into one message ----
+  let sttBatchBuffer = [];
+  let sttBatchTimer = null;
 
   // ---- Speech Recognition (Deepgram via server relay) ----
   let sttStream = null;  // MediaStream

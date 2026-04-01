@@ -356,7 +356,7 @@ async function handleParticipantMessage(sessionShortCode, clientId, text) {
     const ageCalibration = getAgeCalibration(ages);
 
     const reply = await enhancedEngine.warmupChat(
-      sessionShortCode, participant.name, text, names, ageCalibration
+      sessionShortCode, participant.name, text, names, ageCalibration, session.topic
     );
 
     if (reply) {
@@ -697,6 +697,7 @@ wss.on("connection", (ws, req) => {
       case "start_discussion": {
         const session = activeSessions.get(currentSessionShortCode);
         if (!session) return;
+        if (session.active) return; // guard against double-click
 
         session.active = true;
         await sessionsRepo.updateStatus(session.dbSession.id, 'active');
