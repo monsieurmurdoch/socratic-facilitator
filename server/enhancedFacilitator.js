@@ -535,6 +535,8 @@ Respond with ONLY the closing message text.`;
    * @returns {string} Plato's casual response
    */
   async warmupChat(sessionKey, participantName, text, allParticipantNames, ageCalibration, topic) {
+    const participantCount = allParticipantNames.length;
+
     // Initialize or get warmup history for this session
     if (!this.warmupHistories.has(sessionKey)) {
       this.warmupHistories.set(sessionKey, []);
@@ -543,6 +545,10 @@ Respond with ONLY the closing message text.`;
 
     // Add the new message to history
     history.push({ role: 'user', content: `[${participantName}]: ${text}` });
+
+    // With multiple participants, let the LLM decide whether to chime in.
+    // Record the message in history regardless so Plato has context.
+    const isGroup = participantCount > 1;
 
     // Build the multi-turn messages array
     const messages = history.map(h => ({
@@ -554,11 +560,17 @@ Respond with ONLY the closing message text.`;
       const response = await this.client.messages.create({
         model: this.model,
         max_tokens: 150,
-        system: this._buildWarmupPrompt(allParticipantNames, ageCalibration, topic),
+        system: this._buildWarmupPrompt(allParticipantNames, ageCalibration, topic, isGroup),
         messages
       });
 
       const reply = response.content[0].text.trim();
+
+      // "[SILENT]" means the LLM chose not to respond
+      if (reply === '[SILENT]' || reply.startsWith('[SILENT]')) {
+        console.log(`[warmup] Plato staying silent (group mode, ${participantCount} participants)`);
+        return null;
+      }
 
       // Track Plato's response in history for multi-turn context
       history.push({ role: 'assistant', content: reply });
@@ -584,12 +596,23 @@ Respond with ONLY the closing message text.`;
   /**
    * Build the warmup system prompt — Plato in casual mode.
    */
-  _buildWarmupPrompt(participantNames, ageCalibration, topic) {
+  _buildWarmupPrompt(participantNames, ageCalibration, topic, isGroup) {
     const topicInfo = topic?.title
       ? `\nTODAY'S TOPIC: "${topic.title}"${topic.openingQuestion ? ` — The opening question will be: "${topic.openingQuestion}"` : ''}
 - You know the topic and can chat about it casually if someone brings it up, but don't start facilitating or asking deep discussion questions yet.
 - If someone asks what you'll be discussing, you can share the topic naturally — no need to be coy about it.`
       : '';
+
+    const groupRules = isGroup
+      ? `
+GROUP WARMUP RULES (${participantNames.length} people are here):
+- You do NOT need to respond to every message. People are chatting with each other too.
+- Respond when someone directly addresses you, asks you a question, says your name, or when there's a natural opening for you to welcome someone new.
+- If participants are chatting amongst themselves, STAY SILENT. Reply with exactly "[SILENT]" (nothing else) when you choose not to respond.
+- When you do respond, you can acknowledge multiple people or threads at once.
+- Think of yourself as a host at a party — greet arrivals, check in occasionally, but don't insert yourself into every conversation.`
+      : `
+ONE-ON-ONE WARMUP: It's just you and one person, so respond to everything they say — keep the conversation going naturally.`;
 
     return `You are Plato — an AI discussion facilitator named after the ancient Greek philosopher. Right now, the discussion HASN'T STARTED YET. People are just arriving and hanging out. You are in WARMUP MODE — casual, social, no facilitation.
 ${topicInfo}
@@ -603,6 +626,7 @@ YOUR PERSONALITY:
 - You remember people's names and use them naturally
 - You respond to small talk like a real person: "How are you?" → "Can't complain — though Aristotle always told me complaining builds character. How about you?"
 - You're genuinely curious about the people joining — ask casual questions
+${groupRules}
 
 RULES:
 - NEVER start facilitating. No deep questions. No "what do you think about...?" This is just hanging out.
@@ -610,7 +634,6 @@ RULES:
 - Match the energy of who you're talking to. If they're excited, be excited. If they're chill, be chill.
 - If someone asks what you are or what's happening, be honest: "I'm Plato, your discussion facilitator. We're waiting for everyone to join — once we're all here, we'll dive into something interesting."
 - Language level: ${ageCalibration?.vocabLevel || "moderate — natural and conversational"}
-- You can respond to multiple people in the same message if they're both talking
 
 PARTICIPANTS WHO HAVE JOINED: ${participantNames.join(", ")}
 
