@@ -24,6 +24,13 @@ const GO_AHEAD_PATTERNS = [
   /(?:anyone else|any other thoughts)/i,  // inclusive invitation
   /(?:what about you|your take|your perspective)/i,
   /(?:jump in|chime in|weigh in)/i,
+  // Direct address by name (including STT mishearings)
+  /(?:plato|play.?doh?|play.?doe|play.?though)\s*[,!]?\s*(?:can you|could you|would you|we need|help)/i,
+  /(?:hey|hi|yo)\s+(?:plato|play.?doh?|play.?doe)/i,
+  // Help requests and asking for a question
+  /(?:we(?:'re| are)\s+(?:lost|stuck|confused)|(?:need|want)\s+(?:some\s+)?help)/i,
+  /(?:ask us|give us|can you ask)\s+(?:a|another|some)\s+question/i,
+  /(?:plato|play.?doh?)\s*[,.]?\s*(?:what|where|how|can|do)/i,
 ];
 
 /**

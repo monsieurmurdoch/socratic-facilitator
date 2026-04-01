@@ -611,9 +611,21 @@ wss.on("connection", (ws, req) => {
           return;
         }
 
-        console.log(`[join_session] Adding participant: ${name}`);
+        // Check for duplicate name (e.g. same user in two tabs)
+        const existingByName = Array.from(session.stateTracker.participants.values())
+          .find(p => p.name.toLowerCase() === name.toLowerCase());
+        if (existingByName) {
+          // Reuse the existing participant identity instead of creating a duplicate
+          console.log(`[join_session] Duplicate name "${name}" — reusing existing participant ${existingByName.id}`);
+          clientId = existingByName.id;
+          // Remove stale client entry if any
+          session.clients = session.clients.filter(c => c.clientId !== clientId);
+        } else {
+          console.log(`[join_session] Adding participant: ${name}`);
+          await session.stateTracker.addParticipant(clientId, name, age || 12);
+        }
+
         currentSessionShortCode = sessionId;
-        await session.stateTracker.addParticipant(clientId, name, age || 12);
         session.clients.push({ ws, clientId, name });
         console.log(`[join_session] Sending session_joined response`);
 

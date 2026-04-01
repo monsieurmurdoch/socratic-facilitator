@@ -305,6 +305,8 @@
       jitsiApi.dispose();
       jitsiApi = null;
     }
+    // Full mic cleanup when leaving video
+    destroySttStream();
   }
 
   // ---- Share Link ----
@@ -396,7 +398,8 @@
         showScreen("video");
         launchJitsi(currentSessionId, myName);
         startSpeechRecognition();
-        document.getElementById("start-discussion-btn").style.display = "";
+        // Only the host sees the Start Discussion button
+        document.getElementById("start-discussion-btn").style.display = isHost ? "" : "none";
         saveState();
         break;
 
@@ -570,6 +573,13 @@
     });
   }
 
+  function scrollChatToBottom() {
+    // The scrollable element is .sidebar-transcript (overflow-y: auto),
+    // NOT the inner #conversation-feed.
+    const scrollable = document.querySelector('.sidebar-transcript');
+    if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
+  }
+
   function addFacilitatorMessage(text, move) {
     const container = document.getElementById("conversation-feed");
     if (!container) return;
@@ -585,7 +595,7 @@
       <span class="facilitator-text">${escapeHtml(text)}</span>
     `;
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    scrollChatToBottom();
   }
 
   function addTranscriptEntry(name, text, isSelf, isInterim) {
@@ -601,7 +611,7 @@
         container.appendChild(partial);
       }
       partial.innerHTML = `<strong>${escapeHtml(name)}:</strong> <em>${escapeHtml(text)}</em>`;
-      container.scrollTop = container.scrollHeight;
+      scrollChatToBottom();
       return;
     }
 
@@ -618,7 +628,7 @@
       div.innerHTML = `<strong>${escapeHtml(name)}:</strong> ${escapeHtml(text)}`;
     }
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    scrollChatToBottom();
   }
 
   function updatePartialTranscript(name, text) {
@@ -632,7 +642,7 @@
       container.appendChild(partial);
     }
     partial.innerHTML = `<strong>${escapeHtml(name)}:</strong> <em>${escapeHtml(text)}</em>`;
-    container.scrollTop = container.scrollHeight;
+    scrollChatToBottom();
   }
 
   let platoSpeakingTimer = null;
@@ -844,7 +854,7 @@
   let sttBatchTimer = null;
 
   // ---- Speech Recognition (Deepgram via server relay) ----
-  let sttStream = null;  // MediaStream
+  let sttStream = null;  // MediaStream — acquired once, reused across start/stop cycles
   let sttNode = null;    // AudioWorklet or ScriptProcessor
   let sttContext = null;  // AudioContext
   let sttActive = false;
@@ -857,15 +867,21 @@
     }
     sttStarting = true;
 
-    try {
-      sttStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
-      });
-      console.log("[STT] Mic access granted");
-    } catch (e) {
-      console.warn("[STT] Mic access denied:", e.message);
-      sttStarting = false;
-      return;
+    // Reuse existing mic stream if it's still alive, to avoid re-prompting permissions
+    const streamAlive = sttStream && sttStream.getAudioTracks().some(t => t.readyState === 'live');
+    if (!streamAlive) {
+      try {
+        sttStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
+        });
+        console.log("[STT] Mic access granted");
+      } catch (e) {
+        console.warn("[STT] Mic access denied:", e.message);
+        sttStarting = false;
+        return;
+      }
+    } else {
+      console.log("[STT] Reusing existing mic stream");
     }
 
     sttContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
@@ -925,16 +941,24 @@
       try { sttContext.close(); } catch (e) {}
       sttContext = null;
     }
-    if (sttStream) {
-      sttStream.getTracks().forEach(t => t.stop());
-      sttStream = null;
-    }
+    // Keep sttStream alive — don't stop tracks. This avoids
+    // re-prompting for mic permissions on every mute/unmute cycle.
+    // The stream is only killed when the session ends (destroyJitsi).
     if (sttActive) {
       send({ type: "stt_stop" });
       sttActive = false;
     }
     sttStarting = false;
-    console.log("[STT] Stopped");
+    console.log("[STT] Stopped (mic stream kept alive)");
+  }
+
+  // Full cleanup — called when leaving the session entirely
+  function destroySttStream() {
+    stopSpeechRecognition();
+    if (sttStream) {
+      sttStream.getTracks().forEach(t => t.stop());
+      sttStream = null;
+    }
   }
 
   // ---- Audio (TTS playback from server) ----
