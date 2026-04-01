@@ -30,16 +30,20 @@ class SessionStateTracker {
     this.sessionId = sessionId;
     this.session = session;
     this.participants = new Map();
-    this.messages = [];
+    this.messages = [];       // raw utterances (every STT final)
+    this.turns = [];          // complete speaker turns (consecutive same-speaker utterances merged)
     this.aiMessages = [];
     this.tensions = [];
     this.connections = [];
     this.totalMessageCount = 0;
+    this.turnCount = 0;
     this.aiMessageCount = 0;
     this.lastAIMessageIndex = -1;
     this.lastAIMessageAt = null;
     this.sessionStartedAt = Date.now();
     this.lastActivityAt = Date.now();
+    this._currentTurn = null;   // accumulator for current speaker's turn
+    this._turnFlushTimer = null; // timer to flush turn on extended silence
   }
 
   /**
@@ -117,6 +121,34 @@ class SessionStateTracker {
     participant.lastSpokeAt = timestamp;
     participant.lastSpokeMessageIndex = message.index;
 
+    // ---- Turn tracking ----
+    // If same speaker as current turn, append. Otherwise flush and start new turn.
+    if (this._currentTurn && this._currentTurn.participantId === participantId) {
+      // Same speaker — extend the current turn
+      this._currentTurn.utterances.push(text);
+      this._currentTurn.text = this._currentTurn.utterances.join(' ');
+      this._currentTurn.endTimestamp = timestamp;
+      this._currentTurn.lastMessageIndex = message.index;
+    } else {
+      // Different speaker — flush previous turn, start new one
+      this._flushCurrentTurn();
+      this._currentTurn = {
+        turnIndex: this.turnCount,
+        participantId,
+        participantName: participant.name,
+        utterances: [text],
+        text: text,
+        startTimestamp: timestamp,
+        endTimestamp: timestamp,
+        firstMessageIndex: message.index,
+        lastMessageIndex: message.index
+      };
+    }
+
+    // Reset the flush timer — flush turn after 8s of silence from this speaker
+    clearTimeout(this._turnFlushTimer);
+    this._turnFlushTimer = setTimeout(() => this._flushCurrentTurn(), 8000);
+
     // Persist to database using DB-generated participant ID
     try {
       const dbParticipantId = participant.dbId || participantId;
@@ -128,7 +160,32 @@ class SessionStateTracker {
     return message;
   }
 
+  /**
+   * Flush the current turn accumulator into the turns array.
+   */
+  _flushCurrentTurn() {
+    if (!this._currentTurn) return;
+    this.turns.push(this._currentTurn);
+    this.turnCount++;
+    this._currentTurn = null;
+    clearTimeout(this._turnFlushTimer);
+  }
+
+  /**
+   * Get the current turn (possibly still accumulating) included with completed turns.
+   * Used by analysis to always have the latest state.
+   */
+  getTurnsIncludingCurrent() {
+    if (this._currentTurn) {
+      return [...this.turns, this._currentTurn];
+    }
+    return this.turns;
+  }
+
   async recordAIMessage(text, move, targetParticipantId = null, timestamp = Date.now()) {
+    // AI message always flushes any pending human turn
+    this._flushCurrentTurn();
+
     const message = {
       index: this.totalMessageCount,
       participantId: "__facilitator__",
@@ -146,6 +203,21 @@ class SessionStateTracker {
     this.lastAIMessageIndex = message.index;
     this.lastAIMessageAt = timestamp;
     this.lastActivityAt = timestamp;
+
+    // AI messages are always a complete turn
+    this.turns.push({
+      turnIndex: this.turnCount,
+      participantId: "__facilitator__",
+      participantName: "Facilitator",
+      utterances: [text],
+      text,
+      startTimestamp: timestamp,
+      endTimestamp: timestamp,
+      firstMessageIndex: message.index,
+      lastMessageIndex: message.index,
+      move
+    });
+    this.turnCount++;
 
     if (targetParticipantId) {
       const target = this.participants.get(targetParticipantId);
@@ -210,6 +282,7 @@ class SessionStateTracker {
     return {
       sessionDurationMin: Math.round(sessionDurationMin * 10) / 10,
       totalMessages: this.totalMessageCount,
+      totalTurns: this.turnCount + (this._currentTurn ? 1 : 0),
       participantCount: participantList.length,
       participants: participantStates,
       aiStats: {
@@ -245,6 +318,20 @@ class SessionStateTracker {
     return recent.map(m => {
       const role = m.participantId === "__facilitator__" ? "Facilitator" : m.participantName;
       return `[${role}]: ${m.text}`;
+    }).join('\n');
+  }
+
+  /**
+   * Returns recent turns (complete speaker thoughts) formatted for LLM.
+   * Preferred over getRecentHistory for analysis — gives coherent ideas
+   * instead of sentence fragments.
+   */
+  getRecentTurns(maxTurns = 20) {
+    const allTurns = this.getTurnsIncludingCurrent();
+    const recent = allTurns.slice(-maxTurns);
+    return recent.map(t => {
+      const role = t.participantId === "__facilitator__" ? "Facilitator" : t.participantName;
+      return `[${role}]: ${t.text}`;
     }).join('\n');
   }
 

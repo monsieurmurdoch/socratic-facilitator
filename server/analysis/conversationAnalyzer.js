@@ -53,6 +53,8 @@ class ConversationAnalyzer {
 
     // Conversation history for LLM context
     this.messages = [];
+    this.turns = [];              // complete speaker turns for analysis
+    this._currentTurn = null;     // turn accumulator
     this.lastMessageTimestamp = null;
 
     // Phase tracking
@@ -79,8 +81,25 @@ class ConversationAnalyzer {
       totalMessages, dominanceImbalance = 0
     } = message;
 
-    // Track the message
+    // Track the message (utterance-level)
     this.messages.push({ index, participantName, text, timestamp });
+
+    // Track turns (complete thoughts by same speaker)
+    if (this._currentTurn && this._currentTurn.participantName === participantName) {
+      this._currentTurn.texts.push(text);
+      this._currentTurn.text = this._currentTurn.texts.join(' ');
+      this._currentTurn.endTimestamp = timestamp;
+    } else {
+      // Flush previous turn
+      if (this._currentTurn) this.turns.push(this._currentTurn);
+      this._currentTurn = {
+        participantName,
+        texts: [text],
+        text: text,
+        startTimestamp: timestamp,
+        endTimestamp: timestamp
+      };
+    }
 
     // Compute response latency
     const responseLatencyMs = this.lastMessageTimestamp
@@ -160,13 +179,15 @@ class ConversationAnalyzer {
 
     // ---- Step 6: Compute neuron signals ----
     const silenceDepth = this._computeSilenceDepth(responseLatencyMs, effectiveAnalysis.profoundness);
-    const msgCount = totalMessages || this.messages.length;
+    // Use turn count for anchor drift so one person's fragmented speech
+    // doesn't burn through the lookback window
+    const turnCount = this.turns.length + (this._currentTurn ? 1 : 0);
 
     const signals = {
       engagementScore: this.engagement.getEngagementScore(),
       coherenceScore: this.engagement.getCoherenceScore(),
       topicRelevance: effectiveAnalysis.topicRelevance ?? 0.5,
-      anchorDrift: this.anchors.computeAnchorDrift(msgCount),
+      anchorDrift: this.anchors.computeAnchorDrift(turnCount),
       factualError: this.claims.getFactualErrorSignal(),
       silenceDepth,
       dominanceImbalance
@@ -524,9 +545,14 @@ Return ONLY the JSON, no other text.`;
   }
 
   _getRecentHistoryForPrompt(n = 15) {
-    const recent = this.messages.slice(-n);
+    // Use turns (complete speaker thoughts) instead of raw utterances
+    // so the LLM sees coherent ideas, not sentence fragments
+    const allTurns = this._currentTurn
+      ? [...this.turns, this._currentTurn]
+      : this.turns;
+    const recent = allTurns.slice(-n);
     if (recent.length === 0) return '(no messages yet)';
-    return recent.map(m => `[${m.participantName}]: ${m.text}`).join('\n');
+    return recent.map(t => `[${t.participantName}]: ${t.text}`).join('\n');
   }
 
   _getDefaultAnalysis() {
@@ -567,7 +593,8 @@ Return ONLY the JSON, no other text.`;
       neuron: this.neuron.getState(),
       deference: this.deference.getState(),
       phase: this.phase,
-      messageCount: this.messages.length
+      messageCount: this.messages.length,
+      turnCount: this.turns.length + (this._currentTurn ? 1 : 0)
     };
   }
 
@@ -581,7 +608,7 @@ Return ONLY the JSON, no other text.`;
       coherenceScore: this.engagement.getCoherenceScore(),
       perParticipantEngagement: Object.fromEntries(this.engagement.getPerParticipantEngagement()),
       topAnchors: this.anchors.formatForPrompt(),
-      anchorDrift: this.anchors.computeAnchorDrift(this.messages.length),
+      anchorDrift: this.anchors.computeAnchorDrift(this.turns.length + (this._currentTurn ? 1 : 0)),
       uncorrectedErrors: this.claims.formatErrorsForPrompt(),
       claimStats: this.claims.getStats(),
       neuronStats: this.neuron.getStats()
