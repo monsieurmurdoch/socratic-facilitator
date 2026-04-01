@@ -145,9 +145,9 @@ class SessionStateTracker {
       };
     }
 
-    // Reset the flush timer — flush turn after 8s of silence from this speaker
+    // Reset the flush timer — flush turn after 4s of silence from this speaker
     clearTimeout(this._turnFlushTimer);
-    this._turnFlushTimer = setTimeout(() => this._flushCurrentTurn(), 8000);
+    this._turnFlushTimer = setTimeout(() => this._flushCurrentTurn(), 4000);
 
     // Persist to database using DB-generated participant ID
     try {
