@@ -1,0 +1,38 @@
+const db = require('../index');
+
+async function create({ name, email, role, passwordHash }) {
+  const result = await db.query(
+    `INSERT INTO users (name, email, role, password_hash)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, name, email, role, created_at`,
+    [name, email, role, passwordHash]
+  );
+  return result.rows[0];
+}
+
+async function findById(id) {
+  const result = await db.query(
+    `SELECT id, name, email, created_at
+      , role
+     FROM users
+     WHERE id = $1`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+async function findWithPasswordByEmail(email) {
+  const result = await db.query(
+    `SELECT *
+     FROM users
+     WHERE email = $1`,
+    [email]
+  );
+  return result.rows[0] || null;
+}
+
+module.exports = {
+  create,
+  findById,
+  findWithPasswordByEmail
+};

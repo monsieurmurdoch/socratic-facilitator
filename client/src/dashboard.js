@@ -1,67 +1,342 @@
-const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-const wsUrl = `${protocol}://${window.location.host}`;
-let ws;
+/**
+ * Teacher Dashboard — Real-time monitoring and control of Plato
+ */
+(function () {
+  let ws = null;
+  let sessionId = null;
+  let paused = false;
+  let joinedAt = null;
 
-document.getElementById('join-btn').addEventListener('click', () => {
-    const code = document.getElementById('session-code').value.trim();
-    if (!code) return alert("Enter a code");
+  // --- DOM refs ---
+  const $ = (id) => document.getElementById(id);
 
-    ws = new WebSocket(wsUrl);
+  // --- Auto-detect session from URL ---
+  const params = new URLSearchParams(window.location.search);
+  const urlSession = params.get("session");
+  if (urlSession) {
+    $("session-code-input").value = urlSession;
+  }
+
+  // --- Join ---
+  $("join-btn").addEventListener("click", joinSession);
+  $("session-code-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") joinSession();
+  });
+
+  function joinSession() {
+    const code = $("session-code-input").value.trim().toLowerCase();
+    if (!code) return;
+
+    sessionId = code;
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(`${protocol}//${location.host}`);
 
     ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "join_dashboard", sessionId: code }));
+      ws.send(JSON.stringify({ type: "join_dashboard", sessionId: code }));
     };
 
     ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-
-        if (msg.type === "error") {
-            alert(msg.text);
-            ws.close();
-        } else if (msg.type === "dashboard_joined") {
-            document.getElementById('join-section').style.display = 'none';
-            document.getElementById('dashboard-content').style.display = 'block';
-            document.getElementById('session-title').innerText = `Monitoring Session: ${msg.sessionId}`;
-            renderDashboard(msg.snapshot);
-        } else if (msg.type === "state_snapshot") {
-            renderDashboard(msg.snapshot);
-        }
+      if (event.data instanceof ArrayBuffer) return;
+      const msg = JSON.parse(event.data);
+      handleMessage(msg);
     };
-});
 
-function renderDashboard(snapshot) {
-    // Update AI Stats
-    const aiRatioPct = Math.round((snapshot.aiStats.talkRatio || 0) * 100);
-    document.getElementById('ai-ratio').innerText = `${aiRatioPct}%`;
-    document.getElementById('ai-ratio-bar').style.width = `${Math.min(aiRatioPct, 100)}%`;
-    document.getElementById('ai-count').innerText = snapshot.aiStats.messageCount || 0;
+    ws.onclose = () => {
+      $("session-status").textContent = "Disconnected";
+      $("session-status").className = "dash-badge ended";
+    };
+  }
 
-    const lastMove = snapshot.aiStats.messagesSinceLastIntervention === 0 ? "Just spoke" : `${snapshot.aiStats.messagesSinceLastIntervention} msgs ago`;
-    document.getElementById('ai-last-move').innerText = lastMove;
+  function send(msg) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+  }
 
-    // Update Tension
-    const tensionCount = (snapshot.tensions || []).length;
-    document.getElementById('tension-level').innerText = tensionCount > 0 ? `${tensionCount} active` : "None";
+  // --- Message handling ---
+  function handleMessage(msg) {
+    switch (msg.type) {
+      case "connected":
+        break;
 
-    // Update Participants
-    const participantDiv = document.getElementById('participants-list');
-    participantDiv.innerHTML = '';
+      case "dashboard_joined":
+        $("join-screen").style.display = "none";
+        $("dashboard").style.display = "block";
+        $("session-code").textContent = msg.sessionId;
+        joinedAt = Date.now();
+        if (msg.topic) {
+          $("topic-title").textContent = msg.topic.title || "";
+        }
+        updateStatus(msg.active, msg.paused);
+        if (msg.snapshot) renderSnapshot(msg.snapshot);
+        if (msg.analyzerState) renderAnalyzer(msg.analyzerState);
+        if (msg.recentTurns) renderInitialTranscript(msg.recentTurns);
+        startTimer(msg.snapshot?.sessionDurationMin);
+        break;
 
-    const participantList = snapshot.participants || [];
-    if (participantList.length === 0) {
-        participantDiv.innerHTML = '<p style="color:#aaa;">No participants yet.</p>';
+      case "dashboard_update":
+        if (msg.snapshot) renderSnapshot(msg.snapshot);
+        if (msg.analyzerState) renderAnalyzer(msg.analyzerState);
+        updateStatus(msg.active, msg.paused);
+        break;
+
+      case "participant_message":
+        addTranscriptEntry(msg.name, msg.text, false);
+        break;
+
+      case "facilitator_message":
+        addTranscriptEntry("Plato", msg.text, true, msg.move);
+        break;
+
+      case "participant_joined":
+        addTranscriptEntry(null, `${msg.name} joined`, false, null, true);
+        break;
+
+      case "participant_left":
+        addTranscriptEntry(null, `${msg.name} left`, false, null, true);
+        break;
+
+      case "facilitator_paused":
+        paused = true;
+        updatePauseUI();
+        break;
+
+      case "facilitator_resumed":
+        paused = false;
+        updatePauseUI();
+        break;
+
+      case "discussion_started":
+        updateStatus(true, false);
+        addTranscriptEntry(null, "Discussion started", false, null, true);
+        break;
+
+      case "discussion_ended":
+        updateStatus(false, false);
+        addTranscriptEntry(null, "Discussion ended", false, null, true);
+        break;
+
+      case "error":
+        alert(msg.text);
+        break;
+    }
+  }
+
+  // --- Controls ---
+  $("pause-btn").addEventListener("click", () => {
+    send({ type: "teacher_pause" });
+    paused = true;
+    updatePauseUI();
+  });
+
+  $("resume-btn").addEventListener("click", () => {
+    send({ type: "teacher_resume" });
+    paused = false;
+    updatePauseUI();
+  });
+
+  $("force-btn").addEventListener("click", () => {
+    send({ type: "teacher_force_speak" });
+  });
+
+  $("goal-btn").addEventListener("click", () => {
+    const goal = $("goal-input").value.trim();
+    if (goal) send({ type: "teacher_set_goal", goal });
+  });
+
+  // Slider debounce
+  let paramTimer = null;
+  function onParamChange() {
+    clearTimeout(paramTimer);
+    const gap = parseInt($("param-gap").value);
+    const ratio = parseInt($("param-ratio").value);
+    const silence = parseInt($("param-silence").value);
+    $("param-gap-val").textContent = gap + "s";
+    $("param-ratio-val").textContent = ratio + "%";
+    $("param-silence-val").textContent = silence + "s";
+    paramTimer = setTimeout(() => {
+      send({
+        type: "teacher_adjust_params",
+        params: {
+          minInterventionGapSec: gap,
+          maxAITalkRatio: ratio / 100,
+          silenceTimeoutSec: silence
+        }
+      });
+    }, 500);
+  }
+
+  $("param-gap").addEventListener("input", onParamChange);
+  $("param-ratio").addEventListener("input", onParamChange);
+  $("param-silence").addEventListener("input", onParamChange);
+
+  // --- Renderers ---
+
+  function updateStatus(active, isPaused) {
+    const badge = $("session-status");
+    if (isPaused) {
+      badge.textContent = "Paused";
+      badge.className = "dash-badge paused";
+    } else if (active) {
+      badge.textContent = "Live";
+      badge.className = "dash-badge active";
+    } else {
+      badge.textContent = "Warmup";
+      badge.className = "dash-badge";
+    }
+    paused = isPaused;
+    updatePauseUI();
+  }
+
+  function updatePauseUI() {
+    $("pause-btn").style.display = paused ? "none" : "";
+    $("resume-btn").style.display = paused ? "" : "none";
+  }
+
+  function renderSnapshot(snap) {
+    // Participants
+    const list = $("participant-list");
+    const participants = snap.participants || [];
+    $("participant-count").textContent = participants.length;
+
+    if (participants.length === 0) {
+      list.innerHTML = '<p class="empty-hint">No participants yet</p>';
+    } else {
+      const totalMsgs = Math.max(1, snap.totalMessages || 1);
+      list.innerHTML = participants.map(p => {
+        const pct = Math.round((p.messageCount / totalMsgs) * 100);
+        const silenceStr = p.silenceDurationSec > 60
+          ? Math.round(p.silenceDurationSec / 60) + "m ago"
+          : p.silenceDurationSec + "s ago";
+        return `<div class="participant-row">
+          <span class="p-name">${esc(p.name)}</span>
+          <div class="p-bar-wrap"><div class="p-bar" style="width:${pct}%"></div></div>
+          <span class="p-stats">${p.messageCount} msgs · ${silenceStr}</span>
+        </div>`;
+      }).join("");
     }
 
-    for (const p of participantList) {
-        const totalMsgs = snapshot.totalMessages || 1;
-        const pct = Math.round((p.messageCount / totalMsgs) * 100) || 0;
+    // AI stats
+    $("ai-msg-count").textContent = snap.aiStats?.messageCount || 0;
+    $("ai-talk-ratio").textContent = Math.round((snap.aiStats?.talkRatio || 0) * 100) + "%";
+    $("total-messages").textContent = snap.totalMessages || 0;
+    $("total-turns").textContent = snap.totalTurns || 0;
 
-        participantDiv.innerHTML += `
-      <div class="stat-row">
-        <span>${p.name}</span>
-        <span>${pct}% (${p.messageCount} msgs)</span>
-      </div>
-      <div class="progress-bar"><div class="progress-fill" style="width: ${pct}%; background: #3498db;"></div></div>
-    `;
+    const sinceLast = snap.aiStats?.secondsSinceLastIntervention;
+    $("ai-since-last").textContent = sinceLast != null
+      ? (sinceLast > 60 ? Math.round(sinceLast / 60) + "m" : sinceLast + "s") + " ago"
+      : "Never";
+  }
+
+  function renderAnalyzer(state) {
+    if (!state) return;
+
+    // Engagement & coherence from engagement tracker
+    const eng = state.engagement;
+    if (eng) {
+      setSignal("engagement", eng.engagementScore);
+      setSignal("coherence", eng.coherenceScore);
     }
-}
+
+    // Neuron state — extract signals from lastDecision.contributions
+    const neuron = state.neuron;
+    if (neuron) {
+      const lastDec = neuron.lastDecision;
+      if (lastDec) {
+        setSignal("activation", lastDec.activation);
+        // contributions has { signalName: { value, weight, contribution } }
+        if (lastDec.contributions) {
+          const c = lastDec.contributions;
+          if (c.anchorDrift) setSignal("drift", c.anchorDrift.value);
+          if (c.silenceDepth) setSignal("silence", c.silenceDepth.value);
+          if (c.dominanceImbalance) setSignal("dominance", c.dominanceImbalance.value);
+        }
+      }
+    }
+
+    // Phase
+    $("sig-phase").textContent = state.phase || "—";
+
+    // Forced intervention tracking
+    const forced = state.forcedIntervention;
+    if (forced) {
+      $("sig-silent-streak").textContent = forced.consecutiveSilentDecisions || 0;
+    }
+
+    // Anchors
+    const anchors = state.anchors;
+    if (anchors && anchors.anchors && anchors.anchors.length > 0) {
+      $("anchor-list").innerHTML = anchors.anchors
+        .sort((a, b) => (b.weight || 0) - (a.weight || 0))
+        .slice(0, 8)
+        .map(a => `<div class="anchor-item">
+          <div class="anchor-speaker">${esc(a.participantName || "Unknown")}</div>
+          <div class="anchor-text">${esc(a.summary || a.text || "")}</div>
+          <div class="anchor-meta">weight ${(a.weight || 0).toFixed(2)} · ${a.referenceCount || 0} refs</div>
+        </div>`).join("");
+    }
+  }
+
+  function setSignal(name, value) {
+    if (value == null || isNaN(value)) return;
+    const v = Math.max(0, Math.min(1, value));
+    const bar = $("sig-" + name);
+    const val = $("sig-" + name + "-val");
+    if (bar) bar.style.width = Math.round(v * 100) + "%";
+    if (val) val.textContent = v.toFixed(2);
+  }
+
+  function renderInitialTranscript(turnsText) {
+    if (!turnsText) return;
+    const lines = turnsText.split("\n").filter(l => l.trim());
+    const feed = $("transcript-feed");
+    for (const line of lines) {
+      const match = line.match(/^\[(.+?)\]:\s*(.+)$/);
+      if (match) {
+        const name = match[1];
+        const text = match[2];
+        const isFac = name === "Facilitator";
+        addTranscriptEntry(isFac ? "Plato" : name, text, isFac, null, false, true);
+      }
+    }
+  }
+
+  function addTranscriptEntry(name, text, isFacilitator, move, isSystem, noScroll) {
+    const feed = $("transcript-feed");
+    const div = document.createElement("div");
+
+    if (isSystem) {
+      div.className = "t-entry";
+      div.style.fontStyle = "italic";
+      div.style.color = "var(--text-muted)";
+      div.style.textAlign = "center";
+      div.textContent = text;
+    } else if (isFacilitator) {
+      div.className = "t-entry t-facilitator";
+      div.innerHTML = `<strong>Plato:</strong> ${esc(text)}${move ? `<span class="t-move">${esc(move)}</span>` : ""}`;
+    } else {
+      div.className = "t-entry";
+      div.innerHTML = `<strong>${esc(name)}:</strong> ${esc(text)}`;
+    }
+
+    feed.appendChild(div);
+    if (!noScroll) feed.scrollTop = feed.scrollHeight;
+  }
+
+  // --- Timer ---
+  let timerInterval = null;
+  function startTimer(durationMin) {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+      if (!joinedAt) return;
+      const elapsed = Math.floor((Date.now() - joinedAt) / 1000);
+      const m = Math.floor(elapsed / 60);
+      const s = elapsed % 60;
+      $("session-timer").textContent = m + ":" + String(s).padStart(2, "0");
+    }, 1000);
+  }
+
+  function esc(text) {
+    const d = document.createElement("div");
+    d.textContent = text || "";
+    return d.innerHTML;
+  }
+})();

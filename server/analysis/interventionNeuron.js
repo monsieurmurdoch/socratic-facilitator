@@ -214,7 +214,8 @@ class InterventionNeuron {
       shouldSpeak: d.shouldSpeak,
       activation: d.activation,
       reasoning: d.reasoning,
-      timestamp: d.timestamp
+      timestamp: d.timestamp,
+      signals: d.signals
     }));
   }
 
