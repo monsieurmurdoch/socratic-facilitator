@@ -1,120 +1,152 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <title>Socratic Facilitator - Teacher Dashboard</title>
-    <link rel="stylesheet" href="style.css">
-    <style>
-        body {
-            padding: 2rem;
-        }
-
-        .dashboard-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .card {
-            background: var(--bg-card);
-            padding: 1.5rem;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-        }
-
-        .card h2 {
-            margin-top: 0;
-            font-size: 1.25rem;
-            border-bottom: 2px solid var(--primary-color);
-            padding-bottom: 0.5rem;
-        }
-
-        .stat-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 0.5rem;
-            padding: 0.5rem 0;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .progress-bar {
-            width: 100%;
-            background: #333;
-            height: 10px;
-            border-radius: 5px;
-            overflow: hidden;
-            margin-top: 0.25rem;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: var(--primary-color);
-            transition: width 0.3s;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher Dashboard — Socratic Facilitator</title>
+  <link rel="stylesheet" href="/src/dashboard.css">
 </head>
-
 <body>
-    <div style="max-width: 1200px; margin: 0 auto;">
-        <h1>Teacher Dashboard</h1>
-
-        <div id="join-section">
-            <input type="text" id="session-code" placeholder="Enter Session Code (e.g. ab12cd34)">
-            <button id="join-btn" class="primary-btn">Monitor Session</button>
-        </div>
-
-        <div id="dashboard-content" style="display: none;">
-            <h2 id="session-title">Session: ABCD123</h2>
-
-            <div class="dashboard-container">
-                <div class="card">
-                    <h2>Participant Talk Time</h2>
-                    <div id="participants-list"></div>
-                </div>
-
-                <div class="card">
-                    <h2>AI Facilitator Stats</h2>
-                    <div class="stat-row">
-                        <span>Talk Ratio:</span>
-                        <span id="ai-ratio">0%</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div id="ai-ratio-bar" class="progress-fill" style="width: 0%; background: #e74c3c;"></div>
-                    </div>
-
-                    <div class="stat-row" style="margin-top: 1rem;">
-                        <span>Total AI Interventions:</span>
-                        <span id="ai-count">0</span>
-                    </div>
-                    <div class="stat-row">
-                        <span>Last Move:</span>
-                        <span id="ai-last-move">None</span>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <h2>Tension Metrics</h2>
-                    <div class="stat-row">
-                        <span>Overall Tension Level:</span>
-                        <span id="tension-level">0</span>
-                    </div>
-                    <p style="font-size: 0.9rem; color: #aaa;">Tracks disagreement, confusion, or debate intensity.</p>
-                </div>
-
-                <div class="card">
-                    <h2>Recent Messages Flagged</h2>
-                    <ul id="flagged-list" style="padding-left: 1.5rem; color: #ccc;">
-                        <!-- Flagged insights -->
-                    </ul>
-                </div>
-            </div>
-        </div>
+  <!-- Join Screen -->
+  <div id="join-screen" class="join-screen">
+    <div class="join-card">
+      <h1>Teacher Dashboard</h1>
+      <p>Monitor and control Plato in real time.</p>
+      <div class="join-form">
+        <input type="text" id="session-code-input" placeholder="Session code (e.g. ab12cd)" maxlength="8" autocomplete="off">
+        <button id="join-btn" class="ctrl-btn ctrl-primary">Monitor Session</button>
+      </div>
     </div>
+  </div>
 
-    <script src="/src/dashboard.js"></script>
+  <!-- Dashboard -->
+  <div id="dashboard" style="display:none;">
+
+    <header class="dash-header">
+      <div class="dash-header-left">
+        <h1>Plato Dashboard</h1>
+        <span id="session-code" class="dash-code">------</span>
+        <span id="session-status" class="dash-badge">Connecting</span>
+      </div>
+      <div class="dash-header-right">
+        <span id="topic-title" class="dash-topic"></span>
+        <span id="session-timer" class="dash-timer">0:00</span>
+      </div>
+    </header>
+
+    <div class="dash-grid">
+
+      <!-- Controls -->
+      <section class="dash-card dash-controls">
+        <h2>Plato Controls</h2>
+        <div class="control-buttons">
+          <button id="pause-btn" class="ctrl-btn ctrl-pause">Pause Plato</button>
+          <button id="resume-btn" class="ctrl-btn ctrl-resume" style="display:none;">Resume Plato</button>
+          <button id="force-btn" class="ctrl-btn ctrl-force">Force Intervention</button>
+        </div>
+
+        <div class="control-slider-group">
+          <label>Intervention Gap</label>
+          <div class="slider-row">
+            <input id="param-gap" type="range" min="5" max="60" value="15">
+            <span id="param-gap-val">15s</span>
+          </div>
+        </div>
+        <div class="control-slider-group">
+          <label>Max AI Talk Ratio</label>
+          <div class="slider-row">
+            <input id="param-ratio" type="range" min="5" max="50" value="15">
+            <span id="param-ratio-val">15%</span>
+          </div>
+        </div>
+        <div class="control-slider-group">
+          <label>Silence Timeout</label>
+          <div class="slider-row">
+            <input id="param-silence" type="range" min="10" max="120" value="45">
+            <span id="param-silence-val">45s</span>
+          </div>
+        </div>
+
+        <div class="goal-row">
+          <input id="goal-input" type="text" placeholder="Set a goal for Plato..." class="goal-input">
+          <button id="goal-btn" class="ctrl-btn ctrl-sm">Set</button>
+        </div>
+      </section>
+
+      <!-- Signals -->
+      <section class="dash-card dash-signals">
+        <h2>Neuron Signals</h2>
+        <div class="signal-list">
+          <div class="signal-item">
+            <span class="signal-label">Activation</span>
+            <div class="signal-bar-wrap"><div id="sig-activation" class="signal-bar bar-activation" style="width:0%"></div></div>
+            <span id="sig-activation-val" class="signal-val">—</span>
+          </div>
+          <div class="signal-item">
+            <span class="signal-label">Engagement</span>
+            <div class="signal-bar-wrap"><div id="sig-engagement" class="signal-bar bar-good" style="width:0%"></div></div>
+            <span id="sig-engagement-val" class="signal-val">—</span>
+          </div>
+          <div class="signal-item">
+            <span class="signal-label">Coherence</span>
+            <div class="signal-bar-wrap"><div id="sig-coherence" class="signal-bar bar-good" style="width:0%"></div></div>
+            <span id="sig-coherence-val" class="signal-val">—</span>
+          </div>
+          <div class="signal-item">
+            <span class="signal-label">Anchor Drift</span>
+            <div class="signal-bar-wrap"><div id="sig-drift" class="signal-bar bar-warn" style="width:0%"></div></div>
+            <span id="sig-drift-val" class="signal-val">—</span>
+          </div>
+          <div class="signal-item">
+            <span class="signal-label">Silence Depth</span>
+            <div class="signal-bar-wrap"><div id="sig-silence" class="signal-bar bar-warn" style="width:0%"></div></div>
+            <span id="sig-silence-val" class="signal-val">—</span>
+          </div>
+          <div class="signal-item">
+            <span class="signal-label">Dominance</span>
+            <div class="signal-bar-wrap"><div id="sig-dominance" class="signal-bar bar-warn" style="width:0%"></div></div>
+            <span id="sig-dominance-val" class="signal-val">—</span>
+          </div>
+        </div>
+        <div class="signal-footer">
+          <span>Phase: <strong id="sig-phase">—</strong></span>
+          <span>Silent streak: <strong id="sig-silent-streak">0</strong></span>
+        </div>
+      </section>
+
+      <!-- Participants -->
+      <section class="dash-card dash-participants">
+        <h2>Participants <span id="participant-count" class="card-count">0</span></h2>
+        <div id="participant-list" class="participant-list"></div>
+      </section>
+
+      <!-- Transcript -->
+      <section class="dash-card dash-transcript">
+        <h2>Live Transcript</h2>
+        <div id="transcript-feed" class="transcript-feed"></div>
+      </section>
+
+      <!-- Anchors -->
+      <section class="dash-card dash-anchors">
+        <h2>Key Anchors</h2>
+        <div id="anchor-list" class="anchor-list">
+          <p class="empty-hint">No anchors yet</p>
+        </div>
+      </section>
+
+      <!-- AI Stats -->
+      <section class="dash-card dash-ai-stats">
+        <h2>AI Stats</h2>
+        <div class="stat-row"><span>Messages</span><strong id="ai-msg-count">0</strong></div>
+        <div class="stat-row"><span>Talk Ratio</span><strong id="ai-talk-ratio">0%</strong></div>
+        <div class="stat-row"><span>Since Last</span><strong id="ai-since-last">—</strong></div>
+        <div class="stat-row"><span>Total Messages</span><strong id="total-messages">0</strong></div>
+        <div class="stat-row"><span>Total Turns</span><strong id="total-turns">0</strong></div>
+      </section>
+
+    </div>
+  </div>
+
+  <script src="/src/dashboard.js"></script>
 </body>
-
 </html>

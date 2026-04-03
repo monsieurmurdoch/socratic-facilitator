@@ -25,6 +25,9 @@ const participantsRepo = require("./db/repositories/participants");
 const messagesRepo = require("./db/repositories/messages");
 const materialsRepo = require("./db/repositories/materials");
 const primedContextRepo = require("./db/repositories/primedContext");
+const usersRepo = require("./db/repositories/users");
+const messageAnalyticsRepo = require("./db/repositories/messageAnalytics");
+const sessionMembershipsRepo = require("./db/repositories/sessionMemberships");
 
 // Services
 const { EnhancedFacilitationEngine, getPlatoDisplayConfig } = require("./enhancedFacilitator");
@@ -34,8 +37,13 @@ const { fastLLM } = require("./analysis/fastLLMProvider");
 const { stalenessGuard } = require("./analysis/stalenessGuard");
 const { DISCUSSION_TOPICS, FACILITATION_PARAMS, getAgeCalibration } = require("./config");
 
+// Auth
+const { attachUser, verifyToken } = require("./auth");
+
 // Routes
 const sessionsRouter = require("./routes/sessions");
+const authRouter = require("./routes/auth");
+const classesRouter = require("./routes/classes");
 
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -46,8 +54,18 @@ const wss = new WebSocketServer({ server });
 app.use(express.static(path.join(__dirname, "../client/public")));
 app.use("/src", express.static(path.join(__dirname, "../client/src")));
 
+// Auth middleware — attaches req.user from JWT if present
+app.use(attachUser);
+
 // API routes
+app.use("/api/auth", authRouter);
+app.use("/api/classes", classesRouter);
 app.use("/api/sessions", sessionsRouter);
+
+// Teacher dashboard — served at /dashboard?session=CODE
+app.get("/dashboard", (req, res) => {
+  res.sendFile(path.join(__dirname, "../client/public/dashboard.html"));
+});
 
 // Health check
 app.get("/health", (req, res) => res.json({ status: "ok" }));
@@ -396,6 +414,12 @@ async function handleParticipantMessage(sessionShortCode, clientId, text) {
     timestamp: Date.now()
   });
 
+  // If teacher paused Plato, skip facilitation pipeline
+  if (session.paused) {
+    console.log(`[${sessionShortCode}] ${participant.name}: "${text}" [PAUSED — skipping pipeline]`);
+    return;
+  }
+
   // Use enhanced engine with orchestrator if enabled
   let decision;
   const pipelineStart = Date.now();
@@ -552,22 +576,112 @@ wss.on("connection", (ws, req) => {
         session.clients.push({ ws, clientId, role: "teacher" });
 
         const snapshot = await session.stateTracker.getStateSnapshot();
-
-        // Include analyzer state if available
         const analyzerState = enhancedEngine.getAnalyzerState?.(sessionId) || null;
+        const recentTurns = session.stateTracker.getRecentTurns(30);
 
         ws.send(JSON.stringify({
           type: "dashboard_joined",
           sessionId,
           snapshot,
-          analyzerState
+          analyzerState,
+          recentTurns,
+          paused: !!session.paused,
+          active: !!session.active,
+          topic: session.topic
         }));
+
+        // Start streaming dashboard updates every 3s
+        const dashInterval = setInterval(async () => {
+          if (ws.readyState !== 1) { clearInterval(dashInterval); return; }
+          const s = activeSessions.get(sessionId);
+          if (!s) { clearInterval(dashInterval); return; }
+          const snap = await s.stateTracker.getStateSnapshot();
+          const aState = enhancedEngine.getAnalyzerState?.(sessionId) || null;
+          ws.send(JSON.stringify({
+            type: "dashboard_update",
+            snapshot: snap,
+            analyzerState: aState,
+            paused: !!s.paused,
+            active: !!s.active
+          }));
+        }, 3000);
+        ws._dashInterval = dashInterval;
+        break;
+      }
+
+      case "teacher_pause": {
+        const session = activeSessions.get(currentSessionShortCode);
+        if (!session) return;
+        session.paused = true;
+        console.log(`[${currentSessionShortCode}] Teacher PAUSED Plato`);
+        broadcastToSession(currentSessionShortCode, {
+          type: "facilitator_paused"
+        });
+        break;
+      }
+
+      case "teacher_resume": {
+        const session = activeSessions.get(currentSessionShortCode);
+        if (!session) return;
+        session.paused = false;
+        console.log(`[${currentSessionShortCode}] Teacher RESUMED Plato`);
+        broadcastToSession(currentSessionShortCode, {
+          type: "facilitator_resumed"
+        });
+        break;
+      }
+
+      case "teacher_force_speak": {
+        const session = activeSessions.get(currentSessionShortCode);
+        if (!session || !session.active) return;
+        console.log(`[${currentSessionShortCode}] Teacher FORCED Plato to speak`);
+        const decision = await enhancedEngine.decide(session.stateTracker);
+        if (decision.message) {
+          await handleFacilitatorMessage(currentSessionShortCode, decision);
+        } else {
+          // Force a generic deepen move
+          const fallback = await enhancedEngine.decide(session.stateTracker);
+          if (fallback.message) {
+            await handleFacilitatorMessage(currentSessionShortCode, fallback);
+          }
+        }
+        break;
+      }
+
+      case "teacher_set_goal": {
+        const session = activeSessions.get(currentSessionShortCode);
+        if (!session) return;
+        const { goal } = msg;
+        if (goal) {
+          session.teacherGoal = goal;
+          console.log(`[${currentSessionShortCode}] Teacher set goal: "${goal}"`);
+        }
+        break;
+      }
+
+      case "teacher_adjust_params": {
+        const session = activeSessions.get(currentSessionShortCode);
+        if (!session) return;
+        // Apply overrides to the session's stateTracker params
+        const overrides = msg.params || {};
+        if (!session.paramOverrides) session.paramOverrides = {};
+        Object.assign(session.paramOverrides, overrides);
+        console.log(`[${currentSessionShortCode}] Teacher adjusted params:`, overrides);
         break;
       }
 
       case "join_session": {
-        const { sessionId, name, age } = msg;
+        const { sessionId, name, age, authToken } = msg;
         console.log(`[join_session] Looking up session: ${sessionId}`);
+        let authUser = null;
+        if (authToken) {
+          try {
+            const payload = verifyToken(authToken);
+            authUser = await usersRepo.findById(payload.userId);
+          } catch (error) {
+            console.warn("[join_session] Invalid auth token:", error.message);
+          }
+        }
         let session = activeSessions.get(sessionId);
 
         // If not in memory, try loading from DB (supports REST-created sessions)
@@ -622,11 +736,18 @@ wss.on("connection", (ws, req) => {
           session.clients = session.clients.filter(c => c.clientId !== clientId);
         } else {
           console.log(`[join_session] Adding participant: ${name}`);
-          await session.stateTracker.addParticipant(clientId, name, age || 12);
+          const sessionRole = authUser?.role === 'Teacher' || authUser?.role === 'Admin' || authUser?.role === 'SuperAdmin'
+            ? 'teacher'
+            : 'participant';
+          await session.stateTracker.addParticipant(clientId, name, age || 12, {
+            userId: authUser?.id || null,
+            accountRole: authUser?.role || null,
+            sessionRole
+          });
         }
 
         currentSessionShortCode = sessionId;
-        session.clients.push({ ws, clientId, name });
+        session.clients.push({ ws, clientId, name, userId: authUser?.id || null, role: authUser?.role || null });
         console.log(`[join_session] Sending session_joined response`);
 
         broadcastToSession(sessionId, {
@@ -640,7 +761,7 @@ wss.on("connection", (ws, req) => {
         // any typed chat input if needed.
 
         const participants = Array.from(session.stateTracker.participants.values())
-          .map(p => ({ name: p.name, id: p.id }));
+          .map(p => ({ name: p.name, id: p.id, role: p.accountRole }));
 
         ws.send(JSON.stringify({
           type: "session_joined",
@@ -648,7 +769,8 @@ wss.on("connection", (ws, req) => {
           topicTitle: session.topic.title,
           passage: session.topic.passage,
           participants,
-          yourId: clientId
+          yourId: clientId,
+          yourRole: authUser?.role || null
         }));
         break;
       }
@@ -871,6 +993,8 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("close", () => {
+    // Clean up dashboard interval
+    if (ws._dashInterval) clearInterval(ws._dashInterval);
     // Clean up Deepgram connection
     if (deepgramWs) {
       try { deepgramWs.close(); } catch (e) {}

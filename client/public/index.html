@@ -10,27 +10,127 @@
 
   <!-- WELCOME SCREEN -->
   <div id="welcome-screen" class="screen active">
-    <h1>Socratic Facilitator</h1>
-    <p>Upload materials. Start a discussion. Plato does the rest.</p>
+    <div class="welcome-shell">
+      <div class="welcome-main">
+        <h1>Socratic Facilitator</h1>
+        <p>Upload materials. Start a discussion. Plato does the rest.</p>
 
-    <div class="form-group">
-      <label for="name-input">Your Name</label>
-      <input type="text" id="name-input" placeholder="Enter your name" autocomplete="off">
-    </div>
+        <div class="form-group">
+          <label for="name-input">Your Name In Session</label>
+          <input type="text" id="name-input" placeholder="Enter your name" autocomplete="off">
+        </div>
 
-    <div class="divider"></div>
+        <div class="divider"></div>
 
-    <div class="btn-row">
-      <button id="create-btn" class="btn btn-primary">Create Room</button>
-      <button id="join-toggle-btn" class="btn btn-secondary">Join Existing</button>
-    </div>
+        <div class="btn-row">
+          <button id="create-btn" class="btn btn-primary">Create Room</button>
+          <button id="join-toggle-btn" class="btn btn-secondary">Join Existing</button>
+        </div>
 
-    <div id="join-section" style="display: none;">
-      <div class="form-group">
-        <label for="join-code-input">Session Code</label>
-        <input type="text" id="join-code-input" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
+        <div id="join-section" style="display: none;">
+          <div class="form-group">
+            <label for="join-code-input">Session Code</label>
+            <input type="text" id="join-code-input" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
+          </div>
+          <button id="join-btn" class="btn btn-secondary">Join Session</button>
+        </div>
       </div>
-      <button id="join-btn" class="btn btn-secondary">Join Session</button>
+
+      <aside class="workspace-panel">
+        <div id="auth-signed-out" class="workspace-card">
+          <div class="workspace-header">
+            <h3>Teacher Account</h3>
+            <span class="workspace-kicker">Save classes and history</span>
+          </div>
+
+          <div class="auth-grid">
+            <div class="auth-section">
+              <h4>Create Account</h4>
+              <div class="form-group auth-form-group">
+                <label for="auth-name-input">Name</label>
+                <input type="text" id="auth-name-input" placeholder="Ada Lovelace" autocomplete="name">
+              </div>
+              <div class="form-group auth-form-group">
+                <label for="auth-email-input">Email</label>
+                <input type="email" id="auth-email-input" placeholder="teacher@example.com" autocomplete="email">
+              </div>
+              <div class="form-group auth-form-group">
+                <label for="auth-password-input">Password</label>
+                <input type="password" id="auth-password-input" placeholder="At least 8 characters" autocomplete="new-password">
+              </div>
+              <div class="form-group auth-form-group">
+                <label for="auth-role-select">Role</label>
+                <select id="auth-role-select">
+                  <option value="Teacher">Teacher</option>
+                  <option value="Student">Student</option>
+                  <option value="Parent">Parent</option>
+                </select>
+              </div>
+              <button id="register-btn" class="btn btn-primary auth-btn">Create Account</button>
+            </div>
+
+            <div class="auth-section">
+              <h4>Sign In</h4>
+              <div class="form-group auth-form-group">
+                <label for="login-email-input">Email</label>
+                <input type="email" id="login-email-input" placeholder="teacher@example.com" autocomplete="email">
+              </div>
+              <div class="form-group auth-form-group">
+                <label for="login-password-input">Password</label>
+                <input type="password" id="login-password-input" placeholder="Your password" autocomplete="current-password">
+              </div>
+              <button id="login-btn" class="btn btn-secondary auth-btn">Sign In</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="auth-signed-in" class="workspace-card" style="display:none;">
+          <div class="workspace-header">
+            <div>
+              <h3 id="account-name">Teacher</h3>
+              <p id="account-email" class="workspace-meta"></p>
+            </div>
+            <button id="logout-btn" class="btn btn-secondary btn-small">Log Out</button>
+          </div>
+          <p class="workspace-meta">Classes and prior sessions you create while signed in will live here.</p>
+        </div>
+
+        <div class="workspace-card">
+          <div class="workspace-header">
+            <h3>Saved Classes</h3>
+            <span class="workspace-kicker">Reuse groups and keep context</span>
+          </div>
+          <div id="class-creation" style="display:none;">
+            <div class="form-group auth-form-group">
+              <label for="new-class-name">Class Name</label>
+              <input type="text" id="new-class-name" placeholder="9th Grade Humanities - Period 2">
+            </div>
+            <div class="form-group auth-form-group">
+              <label for="new-class-age-range">Age Range</label>
+              <input type="text" id="new-class-age-range" placeholder="14-15">
+            </div>
+            <div class="form-group auth-form-group">
+              <label for="new-class-description">Notes</label>
+              <textarea id="new-class-description" placeholder="Optional notes about this group"></textarea>
+            </div>
+            <button id="create-class-btn" class="btn btn-primary auth-btn">Create Class</button>
+          </div>
+          <p id="classes-locked" class="workspace-meta">Sign in to create and reuse classes.</p>
+          <div id="classes-list" class="workspace-list">
+            <p class="empty-state">No classes yet.</p>
+          </div>
+        </div>
+
+        <div class="workspace-card">
+          <div class="workspace-header">
+            <h3>Recent Sessions</h3>
+            <span class="workspace-kicker">Quick history for follow-up</span>
+          </div>
+          <div id="session-history-list" class="workspace-list">
+            <p class="empty-state">Sign in to see session history.</p>
+          </div>
+        </div>
+      </aside>
     </div>
   </div>
 
@@ -49,6 +149,14 @@
         <label for="opening-question">Opening Question (optional)</label>
         <textarea id="opening-question" placeholder="What question should Plato open with?"></textarea>
       </div>
+
+      <div class="form-group" style="max-width: 100%;">
+        <label for="session-class-select">Save To Class</label>
+        <select id="session-class-select">
+          <option value="">Not linked to a class</option>
+        </select>
+      </div>
+      <p id="session-class-help" class="helper-text">Sign in to organize sessions by class and keep a history.</p>
     </div>
 
     <div class="setup-section">
@@ -100,6 +208,7 @@
     <p id="participant-count" style="color: var(--text-muted); font-size: 0.85rem;">0 participants</p>
 
     <button id="enter-video-btn" class="btn btn-primary">Join Video Room</button>
+    <a id="dashboard-link" href="#" target="_blank" class="btn btn-secondary" style="display:none; text-align:center; text-decoration:none;">Open Teacher Dashboard</a>
   </div>
 
   <!-- VIDEO SCREEN (Jitsi + Facilitator) -->

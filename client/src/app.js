@@ -14,10 +14,18 @@
   let isHost = false;
   let jitsiApi = null;
   let materials = [];
+  let authToken = null;
+  let accountUser = null;
+  let savedClasses = [];
+  let sessionHistory = [];
   const MAX_MATERIALS = 5;
+  let sttBatchBuffer = '';
+  let sttBatchTimer = null;
 
   // ---- State Persistence ----
   const STORAGE_KEY = "socratic_state";
+  const AUTH_TOKEN_KEY = "socratic_auth_token";
+  const AUTH_USER_KEY = "socratic_auth_user";
 
   function saveState() {
     try {
@@ -50,6 +58,33 @@
     localStorage.removeItem(STORAGE_KEY);
   }
 
+  function loadAuthState() {
+    try {
+      authToken = localStorage.getItem(AUTH_TOKEN_KEY);
+      const rawUser = localStorage.getItem(AUTH_USER_KEY);
+      accountUser = rawUser ? JSON.parse(rawUser) : null;
+    } catch (e) {
+      authToken = null;
+      accountUser = null;
+    }
+  }
+
+  function saveAuthState(user, token) {
+    authToken = token;
+    accountUser = user;
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  }
+
+  function clearAuthState() {
+    authToken = null;
+    accountUser = null;
+    savedClasses = [];
+    sessionHistory = [];
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+  }
+
   // ---- DOM Elements ----
   const screens = {
     welcome: document.getElementById("welcome-screen"),
@@ -61,6 +96,23 @@
   function showScreen(name) {
     Object.values(screens).forEach(s => s && s.classList.remove("active"));
     if (screens[name]) screens[name].classList.add("active");
+  }
+
+  function getAuthHeaders(extra = {}) {
+    const headers = { ...extra };
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`;
+    }
+    return headers;
+  }
+
+  function getDisplayNameFromAccount() {
+    if (!accountUser?.name) return "";
+    return accountUser.name;
+  }
+
+  function canManageClasses() {
+    return ["Teacher", "Admin", "SuperAdmin"].includes(accountUser?.role);
   }
 
   // ---- Check URL for direct join ----
@@ -101,7 +153,8 @@
         send({
           type: "rejoin_session",
           sessionId: saved.currentSessionId,
-          oldClientId: saved.myId
+          oldClientId: saved.myId,
+          authToken
         });
         return;
       }
@@ -110,12 +163,12 @@
       const params = new URLSearchParams(window.location.search);
       const joinCode = params.get("join");
       if (joinCode && myName) {
-        send({ type: "join_session", sessionId: joinCode, name: myName, age: getAge() });
+        send({ type: "join_session", sessionId: joinCode, name: myName, age: getAge(), authToken });
       }
     };
     ws.onmessage = (event) => {
-      // TTS disabled for beta — ignore audio binary frames
       if (event.data instanceof ArrayBuffer) {
+        // TTS disabled for beta
         // playAudioBuffer(event.data);
         return;
       }
@@ -154,7 +207,7 @@
   async function apiPost(endpoint, data) {
     const res = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(data)
     });
     const json = await res.json();
@@ -165,12 +218,159 @@
   }
 
   async function apiGet(endpoint) {
-    const res = await fetch(endpoint);
+    const res = await fetch(endpoint, {
+      headers: getAuthHeaders()
+    });
     const json = await res.json();
     if (!res.ok) {
       throw new Error(json.error || `Server error ${res.status}`);
     }
     return json;
+  }
+
+  function renderAuthState() {
+    const signedOut = document.getElementById("auth-signed-out");
+    const signedIn = document.getElementById("auth-signed-in");
+    const classCreation = document.getElementById("class-creation");
+    const classesLocked = document.getElementById("classes-locked");
+    const accountName = document.getElementById("account-name");
+    const accountEmail = document.getElementById("account-email");
+    const classHelp = document.getElementById("session-class-help");
+
+    if (accountUser) {
+      signedOut.style.display = "none";
+      signedIn.style.display = "block";
+      classCreation.style.display = canManageClasses() ? "block" : "none";
+      classesLocked.style.display = canManageClasses() ? "none" : "block";
+      accountName.textContent = accountUser.name;
+      accountEmail.textContent = `${accountUser.email}${accountUser.role ? ` · ${accountUser.role}` : ""}`;
+      if (!document.getElementById("name-input").value.trim()) {
+        document.getElementById("name-input").value = getDisplayNameFromAccount();
+      }
+      if (classHelp) {
+        classHelp.textContent = canManageClasses()
+          ? "Choose a class to keep this session in your saved workspace."
+          : "Your account can join sessions and keep history, but class management is limited.";
+      }
+    } else {
+      signedOut.style.display = "block";
+      signedIn.style.display = "none";
+      classCreation.style.display = "none";
+      classesLocked.style.display = "block";
+      if (classHelp) {
+        classHelp.textContent = "Sign in to organize sessions by class and keep a history.";
+      }
+    }
+  }
+
+  function formatDateTime(value) {
+    if (!value) return "Not started";
+    return new Date(value).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    });
+  }
+
+  function renderClasses() {
+    const list = document.getElementById("classes-list");
+    const select = document.getElementById("session-class-select");
+    const previousValue = select.value;
+
+    select.innerHTML = '<option value="">Not linked to a class</option>';
+
+    if (!accountUser) {
+      list.innerHTML = '<p class="empty-state">Sign in to create and reuse classes.</p>';
+      return;
+    }
+
+    if (!canManageClasses() && savedClasses.length === 0) {
+      list.innerHTML = '<p class="empty-state">No class memberships yet.</p>';
+      return;
+    }
+
+    if (savedClasses.length === 0) {
+      list.innerHTML = '<p class="empty-state">No classes yet. Create your first one here.</p>';
+    } else {
+      list.innerHTML = savedClasses.map(cls => `
+        <div class="workspace-item">
+          <strong>${escapeHtml(cls.name)}</strong>
+          <div class="workspace-item-meta">${escapeHtml(cls.description || "No notes yet.")}</div>
+          <span class="workspace-item-tag">${cls.sessionCount} saved session${cls.sessionCount === 1 ? "" : "s"}${cls.ageRange ? ` · Ages ${escapeHtml(cls.ageRange)}` : ""}</span>
+        </div>
+      `).join("");
+    }
+
+    savedClasses.forEach(cls => {
+      const option = document.createElement("option");
+      option.value = cls.id;
+      option.textContent = cls.name;
+      select.appendChild(option);
+    });
+
+    if (savedClasses.some(cls => cls.id === previousValue)) {
+      select.value = previousValue;
+    }
+  }
+
+  function renderSessionHistory() {
+    const list = document.getElementById("session-history-list");
+
+    if (!accountUser) {
+      list.innerHTML = '<p class="empty-state">Sign in to see session history.</p>';
+      return;
+    }
+
+    if (sessionHistory.length === 0) {
+      list.innerHTML = '<p class="empty-state">No saved sessions yet. Your newly created rooms will show up here.</p>';
+      return;
+    }
+
+    list.innerHTML = sessionHistory.map(session => `
+      <div class="workspace-item">
+        <strong>${escapeHtml(session.title)}</strong>
+        <div class="workspace-item-meta">
+          ${escapeHtml(session.className || "Unassigned")} · ${escapeHtml(session.status)} · ${escapeHtml(session.viewerRole || "Member")}<br>
+          ${session.participantCount} participants · ${session.messageCount} messages · ${formatDateTime(session.createdAt)}<br>
+          You spoke about ${Math.round(Number(session.viewerSpeakingSeconds || 0))}s · contribution ${Number(session.viewerContributionScore || 0).toFixed(2)}
+        </div>
+        <span class="workspace-item-tag">Code ${escapeHtml(session.shortCode)}</span>
+      </div>
+    `).join("");
+  }
+
+  async function refreshWorkspace() {
+    renderAuthState();
+
+    if (!authToken) {
+      savedClasses = [];
+      sessionHistory = [];
+      renderClasses();
+      renderSessionHistory();
+      return;
+    }
+
+    try {
+      const [me, classes, history] = await Promise.all([
+        apiGet("/api/auth/me"),
+        apiGet("/api/classes"),
+        apiGet("/api/sessions/history")
+      ]);
+      accountUser = me.user;
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(accountUser));
+      savedClasses = classes;
+      sessionHistory = history;
+      renderAuthState();
+      renderClasses();
+      renderSessionHistory();
+    } catch (error) {
+      console.warn("[Auth] Workspace refresh failed:", error.message);
+      clearAuthState();
+      renderAuthState();
+      renderClasses();
+      renderSessionHistory();
+    }
   }
 
   // ---- Jitsi / JaaS Integration ----
@@ -305,8 +505,6 @@
       jitsiApi.dispose();
       jitsiApi = null;
     }
-    // Full mic cleanup when leaving video
-    destroySttStream();
   }
 
   // ---- Share Link ----
@@ -317,6 +515,13 @@
 
   function showShareInfo(sessionId) {
     document.getElementById("session-code").textContent = sessionId;
+
+    // Show dashboard link for host
+    const dashLink = document.getElementById("dashboard-link");
+    if (dashLink && isHost) {
+      dashLink.href = `/dashboard?session=${sessionId}`;
+      dashLink.style.display = "";
+    }
 
     // Update URL without reload
     const shareUrl = getShareLink(sessionId);
@@ -415,11 +620,9 @@
         break;
 
       case "participant_message":
-        // Own messages are already added locally from the STT handler,
-        // so skip them here to avoid duplicates in the chatbox.
-        if (msg.name !== myName) {
-          addTranscriptEntry(msg.name, msg.text, false);
-        }
+        // Skip our own messages — already added locally via STT
+        if (msg.name === myName) break;
+        addTranscriptEntry(msg.name, msg.text, false);
         break;
 
       case "participant_partial":
@@ -430,33 +633,29 @@
         addFacilitatorMessage(msg.text, msg.move);
         setFacilitatorStatus("speaking");
         setPlatoTileSpeaking(msg.text);
-        // TTS disabled for beta — text-only Plato
+        // TTS disabled for beta — uncomment when voice quality improves
         // speakWithBrowserTTS(msg.text);
         break;
 
       case "stt_transcript":
         if (msg.isFinal) {
           if (msg.text && msg.text.trim().length > 2) {
-            // Batch consecutive finals so pauses mid-thought don't
-            // create separate messages. Accumulate and flush after
-            // 2s of silence.
-            sttBatchBuffer.push(msg.text.trim());
-            // Show latest partial accumulation
-            addTranscriptEntry(myName, sttBatchBuffer.join(" "), true, true);
+            // Batch consecutive STT finals into a single message (2s debounce)
+            sttBatchBuffer += (sttBatchBuffer ? ' ' : '') + msg.text.trim();
+            addTranscriptEntry(myName, sttBatchBuffer, true, false);
             clearTimeout(sttBatchTimer);
             sttBatchTimer = setTimeout(() => {
-              const fullText = sttBatchBuffer.join(" ");
-              sttBatchBuffer = [];
-              addTranscriptEntry(myName, fullText, true, false);
-              send({ type: "message", text: fullText });
-              console.log("[STT] Batched final:", fullText);
+              if (sttBatchBuffer) {
+                send({ type: "message", text: sttBatchBuffer });
+                console.log("[STT] Batched final:", sttBatchBuffer);
+                sttBatchBuffer = '';
+              }
             }, 2000);
           }
         } else {
           if (msg.text && msg.text.trim()) {
-            // Show interim alongside any accumulated batch
-            const prefix = sttBatchBuffer.length ? sttBatchBuffer.join(" ") + " " : "";
-            addTranscriptEntry(myName, prefix + msg.text + " ...", true, true);
+            const preview = sttBatchBuffer ? sttBatchBuffer + ' ' + msg.text : msg.text;
+            addTranscriptEntry(myName, preview + " ...", true, true);
           }
         }
         break;
@@ -467,9 +666,10 @@
 
       case "discussion_ended":
         addFacilitatorMessage("The discussion has ended. Thank you for participating.", "closing");
-        stopSpeechRecognition();
+        destroySttStream();
         destroyJitsi();
         clearState();
+        refreshWorkspace();
         break;
 
       case "error":
@@ -500,6 +700,7 @@
           formData.append("file", m.file);
           await fetch(`/api/sessions/${currentSessionId}/materials`, {
             method: "POST",
+            headers: getAuthHeaders(),
             body: formData
           });
         } else if (m.type === "url") {
@@ -571,13 +772,6 @@
       chip.textContent = p.name;
       container.appendChild(chip);
     });
-  }
-
-  function scrollChatToBottom() {
-    // The scrollable element is .sidebar-transcript (overflow-y: auto),
-    // NOT the inner #conversation-feed.
-    const scrollable = document.querySelector('.sidebar-transcript');
-    if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
   }
 
   function addFacilitatorMessage(text, move) {
@@ -683,6 +877,11 @@
     }, speakingMs);
   }
 
+  function scrollChatToBottom() {
+    const scrollable = document.querySelector('.sidebar-transcript');
+    if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
+  }
+
   function escapeHtml(text) {
     const div = document.createElement("div");
     div.textContent = text;
@@ -693,7 +892,90 @@
     return 25; // Default age — age input removed from UI
   }
 
+  async function handleRegister() {
+    const name = document.getElementById("auth-name-input").value.trim();
+    const email = document.getElementById("auth-email-input").value.trim();
+    const password = document.getElementById("auth-password-input").value;
+    const role = document.getElementById("auth-role-select").value;
+
+    if (!name || !email || !password) {
+      alert("Enter your name, email, and password to create an account.");
+      return;
+    }
+
+    try {
+      const result = await apiPost("/api/auth/register", { name, email, password, role });
+      saveAuthState(result.user, result.token);
+      document.getElementById("auth-password-input").value = "";
+      document.getElementById("login-password-input").value = "";
+      document.getElementById("name-input").value = result.user.name;
+      await refreshWorkspace();
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
+  async function handleLogin() {
+    const email = document.getElementById("login-email-input").value.trim();
+    const password = document.getElementById("login-password-input").value;
+
+    if (!email || !password) {
+      alert("Enter your email and password to sign in.");
+      return;
+    }
+
+    try {
+      const result = await apiPost("/api/auth/login", { email, password });
+      saveAuthState(result.user, result.token);
+      document.getElementById("name-input").value = result.user.name;
+      document.getElementById("login-password-input").value = "";
+      await refreshWorkspace();
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
+  async function handleCreateClass() {
+    if (!accountUser || !canManageClasses()) {
+      alert("Only teachers and admins can create classes.");
+      return;
+    }
+
+    const name = document.getElementById("new-class-name").value.trim();
+    const ageRange = document.getElementById("new-class-age-range").value.trim();
+    const description = document.getElementById("new-class-description").value.trim();
+
+    if (!name) {
+      alert("Enter a class name.");
+      return;
+    }
+
+    try {
+      const created = await apiPost("/api/classes", { name, ageRange, description });
+      savedClasses.unshift(created);
+      document.getElementById("new-class-name").value = "";
+      document.getElementById("new-class-age-range").value = "";
+      document.getElementById("new-class-description").value = "";
+      renderClasses();
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
+  function handleLogout() {
+    clearAuthState();
+    renderAuthState();
+    renderClasses();
+    renderSessionHistory();
+    document.getElementById("session-class-select").value = "";
+  }
+
   // ---- Event Listeners ----
+
+  document.getElementById("register-btn").addEventListener("click", handleRegister);
+  document.getElementById("login-btn").addEventListener("click", handleLogin);
+  document.getElementById("create-class-btn").addEventListener("click", handleCreateClass);
+  document.getElementById("logout-btn").addEventListener("click", handleLogout);
 
   // Show/hide join section
   document.getElementById("join-toggle-btn").addEventListener("click", () => {
@@ -705,6 +987,10 @@
   document.getElementById("create-btn").addEventListener("click", () => {
     myName = document.getElementById("name-input").value.trim();
     if (!myName) { alert("Enter your name"); return; }
+    if (accountUser && !canManageClasses()) {
+      alert("Only teachers and admins can create sessions right now.");
+      return;
+    }
     showScreen("setup");
   });
 
@@ -771,6 +1057,7 @@
   document.getElementById("start-session-btn").addEventListener("click", () => {
     const title = document.getElementById("session-title").value.trim();
     const question = document.getElementById("opening-question").value.trim();
+    const classId = document.getElementById("session-class-select").value || null;
 
     if (!title && materials.length === 0) {
       alert("Enter a discussion title or upload some materials");
@@ -787,19 +1074,22 @@
     apiPost("/api/sessions", {
       title: sessionTitle,
       openingQuestion: question || null,
-      conversationGoal: null
+      conversationGoal: null,
+      classId
     }).then(session => {
       console.log("[Session] Created:", session);
       if (!session.shortCode) {
         throw new Error("Server returned session without shortCode");
       }
+      refreshWorkspace();
       currentSessionId = session.shortCode;
       isHost = true;
       send({
         type: "join_session",
         sessionId: session.shortCode,
         name: myName,
-        age: getAge()
+        age: getAge(),
+        authToken
       });
     }).catch(error => {
       console.error("[Session] Creation error:", error);
@@ -815,7 +1105,7 @@
     const code = document.getElementById("join-code-input").value.trim().toLowerCase();
     if (!myName) { alert("Enter your name"); return; }
     if (!code) { alert("Enter a session code"); return; }
-    send({ type: "join_session", sessionId: code, name: myName, age: getAge() });
+    send({ type: "join_session", sessionId: code, name: myName, age: getAge(), authToken });
   });
 
   // Enter video room (warmup mode)
@@ -824,11 +1114,7 @@
   });
 
   // Start discussion (from within the video room)
-  document.getElementById("start-discussion-btn").addEventListener("click", (e) => {
-    const btn = e.currentTarget;
-    if (btn.disabled) return;
-    btn.disabled = true;
-    btn.textContent = "Starting...";
+  document.getElementById("start-discussion-btn").addEventListener("click", () => {
     send({ type: "start_discussion" });
   });
 
@@ -849,39 +1135,34 @@
     }
   });
 
-  // ---- STT batching: accumulate rapid finals into one message ----
-  let sttBatchBuffer = [];
-  let sttBatchTimer = null;
-
   // ---- Speech Recognition (Deepgram via server relay) ----
-  let sttStream = null;  // MediaStream — acquired once, reused across start/stop cycles
+  let sttStream = null;  // MediaStream
   let sttNode = null;    // AudioWorklet or ScriptProcessor
   let sttContext = null;  // AudioContext
   let sttActive = false;
-  let sttStarting = false; // guard against concurrent starts
 
   async function startSpeechRecognition() {
-    if (sttActive || sttStarting) {
-      console.log("[STT] Already active/starting, skipping");
+    if (sttActive) {
+      console.log("[STT] Already active, skipping");
       return;
     }
-    sttStarting = true;
+    // Set flag IMMEDIATELY to prevent race condition with Jitsi's audioMuteStatusChanged event
+    sttActive = true;
 
-    // Reuse existing mic stream if it's still alive, to avoid re-prompting permissions
-    const streamAlive = sttStream && sttStream.getAudioTracks().some(t => t.readyState === 'live');
-    if (!streamAlive) {
-      try {
+    try {
+      // Reuse existing stream to avoid re-prompting mic permissions
+      if (!sttStream || sttStream.getTracks().every(t => t.readyState === 'ended')) {
         sttStream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
         });
-        console.log("[STT] Mic access granted");
-      } catch (e) {
-        console.warn("[STT] Mic access denied:", e.message);
-        sttStarting = false;
-        return;
+        console.log("[STT] Mic access granted (new stream)");
+      } else {
+        console.log("[STT] Reusing existing mic stream");
       }
-    } else {
-      console.log("[STT] Reusing existing mic stream");
+    } catch (e) {
+      console.warn("[STT] Mic access denied:", e.message);
+      sttActive = false; // Reset on failure
+      return;
     }
 
     sttContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
@@ -910,8 +1191,6 @@
       setupScriptProcessor(source);
     }
 
-    sttActive = true;
-    sttStarting = false;
     console.log("[STT] Streaming to Deepgram via server, sampleRate:", sttContext.sampleRate);
   }
 
@@ -941,18 +1220,14 @@
       try { sttContext.close(); } catch (e) {}
       sttContext = null;
     }
-    // Keep sttStream alive — don't stop tracks. This avoids
-    // re-prompting for mic permissions on every mute/unmute cycle.
-    // The stream is only killed when the session ends (destroyJitsi).
+    // Don't destroy the stream — keep it for reuse to avoid re-prompting mic
     if (sttActive) {
       send({ type: "stt_stop" });
       sttActive = false;
     }
-    sttStarting = false;
-    console.log("[STT] Stopped (mic stream kept alive)");
+    console.log("[STT] Stopped (stream kept for reuse)");
   }
 
-  // Full cleanup — called when leaving the session entirely
   function destroySttStream() {
     stopSpeechRecognition();
     if (sttStream) {
@@ -1021,6 +1296,7 @@
   }
 
   // ---- Init ----
+  loadAuthState();
   const savedState = loadState();
   if (savedState && savedState.currentSessionId) {
     // Show a loading state while we try to rejoin
@@ -1030,6 +1306,10 @@
   } else {
     showScreen("welcome");
   }
+  renderAuthState();
+  renderClasses();
+  renderSessionHistory();
+  refreshWorkspace();
   connect();
   checkDirectJoin();
   renderMaterials();

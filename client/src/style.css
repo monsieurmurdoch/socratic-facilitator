@@ -50,10 +50,30 @@ body {
 /* ---- Welcome Screen ---- */
 
 #welcome-screen {
-  align-items: center;
+  align-items: stretch;
   gap: 32px;
-  text-align: center;
-  padding: 60px 40px;
+  text-align: left;
+  padding: 40px;
+  max-width: 1160px;
+}
+
+.welcome-shell {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(340px, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.welcome-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 28px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  padding: 40px 32px;
+  box-shadow: 0 20px 60px var(--shadow);
 }
 
 #welcome-screen h1 {
@@ -68,7 +88,115 @@ body {
   color: var(--text-secondary);
   font-size: 1rem;
   line-height: 1.6;
-  max-width: 480px;
+  max-width: 520px;
+}
+
+.workspace-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.workspace-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  padding: 22px 20px;
+  box-shadow: 0 20px 60px var(--shadow);
+}
+
+.workspace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.workspace-header h3,
+.auth-section h4 {
+  font-family: 'Source Serif 4', serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.workspace-kicker {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.workspace-meta {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.auth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.auth-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-form-group,
+.auth-form-group input,
+.auth-form-group textarea,
+.auth-form-group select {
+  max-width: 100%;
+}
+
+.auth-btn {
+  width: 100%;
+}
+
+.workspace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.workspace-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.workspace-item strong {
+  display: block;
+  font-size: 0.95rem;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.workspace-item-meta {
+  font-size: 0.83rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.workspace-item-tag {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.empty-state {
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }
 
 .form-group {
@@ -696,7 +824,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: auto; /* anchors to bottom but allows scrolling back up */
+  margin-top: auto;
 }
 
 .facilitator-bubble {
@@ -907,7 +1035,7 @@ body {
 
 .divider {
   width: 100%;
-  max-width: 320px;
+  max-width: 100%;
   height: 1px;
   background: var(--border);
   margin: 4px 0;
@@ -977,6 +1105,15 @@ body {
   #welcome-screen,
   #lobby-screen {
     padding: 40px 20px;
+  }
+
+  .welcome-shell,
+  .auth-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome-main {
+    padding: 28px 20px;
   }
 
   #setup-screen {

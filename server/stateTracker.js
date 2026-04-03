@@ -81,13 +81,21 @@ class SessionStateTracker {
     }
   }
 
-  async addParticipant(id, name, age) {
+  async addParticipant(id, name, age, opts = {}) {
     const participant = new ParticipantState(id, name, age);
+    // Attach auth metadata if user is logged in
+    if (opts.userId) participant.userId = opts.userId;
+    if (opts.accountRole) participant.accountRole = opts.accountRole;
+    if (opts.sessionRole) participant.sessionRole = opts.sessionRole;
     this.participants.set(id, participant);
 
     // Persist to database and store the DB-generated ID
     try {
-      const dbParticipant = await participantsRepo.add(this.sessionId, { name, age, role: 'participant' });
+      const dbParticipant = await participantsRepo.add(this.sessionId, {
+        name, age,
+        role: opts.sessionRole || 'participant',
+        userId: opts.userId || null
+      });
       participant.dbId = dbParticipant.id;
     } catch (error) {
       console.error('Error adding participant to database:', error);
