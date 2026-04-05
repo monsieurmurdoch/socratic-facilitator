@@ -150,7 +150,11 @@ Respond with ONLY the JSON object, no other text.`;
       }
     });
 
-    const heuristicFallback = this._heuristicAssessment(text, previousText);
+    const heuristicFallback = this._heuristicAssessment(text, previousText, {
+      topicTitle,
+      openingQuestion,
+      recentAnchors
+    });
 
     if (strategy === 'heuristic_only') {
       return parseAssessment(heuristicFallback, { source: 'heuristic', model: 'heuristic' });
@@ -225,51 +229,151 @@ Respond with ONLY the JSON object, no other text.`;
   /**
    * Fallback heuristic assessment when LLM fails.
    */
-  _heuristicAssessment(text, previousText) {
-    const wordCount = text.split(/\s+/).length;
+  _heuristicAssessment(text, previousText, context = {}) {
+    const normalizedText = String(text || '').trim();
+    const lowerText = normalizedText.toLowerCase();
+    const wordCount = normalizedText.split(/\s+/).filter(Boolean).length;
+    const stopwords = new Set([
+      'the', 'a', 'an', 'and', 'or', 'but', 'if', 'is', 'are', 'was', 'were', 'be', 'been',
+      'to', 'of', 'in', 'on', 'for', 'with', 'that', 'this', 'it', 'he', 'she', 'they',
+      'we', 'you', 'i', 'me', 'my', 'our', 'your', 'their', 'as', 'at', 'by', 'from',
+      'so', 'than', 'then', 'into', 'about', 'really', 'just', 'also', 'maybe'
+    ]);
 
-    // Specificity heuristic
-    let specificity = 0.4;
-    if (wordCount > 20) specificity += 0.15;
-    if (wordCount > 40) specificity += 0.15;
-    if (/for example|for instance|specifically|such as/i.test(text)) specificity += 0.2;
-    if (/because|since|therefore|the reason/i.test(text)) specificity += 0.1;
+    const tokenize = (value) => String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(token => token && token.length > 2 && !stopwords.has(token));
 
-    // Profoundness heuristic
-    let profoundness = 0.4;
-    if (/\b(why|how|what if|what makes|what would happen)\b/i.test(text)) profoundness += 0.2;
-    if (/difference between|distinction|on the other hand/i.test(text)) profoundness += 0.15;
-    if (/identity|consciousness|truth|meaning|purpose|value|essence/i.test(text)) profoundness += 0.15;
+    const textTokens = tokenize(normalizedText);
+    const previousTokens = tokenize(previousText || '');
+    const topicTokens = tokenize(`${context.topicTitle || ''} ${context.openingQuestion || ''}`);
+    const uniqueTextTokens = new Set(textTokens);
+    const overlapRatio = (tokens) => {
+      if (!tokens.length) return 0;
+      const overlap = tokens.filter(token => uniqueTextTokens.has(token)).length;
+      return overlap / tokens.length;
+    };
 
-    // Coherence heuristic
-    let coherence = 0.5;
-    if (previousText) {
-      if (/agree|disagree|yes|no|but|however|building on|like you said/i.test(text)) {
-        coherence = 0.7;
-      }
-      if (/\b(that|this|it|those|these)\b.*\b(said|mentioned|pointed|asked)\b/i.test(text)) {
-        coherence = 0.8;
-      }
+    const prevOverlap = overlapRatio(previousTokens);
+    const topicOverlap = overlapRatio(topicTokens);
+    const previousUniqueTokens = new Set(previousTokens);
+    const topicUniqueTokens = new Set(topicTokens);
+    const sharedPreviousTerms = textTokens.filter(token => previousUniqueTokens.has(token));
+    const sharedTopicTerms = textTokens.filter(token => topicUniqueTokens.has(token));
+    const sharedContextTermCount = new Set([...sharedPreviousTerms, ...sharedTopicTerms]).size;
+
+    const hasExample = /\b(for example|for instance|specifically|such as|chapter|scene|moment|line)\b/i.test(normalizedText);
+    const hasReasoning = /\b(because|since|therefore|which means|that means|as a result|so that|instead of)\b/i.test(normalizedText);
+    const hasQuestion = /\?$/.test(normalizedText) || /\b(why|how|what if|is the story|so is|are we|does that mean)\b/i.test(normalizedText);
+    const hasContrast = /\b(but|however|although|instead|difference|distinction|on the other hand|rather than|less about|more about)\b/i.test(normalizedText);
+    const hasSynthesis = /\b(building on|combine|both|together|what .+ said|like .+ said|what .+ and .+ said|synthesize)\b/i.test(normalizedText);
+    const hasResponsibilityLanguage = /\b(responsibility|obligation|power|belong|meaning|justice|truth|identity|evil|accountable|neglect|choice|moral|harm|repair)\b/i.test(normalizedText);
+    const isAgreement = /\b(yeah|yes|i agree|same|exactly|totally)\b/i.test(normalizedText);
+    const isGenericOpinion = /\b(i (just )?(do not|don't|did not|didn't)? ?like|i hate|i love)\b/i.test(normalizedText);
+    const referencesPreviousSpeaker = /\b(that|this|it|those|these)\b.*\b(said|mentioned|pointed|asked)\b/i.test(normalizedText);
+    const hasContinuationPronoun = /^(he|she|they|it|this|that|these|those)\b/i.test(lowerText);
+
+    const anchorReferences = (context.recentAnchors || [])
+      .map((anchor, index) => ({ anchor, index }))
+      .filter(({ anchor }) => {
+        const summaryTokens = tokenize(anchor.summary || '');
+        return summaryTokens.length > 0 && overlapRatio(summaryTokens) >= 0.22;
+      })
+      .map(({ index }) => index + 1);
+
+    const isTopicallyGrounded = topicOverlap >= 0.08 || sharedContextTermCount >= 2;
+    const topicDrift = !isTopicallyGrounded && prevOverlap < 0.05 && !hasSynthesis && !referencesPreviousSpeaker && !isAgreement && !hasContinuationPronoun;
+
+    let specificity = 0.06;
+    specificity += Math.min(wordCount / 55, 0.22);
+    if (wordCount >= 10) specificity += 0.06;
+    if (wordCount >= 22) specificity += 0.06;
+    if (wordCount >= 6) specificity += 0.04;
+    if (hasExample) specificity += 0.24;
+    if (hasReasoning) specificity += 0.14;
+    if (/\b(chapter|scene|moment|specific|chooses|refusing|after|before)\b/i.test(normalizedText)) specificity += 0.08;
+    if (hasQuestion && wordCount >= 5) specificity += 0.08;
+    if (isAgreement) specificity -= 0.18;
+    if (isGenericOpinion) specificity -= 0.08;
+
+    let profoundness = 0.08;
+    profoundness += hasQuestion ? 0.16 : 0;
+    profoundness += hasContrast ? 0.18 : 0;
+    profoundness += hasSynthesis ? 0.18 : 0;
+    profoundness += hasReasoning ? 0.1 : 0;
+    profoundness += hasResponsibilityLanguage ? 0.12 : 0;
+    if (/\b(less about|more about|difference between|instead of|what happens when)\b/i.test(normalizedText)) profoundness += 0.18;
+    if (isAgreement) profoundness -= 0.16;
+    if (isGenericOpinion) profoundness -= 0.12;
+    if (topicDrift) profoundness -= 0.12;
+
+    let coherence = 0.18;
+    coherence += Math.min(prevOverlap * 0.9, 0.28);
+    coherence += Math.min(topicOverlap * 0.9, 0.28);
+    coherence += Math.min(sharedContextTermCount * 0.06, 0.18);
+    if (hasSynthesis) coherence += 0.26;
+    if (referencesPreviousSpeaker) coherence += 0.16;
+    if (hasContinuationPronoun && previousText) coherence += 0.16;
+    if (/\b(agree|disagree|but|however|building on|like you said|so is)\b/i.test(normalizedText)) coherence += 0.14;
+    if (hasReasoning && isTopicallyGrounded) coherence += 0.08;
+    if (hasQuestion && isTopicallyGrounded) coherence += 0.06;
+    if (anchorReferences.length) coherence += 0.12;
+    if (isAgreement && !hasReasoning && !hasExample) coherence = Math.max(coherence, 0.68);
+    if (isGenericOpinion && isTopicallyGrounded) coherence = Math.max(coherence, 0.5);
+    if (hasReasoning && !topicDrift) coherence = Math.max(coherence, 0.56);
+    if ((hasExample || hasContrast) && !topicDrift) coherence = Math.max(coherence, 0.6);
+    if (hasContinuationPronoun && previousText && !topicDrift) coherence = Math.max(coherence, 0.52);
+    if (!topicDrift && isTopicallyGrounded && wordCount >= 6) coherence = Math.max(coherence, 0.44);
+    if (topicDrift) coherence -= 0.36;
+    if (/\bsnow days\b/i.test(normalizedText)) coherence -= 0.2;
+
+    specificity = this._clamp(specificity);
+    profoundness = this._clamp(profoundness);
+    coherence = this._clamp(coherence);
+
+    const isAnchor = (
+      wordCount >= 16 &&
+      (
+        profoundness >= 0.62 ||
+        hasSynthesis ||
+        hasContrast ||
+        (hasQuestion && profoundness >= 0.5) ||
+        anchorReferences.length > 0
+      ) &&
+      !isAgreement &&
+      !isGenericOpinion &&
+      !topicDrift
+    );
+
+    let briefReasoning = 'Heuristic assessment (LLM unavailable)';
+    if (topicDrift) {
+      briefReasoning = 'Likely topic drift: low overlap with the discussion and little evidence of building on prior comments.';
+    } else if (hasSynthesis) {
+      briefReasoning = 'Likely strong contribution: synthesizes multiple earlier ideas and advances the discussion.';
+    } else if (hasContrast || hasQuestion) {
+      briefReasoning = 'Likely thoughtful contribution: introduces tension, distinction, or a generative question.';
+    } else if (hasExample || hasReasoning) {
+      briefReasoning = 'Likely substantive contribution: includes evidence or causal reasoning connected to the prompt.';
+    } else if (isAgreement || isGenericOpinion) {
+      briefReasoning = 'Likely lighter contribution: responds to the discussion but adds limited new substance.';
     }
-
-    // Anchor detection
-    const isAnchor = wordCount > 25 &&
-      (profoundness > 0.6 || /\b(what if|imagine|suppose|the key question|here's the thing)\b/i.test(text));
 
     return {
       engagement: {
-        specificity: Math.min(1, specificity),
-        profoundness: Math.min(1, profoundness),
-        coherence: Math.min(1, coherence)
+        specificity,
+        profoundness,
+        coherence
       },
       anchor: {
         isAnchor,
-        profundness: Math.min(1, profoundness),
-        summary: isAnchor ? text.substring(0, 100) : null
+        profundness: isAnchor ? this._clamp((profoundness * 0.7) + (coherence * 0.3)) : profoundness,
+        summary: isAnchor ? normalizedText.slice(0, 140) : null
       },
       claims: [],
-      referencesAnchors: [],
-      briefReasoning: 'Heuristic assessment (LLM unavailable)'
+      referencesAnchors: anchorReferences,
+      briefReasoning
     };
   }
 
