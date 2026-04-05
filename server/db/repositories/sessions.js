@@ -47,12 +47,31 @@ async function create({
     throw new Error('Failed to generate unique short code');
   }
 
-  const result = await db.query(
-    `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by, owner_user_id, class_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING *`,
-    [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId, ownerUserId, classId]
-  );
+  let result;
+  try {
+    result = await db.query(
+      `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by, owner_user_id, class_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId, ownerUserId, classId]
+    );
+  } catch (error) {
+    const isMissingOwnershipColumns = error?.code === '42703' && (
+      String(error.message || '').includes('owner_user_id') ||
+      String(error.message || '').includes('class_id')
+    );
+
+    if (!isMissingOwnershipColumns) {
+      throw error;
+    }
+
+    result = await db.query(
+      `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId]
+    );
+  }
 
   return result.rows[0];
 }
