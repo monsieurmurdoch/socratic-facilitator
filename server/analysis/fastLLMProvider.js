@@ -30,7 +30,7 @@ class FastLLMProvider {
    * @param {string} opts.model        Model name to send (default: "jimmy")
    */
   constructor(opts = {}) {
-    this.endpoint = opts.endpoint || process.env.FAST_LLM_ENDPOINT || null;
+    this.endpoint = opts.endpoint || process.env.FAST_LLM_ENDPOINT || process.env.FAST_LLM_BASE_URL || null;
     this.timeoutMs = opts.timeoutMs || parseInt(process.env.FAST_LLM_TIMEOUT_MS) || 3000;
     this.enabled = opts.enabled ?? (process.env.FAST_LLM_ENABLED !== 'false');
     this.model = opts.model || process.env.FAST_LLM_MODEL || 'jimmy';
