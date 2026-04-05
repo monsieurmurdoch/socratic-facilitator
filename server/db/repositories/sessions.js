@@ -21,7 +21,14 @@ function generateShortCode() {
 /**
  * Create a new session
  */
-async function create({ title, openingQuestion, conversationGoal, creatorId = null }) {
+async function create({
+  title,
+  openingQuestion,
+  conversationGoal,
+  creatorId = null,
+  ownerUserId = null,
+  classId = null
+}) {
   let shortCode;
   let attempts = 0;
 
@@ -41,10 +48,10 @@ async function create({ title, openingQuestion, conversationGoal, creatorId = nu
   }
 
   const result = await db.query(
-    `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by, owner_user_id, class_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId]
+    [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId, ownerUserId, classId]
   );
 
   return result.rows[0];
@@ -105,6 +112,39 @@ async function deleteSession(id) {
   await db.query('DELETE FROM sessions WHERE id = $1', [id]);
 }
 
+async function listHistoryByUser(userId, limit = 20) {
+  const result = await db.query(
+    `SELECT
+      s.id,
+      s.short_code,
+      s.title,
+      s.status,
+      s.created_at,
+      c.name AS class_name,
+      COALESCE(sm.role_snapshot, cm.role, owner.role) AS viewer_role,
+      COALESCE(sm.message_count, 0) AS viewer_message_count,
+      COALESCE(sm.estimated_speaking_seconds, 0) AS viewer_speaking_seconds,
+      COALESCE(sm.contribution_score, 0) AS viewer_contribution_score,
+      COUNT(DISTINCT p.id) AS participant_count,
+      COUNT(DISTINCT m.id) AS message_count
+     FROM sessions s
+     LEFT JOIN classes c ON c.id = s.class_id
+     LEFT JOIN users owner ON owner.id = s.owner_user_id
+     LEFT JOIN class_memberships cm ON cm.class_id = s.class_id AND cm.user_id = $1
+     LEFT JOIN session_memberships sm ON sm.session_id = s.id AND sm.user_id = $1
+     LEFT JOIN participants p ON p.session_id = s.id
+     LEFT JOIN messages m ON m.session_id = s.id
+     WHERE s.owner_user_id = $1
+        OR cm.user_id = $1
+        OR sm.user_id = $1
+     GROUP BY s.id, c.name, sm.role_snapshot, cm.role, owner.role, sm.message_count, sm.estimated_speaking_seconds, sm.contribution_score
+     ORDER BY s.created_at DESC
+     LIMIT $2`,
+    [userId, limit]
+  );
+  return result.rows;
+}
+
 module.exports = {
   create,
   findById,
@@ -112,5 +152,6 @@ module.exports = {
   updateStatus,
   getActiveSessions,
   deleteSession,
+  listHistoryByUser,
   generateShortCode
 };

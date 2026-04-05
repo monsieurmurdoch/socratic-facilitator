@@ -35,4 +35,10 @@ server/models/
 # Build outputs
 dist/
 build/
+
+# Local-only helper worktrees and service checkouts
+.claude/worktrees/
+.local/
+
+# Legacy local Jitsi checkout path
 jitsi/docker-jitsi-meet/

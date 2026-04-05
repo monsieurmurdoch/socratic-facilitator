@@ -8,9 +8,9 @@
     "dev": "node --watch server/index.js",
     "bot": "node server/jitsi-bot/run-bot.js",
     "bot:headful": "node server/jitsi-bot/run-bot.js --headful",
-    "jitsi:start": "cd jitsi/docker-jitsi-meet && docker compose up -d",
-    "jitsi:stop": "cd jitsi/docker-jitsi-meet && docker compose down",
-    "jitsi:logs": "cd jitsi/docker-jitsi-meet && docker compose logs -f",
+    "jitsi:start": "bash ./jitsi/setup.sh && cd .local/jitsi/docker-jitsi-meet && docker compose up -d",
+    "jitsi:stop": "cd .local/jitsi/docker-jitsi-meet && docker compose down",
+    "jitsi:logs": "cd .local/jitsi/docker-jitsi-meet && docker compose logs -f",
     "setup": "bash ./jitsi/setup.sh && npm install",
     "local": "bash ./start-local.sh"
   },

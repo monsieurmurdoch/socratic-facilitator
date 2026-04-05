@@ -24,7 +24,18 @@ async function listByClass(classId) {
   return result.rows;
 }
 
+async function findByClassAndUser(classId, userId) {
+  const result = await db.query(
+    `SELECT *
+     FROM class_memberships
+     WHERE class_id = $1 AND user_id = $2`,
+    [classId, userId]
+  );
+  return result.rows[0] || null;
+}
+
 module.exports = {
   add,
-  listByClass
+  listByClass,
+  findByClassAndUser
 };

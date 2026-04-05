@@ -10,6 +10,7 @@
  */
 
 require("dotenv").config();
+const { DEFAULT_ANTHROPIC_MODEL } = require("./models");
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
@@ -38,12 +39,14 @@ const { stalenessGuard } = require("./analysis/stalenessGuard");
 const { DISCUSSION_TOPICS, FACILITATION_PARAMS, getAgeCalibration } = require("./config");
 
 // Auth
-const { attachUser, verifyToken } = require("./auth");
+const { attachUser, authenticateToken } = require("./auth");
 
 // Routes
 const sessionsRouter = require("./routes/sessions");
 const authRouter = require("./routes/auth");
 const classesRouter = require("./routes/classes");
+const adminRouter = require("./routes/admin");
+const integrationsRouter = require("./routes/integrations");
 
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -61,6 +64,8 @@ app.use(attachUser);
 app.use("/api/auth", authRouter);
 app.use("/api/classes", classesRouter);
 app.use("/api/sessions", sessionsRouter);
+app.use("/api/admin", adminRouter);
+app.use("/api/integrations", integrationsRouter);
 
 // Teacher dashboard — served at /dashboard?session=CODE
 app.get("/dashboard", (req, res) => {
@@ -194,9 +199,19 @@ if (process.env.ENABLE_JITSI_BOT === 'true') {
 // Initialize enhanced engine
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 console.log(`[INIT] ANTHROPIC_API_KEY: ${ANTHROPIC_KEY ? ANTHROPIC_KEY.substring(0, 10) + '...' : 'NOT SET'}`);
-console.log(`[INIT] ANTHROPIC_MODEL: ${process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514 (default)'}`);
+console.log(`[INIT] ANTHROPIC_MODEL: ${process.env.ANTHROPIC_MODEL || `${DEFAULT_ANTHROPIC_MODEL} (default)`}`);
 console.log(`[INIT] ELEVENLABS_API_KEY: ${process.env.ELEVENLABS_API_KEY ? 'SET' : 'NOT SET'}`);
 console.log(`[INIT] DEEPGRAM_API_KEY: ${process.env.DEEPGRAM_API_KEY ? 'SET' : 'NOT SET'}`);
+const fastLLMEndpoint = process.env.FAST_LLM_ENDPOINT || process.env.FAST_LLM_BASE_URL || null;
+let fastLLMHost = 'NOT SET';
+if (fastLLMEndpoint) {
+  try {
+    fastLLMHost = new URL(fastLLMEndpoint).host;
+  } catch (_error) {
+    fastLLMHost = 'INVALID URL';
+  }
+}
+console.log(`[INIT] FAST_LLM: ${fastLLM.isAvailable() ? 'ENABLED' : 'DISABLED'} (${fastLLMHost})`);
 const enhancedEngine = new EnhancedFacilitationEngine(ANTHROPIC_KEY);
 const messageAssessor = new MessageAssessor(ANTHROPIC_KEY);
 
@@ -676,8 +691,8 @@ wss.on("connection", (ws, req) => {
         let authUser = null;
         if (authToken) {
           try {
-            const payload = verifyToken(authToken);
-            authUser = await usersRepo.findById(payload.userId);
+            const auth = await authenticateToken(authToken, { touch: false });
+            authUser = auth?.user || null;
           } catch (error) {
             console.warn("[join_session] Invalid auth token:", error.message);
           }

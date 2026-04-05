@@ -1,3 +1,5 @@
+const { DEFAULT_FAST_LLM_MODEL } = require('../models');
+
 /**
  * Fast LLM Provider (cj2api / ChatJimmy)
  *
@@ -33,7 +35,8 @@ class FastLLMProvider {
     this.endpoint = opts.endpoint || process.env.FAST_LLM_ENDPOINT || process.env.FAST_LLM_BASE_URL || null;
     this.timeoutMs = opts.timeoutMs || parseInt(process.env.FAST_LLM_TIMEOUT_MS) || 3000;
     this.enabled = opts.enabled ?? (process.env.FAST_LLM_ENABLED !== 'false');
-    this.model = opts.model || process.env.FAST_LLM_MODEL || 'jimmy';
+    this.model = opts.model || process.env.FAST_LLM_MODEL || DEFAULT_FAST_LLM_MODEL;
+    this.apiKey = opts.apiKey || process.env.FAST_LLM_API_KEY || 'dummy';
 
     // Telemetry
     this.stats = {
@@ -105,7 +108,7 @@ class FastLLMProvider {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer dummy'  // cj2api doesn't check keys
+          'Authorization': `Bearer ${this.apiKey}`  // cj2api ignores keys, other wrappers may not
         },
         body: JSON.stringify({
           model: this.model,
@@ -162,13 +165,44 @@ class FastLLMProvider {
     if (!result) return null;
 
     try {
-      const jsonStr = result.text
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
-        .trim();
+      const jsonStr = this._extractJsonString(result.text);
       const parsed = JSON.parse(jsonStr);
       return { data: parsed, latencyMs: result.latencyMs };
     } catch (error) {
+      const repaired = this._repairJsonString(result.text);
+      if (repaired) {
+        try {
+          const parsed = JSON.parse(repaired);
+          console.warn('[FastLLM] Recovered malformed JSON response via repair heuristics');
+          return { data: parsed, latencyMs: result.latencyMs, repaired: true };
+        } catch (repairError) {
+          console.warn(`[FastLLM] JSON repair failed: ${repairError.message}`);
+        }
+      }
+
+      if (opts?.retryOnParseError !== false) {
+        const retryResult = await this.complete({
+          ...opts,
+          temperature: 0,
+          maxTokens: Math.max(600, opts?.maxTokens || 800),
+          systemPrompt: [
+            'Return only strict JSON.',
+            'Do not include markdown, comments, trailing commas, or explanatory text.',
+            opts?.systemPrompt || ''
+          ].filter(Boolean).join('\n')
+        });
+
+        if (retryResult) {
+          try {
+            const parsed = JSON.parse(this._extractJsonString(retryResult.text));
+            console.warn('[FastLLM] Recovered malformed JSON response via retry');
+            return { data: parsed, latencyMs: retryResult.latencyMs, retried: true };
+          } catch (retryError) {
+            console.warn(`[FastLLM] JSON retry parse error: ${retryError.message}`);
+          }
+        }
+      }
+
       console.warn(`[FastLLM] JSON parse error: ${error.message}`);
       this.stats.errors++;
       return null;
@@ -212,6 +246,34 @@ class FastLLMProvider {
       this.circuitOpenUntil = Date.now() + 30000;
       console.warn(`[FastLLM] Circuit breaker OPEN — ${this.consecutiveFailures} consecutive failures. Retrying in 30s.`);
     }
+  }
+
+  _extractJsonString(text) {
+    const cleaned = String(text || '')
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/g, '')
+      .trim();
+
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      return cleaned.slice(firstBrace, lastBrace + 1);
+    }
+    return cleaned;
+  }
+
+  _repairJsonString(text) {
+    let candidate = this._extractJsonString(text);
+    if (!candidate) return null;
+
+    candidate = candidate
+      .replace(/\/\/.*$/gm, '')
+      .replace(/,\s*([}\]])/g, '$1')
+      .replace(/\u201c|\u201d/g, '"')
+      .replace(/\u2018|\u2019/g, '\'')
+      .trim();
+
+    return candidate || null;
   }
 }
 

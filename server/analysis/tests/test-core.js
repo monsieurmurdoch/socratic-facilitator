@@ -173,6 +173,19 @@ test('circuit breaker opens after threshold failures', () => {
   assert.strictEqual(provider.isAvailable(), false);
 });
 
+test('extracts JSON payload from fenced responses', () => {
+  const provider = new FastLLMProvider({ endpoint: 'http://localhost:9999', enabled: true });
+  const extracted = provider._extractJsonString("```json\n{\"ok\":true}\n```");
+  assert.strictEqual(extracted, '{"ok":true}');
+});
+
+test('repairs JSON comments and trailing commas', () => {
+  const provider = new FastLLMProvider({ endpoint: 'http://localhost:9999', enabled: true });
+  const repaired = provider._repairJsonString('{\n  "a": 1, // comment\n  "b": [1,2,],\n}\n');
+  assert.strictEqual(repaired, '{\n  "a": 1, \n  "b": [1,2]}\n'.trim());
+  assert.deepStrictEqual(JSON.parse(repaired), { a: 1, b: [1, 2] });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  StalenessGuard
 // ═══════════════════════════════════════════════════════════════════════════════

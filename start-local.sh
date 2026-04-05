@@ -53,16 +53,23 @@ if ! docker info &> /dev/null; then
 fi
 
 # Setup Jitsi directory
-JIJSI_DIR="./jitsi/docker-jitsi-meet"
+JITSI_DIR="./.local/jitsi/docker-jitsi-meet"
+LEGACY_JITSI_DIR="./jitsi/docker-jitsi-meet"
 
-if [ ! -d "$JIJSI_DIR" ]; then
+if [ ! -d "$JITSI_DIR" ] && [ -d "$LEGACY_JITSI_DIR" ]; then
+    echo -e "${YELLOW}Migrating legacy local Jitsi checkout into .local/...${NC}"
+    mkdir -p ./.local/jitsi
+    mv "$LEGACY_JITSI_DIR" "$JITSI_DIR"
+fi
+
+if [ ! -d "$JITSI_DIR" ]; then
     echo -e "${YELLOW}Setting up local Jitsi...${NC}"
     bash ./jitsi/setup.sh
 fi
 
 # Start Jitsi if not running
 echo -e "${YELLOW}Checking Jitsi server...${NC}"
-cd "$JIJSI_DIR"
+cd "$JITSI_DIR"
 
 if ! docker compose ps | grep -q "Up"; then
     echo -e "${YELLOW}Starting Jitsi server...${NC}"

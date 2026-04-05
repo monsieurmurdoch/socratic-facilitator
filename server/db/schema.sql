@@ -223,3 +223,187 @@ CREATE INDEX IF NOT EXISTS idx_participants_user ON participants(user_id);
 CREATE INDEX IF NOT EXISTS idx_session_memberships_session ON session_memberships(session_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_session_memberships_user ON session_memberships(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_message_analytics_session ON message_analytics(session_id, created_at);
+
+-- Session debriefs and generated reports
+CREATE TABLE IF NOT EXISTS session_reports (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  report_type VARCHAR(40) NOT NULL DEFAULT 'teacher_debrief',
+  report_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  generated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (session_id, report_type)
+);
+
+-- Class privacy controls
+CREATE TABLE IF NOT EXISTS class_privacy_settings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  retention_days INTEGER NOT NULL DEFAULT 180,
+  allow_ai_scoring BOOLEAN NOT NULL DEFAULT TRUE,
+  allow_lms_sync BOOLEAN NOT NULL DEFAULT TRUE,
+  parent_view_mode VARCHAR(20) NOT NULL DEFAULT 'summary',
+  student_view_mode VARCHAR(20) NOT NULL DEFAULT 'self_only',
+  allow_exports BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (class_id)
+);
+
+-- Parent/student links for class-level access
+CREATE TABLE IF NOT EXISTS parent_student_links (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  parent_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  student_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (class_id, parent_user_id, student_user_id)
+);
+
+-- External OAuth/LMS integrations
+CREATE TABLE IF NOT EXISTS external_integrations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider VARCHAR(40) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'connected',
+  external_user_id TEXT,
+  external_email TEXT,
+  scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  access_token_encrypted TEXT,
+  refresh_token_encrypted TEXT,
+  token_expires_at TIMESTAMPTZ,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, provider)
+);
+
+-- LTI platform registrations
+CREATE TABLE IF NOT EXISTS lti_registrations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  label VARCHAR(160) NOT NULL,
+  issuer TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  deployment_id TEXT NOT NULL,
+  auth_login_url TEXT NOT NULL,
+  auth_token_url TEXT NOT NULL,
+  keyset_url TEXT NOT NULL,
+  deep_link_url TEXT,
+  nrps_url TEXT,
+  ags_lineitems_url TEXT,
+  tool_key_id TEXT,
+  tool_private_key_encrypted TEXT,
+  tool_public_jwk JSONB,
+  oauth_audience TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'draft',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (issuer, client_id, deployment_id)
+);
+
+-- LTI launch/account linkage
+CREATE TABLE IF NOT EXISTS lti_account_links (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  registration_id UUID NOT NULL REFERENCES lti_registrations(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  lti_subject TEXT NOT NULL,
+  lti_email TEXT,
+  context_id TEXT,
+  context_title TEXT,
+  deployment_id TEXT,
+  last_launch_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  last_launched_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (registration_id, lti_subject)
+);
+
+-- LTI gradebook line item mapping
+CREATE TABLE IF NOT EXISTS lti_gradebook_links (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  registration_id UUID NOT NULL REFERENCES lti_registrations(id) ON DELETE CASCADE,
+  context_id TEXT,
+  lineitem_url TEXT NOT NULL,
+  resource_id TEXT,
+  label TEXT,
+  score_maximum FLOAT NOT NULL DEFAULT 100,
+  last_sync_result JSONB,
+  last_synced_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (session_id, registration_id)
+);
+
+-- Revocable auth sessions
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_jti TEXT NOT NULL,
+  session_label TEXT,
+  user_agent TEXT,
+  ip_address TEXT,
+  last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  revoke_reason TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Password reset tokens
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  requested_ip TEXT,
+  requested_user_agent TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Audit trail
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT,
+  entity_id TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Model eval history
+CREATE TABLE IF NOT EXISTS model_eval_runs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  requested_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  eval_key TEXT NOT NULL,
+  strategy TEXT NOT NULL,
+  fixture_set TEXT NOT NULL,
+  model_label TEXT,
+  total_cases INTEGER NOT NULL,
+  completed_cases INTEGER NOT NULL DEFAULT 0,
+  overall_score FLOAT,
+  metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Background maintenance history
+CREATE TABLE IF NOT EXISTS maintenance_runs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  job_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'completed',
+  result_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_reports_session ON session_reports(session_id, generated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_external_integrations_user ON external_integrations(user_id, provider);
+CREATE INDEX IF NOT EXISTS idx_lti_account_links_context ON lti_account_links(registration_id, context_id, last_launched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_model_eval_runs_key ON model_eval_runs(eval_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_maintenance_runs_job ON maintenance_runs(job_name, started_at DESC);

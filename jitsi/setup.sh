@@ -12,9 +12,19 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Create jitsi directory if it doesn't exist
-mkdir -p jitsi
-cd jitsi
+# Create local-only Jitsi directory if it doesn't exist
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+LOCAL_JITSI_ROOT="$ROOT_DIR/.local/jitsi"
+LEGACY_JITSI_DIR="$ROOT_DIR/jitsi/docker-jitsi-meet"
+
+mkdir -p "$LOCAL_JITSI_ROOT"
+
+if [ ! -d "$LOCAL_JITSI_ROOT/docker-jitsi-meet" ] && [ -d "$LEGACY_JITSI_DIR" ]; then
+    echo "Migrating existing Jitsi checkout into .local/..."
+    mv "$LEGACY_JITSI_DIR" "$LOCAL_JITSI_ROOT/docker-jitsi-meet"
+fi
+
+cd "$LOCAL_JITSI_ROOT"
 
 # Download official docker-jitsi-meet if not exists
 if [ ! -d "docker-jitsi-meet" ]; then
@@ -68,11 +78,11 @@ echo ""
 echo "=== Configuration complete ==="
 echo ""
 echo "To start Jitsi:"
-echo "  cd jitsi/docker-jitsi-meet"
+echo "  cd .local/jitsi/docker-jitsi-meet"
 echo "  docker compose up -d"
 echo ""
 echo "To stop Jitsi:"
-echo "  cd jitsi/docker-jitsi-meet"
+echo "  cd .local/jitsi/docker-jitsi-meet"
 echo "  docker compose down"
 echo ""
 echo "Access Jitsi at: http://localhost:8443"

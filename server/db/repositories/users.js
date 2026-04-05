@@ -31,8 +31,20 @@ async function findWithPasswordByEmail(email) {
   return result.rows[0] || null;
 }
 
+async function updatePassword(userId, passwordHash) {
+  const result = await db.query(
+    `UPDATE users
+     SET password_hash = $2, updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, name, email, role, created_at`,
+    [userId, passwordHash]
+  );
+  return result.rows[0] || null;
+}
+
 module.exports = {
   create,
   findById,
-  findWithPasswordByEmail
+  findWithPasswordByEmail,
+  updatePassword
 };

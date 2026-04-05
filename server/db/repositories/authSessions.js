@@ -29,6 +29,16 @@ async function findActiveById(id) {
   return result.rows[0] || null;
 }
 
+async function findById(id) {
+  const result = await db.query(
+    `SELECT *
+     FROM auth_sessions
+     WHERE id = $1`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
 async function touch(id) {
   await db.query(
     `UPDATE auth_sessions
@@ -76,6 +86,7 @@ async function revokeAllForUser(userId, reason = 'manual_all') {
 module.exports = {
   create,
   findActiveById,
+  findById,
   touch,
   listByUser,
   revoke,

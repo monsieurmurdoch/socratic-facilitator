@@ -9,10 +9,13 @@ const participantsRepo = require('../db/repositories/participants');
 const messagesRepo = require('../db/repositories/messages');
 const materialsRepo = require('../db/repositories/materials');
 const primedContextRepo = require('../db/repositories/primedContext');
+const classesRepo = require('../db/repositories/classes');
+const classMembershipsRepo = require('../db/repositories/classMemberships');
 const storage = require('../storage');
 const contentExtractor = require('../content/extractor');
 const sessionPrimer = require('../content/primer');
 const { DISCUSSION_TOPICS } = require('../config');
+const { requireAuth } = require('../auth');
 
 // Enable JSON body parsing
 router.use(express.json({ limit: '10mb' }));
@@ -24,7 +27,7 @@ router.use(express.urlencoded({ extended: true }));
  */
 router.post('/', async (req, res) => {
   try {
-    const { title, openingQuestion, conversationGoal, topicId } = req.body;
+    const { title, openingQuestion, conversationGoal, topicId, classId = null } = req.body;
 
     // If topicId provided, use that topic's data
     let sessionTitle = title;
@@ -42,10 +45,25 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Title is required' });
     }
 
+    if (req.user && classId) {
+      const cls = await classesRepo.findById(classId);
+      if (!cls) {
+        return res.status(404).json({ error: 'Class not found' });
+      }
+
+      const membership = await classMembershipsRepo.findByClassAndUser(classId, req.user.id);
+      const isOwner = cls.owner_user_id === req.user.id;
+      if (!membership && !isOwner) {
+        return res.status(403).json({ error: 'You do not have access to that class' });
+      }
+    }
+
     const session = await sessionsRepo.create({
       title: sessionTitle,
       openingQuestion: sessionQuestion,
-      conversationGoal
+      conversationGoal,
+      ownerUserId: req.user?.id || null,
+      classId: req.user ? classId : null
     });
 
     res.status(201).json({
@@ -60,6 +78,29 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.error('Create session error:', error);
     res.status(500).json({ error: 'Failed to create session' });
+  }
+});
+
+router.get('/history', requireAuth, async (req, res) => {
+  try {
+    const history = await sessionsRepo.listHistoryByUser(req.user.id, 30);
+    res.json(history.map(session => ({
+      id: session.id,
+      shortCode: session.short_code,
+      title: session.title,
+      status: session.status,
+      className: session.class_name,
+      viewerRole: session.viewer_role,
+      participantCount: Number(session.participant_count || 0),
+      messageCount: Number(session.message_count || 0),
+      viewerMessageCount: Number(session.viewer_message_count || 0),
+      viewerSpeakingSeconds: Number(session.viewer_speaking_seconds || 0),
+      viewerContributionScore: Number(session.viewer_contribution_score || 0),
+      createdAt: session.created_at
+    })));
+  } catch (error) {
+    console.error('Session history error:', error);
+    res.status(500).json({ error: 'Failed to load session history' });
   }
 });
 

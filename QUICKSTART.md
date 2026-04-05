@@ -44,6 +44,8 @@ This will:
 2. Start the facilitator bot
 3. Print the URL to join
 
+The local Jitsi checkout is stored under `.local/jitsi/docker-jitsi-meet` so it does not clutter the main repo.
+
 ## Usage
 
 1. **Open Jitsi in your browser:** `http://localhost:8443/socratic-discussion`

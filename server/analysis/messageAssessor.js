@@ -80,7 +80,7 @@ Assess this message on multiple dimensions and respond with ONLY a JSON object:
       "confidence": 0.XX
     }
   ],
-  "referencesAnchors": [1, 3],  // indices of existing anchors referenced, or []
+  "referencesAnchors": [1, 3],
   "briefReasoning": "1-2 sentences on what makes this message notable (or not)"
 }
 
@@ -159,7 +159,12 @@ Respond with ONLY the JSON object, no other text.`;
     // Try fast LLM first
     if ((strategy === 'auto' || strategy === 'fast_only') && fastLLM.isAvailable()) {
       const fastResult = await stalenessGuard.guard(
-        () => fastLLM.completeJSON({ prompt, maxTokens: 800, temperature: 0.3 }),
+        () => fastLLM.completeJSON({
+          prompt,
+          maxTokens: 800,
+          temperature: 0.2,
+          systemPrompt: 'Return only strict JSON. No markdown, no comments, no trailing commas.'
+        }),
         { timeoutMs: 3000, fallback: null, label: 'fastLLM_messageAssess' }
       );
 
