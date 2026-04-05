@@ -1,0 +1,7 @@
+const DEFAULT_ANTHROPIC_MODEL = 'claude-3-5-haiku-20241022';
+const DEFAULT_FAST_LLM_MODEL = 'jimmy';
+
+module.exports = {
+  DEFAULT_ANTHROPIC_MODEL,
+  DEFAULT_FAST_LLM_MODEL
+};

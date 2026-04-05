@@ -12,11 +12,12 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { fastLLM } = require('./fastLLMProvider');
 const { stalenessGuard } = require('./stalenessGuard');
+const { DEFAULT_ANTHROPIC_MODEL } = require('../models');
 
 class MessageAssessor {
   constructor(apiKey) {
     this.client = new Anthropic({ apiKey });
-    this.model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+    this.model = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
   }
 
   /**
@@ -31,7 +32,7 @@ class MessageAssessor {
    * @param {object[]} params.recentAnchors  Recent anchor summaries for reference detection
    * @returns {Promise<MessageAssessment>}
    */
-  async assess(params) {
+  async assess(params, options = {}) {
     const {
       text,
       participantName,
@@ -120,7 +121,9 @@ Only flag factual claims as inaccurate if you're confident (>70%). Never correct
 Respond with ONLY the JSON object, no other text.`;
 
     // ── Strategy: Fast LLM first, Claude fallback, heuristic safety net ──
-    const parseAssessment = (assessment) => ({
+    const { strategy = 'auto', allowHeuristicFallback = true } = options;
+
+    const parseAssessment = (assessment, meta = {}) => ({
       engagement: {
         specificity: this._clamp(assessment.engagement?.specificity ?? 0.5),
         profoundness: this._clamp(assessment.engagement?.profoundness ?? 0.5),
@@ -139,13 +142,22 @@ Respond with ONLY the JSON object, no other text.`;
         confidence: this._clamp(c.confidence ?? 0.5)
       })),
       referencesAnchors: assessment.referencesAnchors || [],
-      briefReasoning: assessment.briefReasoning || ''
+      briefReasoning: assessment.briefReasoning || '',
+      meta: {
+        source: meta.source || 'unknown',
+        model: meta.model || null,
+        latencyMs: meta.latencyMs || null
+      }
     });
 
     const heuristicFallback = this._heuristicAssessment(text, previousText);
 
+    if (strategy === 'heuristic_only') {
+      return parseAssessment(heuristicFallback, { source: 'heuristic', model: 'heuristic' });
+    }
+
     // Try fast LLM first
-    if (fastLLM.isAvailable()) {
+    if ((strategy === 'auto' || strategy === 'fast_only') && fastLLM.isAvailable()) {
       const fastResult = await stalenessGuard.guard(
         () => fastLLM.completeJSON({ prompt, maxTokens: 800, temperature: 0.3 }),
         { timeoutMs: 3000, fallback: null, label: 'fastLLM_messageAssess' }
@@ -153,38 +165,56 @@ Respond with ONLY the JSON object, no other text.`;
 
       if (!fastResult.stale && fastResult.result?.data) {
         console.log(`[MessageAssessor] Fast LLM assessment in ${fastResult.latencyMs}ms`);
-        return parseAssessment(fastResult.result.data);
+        return parseAssessment(fastResult.result.data, {
+          source: 'fast_llm',
+          model: fastLLM.model,
+          latencyMs: fastResult.latencyMs
+        });
       }
+    }
+
+    if (strategy === 'fast_only' && !allowHeuristicFallback) {
+      throw new Error('Fast LLM assessment unavailable');
     }
 
     // Fall back to Claude
-    try {
-      const claudeResult = await stalenessGuard.guard(
-        async () => {
-          const response = await this.client.messages.create({
-            model: this.model,
-            max_tokens: 800,
-            messages: [{ role: 'user', content: prompt }]
-          });
-          const responseText = response.content[0].text.trim();
-          const jsonStr = responseText
-            .replace(/```json\n?/g, '')
-            .replace(/```\n?/g, '')
-            .trim();
-          return JSON.parse(jsonStr);
-        },
-        { timeoutMs: 8000, fallback: null, label: 'claude_messageAssess' }
-      );
+    if (strategy === 'auto' || strategy === 'claude_only') {
+      try {
+        const claudeResult = await stalenessGuard.guard(
+          async () => {
+            const response = await this.client.messages.create({
+              model: this.model,
+              max_tokens: 800,
+              messages: [{ role: 'user', content: prompt }]
+            });
+            const responseText = response.content[0].text.trim();
+            const jsonStr = responseText
+              .replace(/```json\n?/g, '')
+              .replace(/```\n?/g, '')
+              .trim();
+            return JSON.parse(jsonStr);
+          },
+          { timeoutMs: 8000, fallback: null, label: 'claude_messageAssess' }
+        );
 
-      if (!claudeResult.stale && claudeResult.result) {
-        return parseAssessment(claudeResult.result);
+        if (!claudeResult.stale && claudeResult.result) {
+          return parseAssessment(claudeResult.result, {
+            source: 'claude',
+            model: this.model,
+            latencyMs: claudeResult.latencyMs
+          });
+        }
+      } catch (error) {
+        console.error('Message assessment error:', error.message);
       }
-    } catch (error) {
-      console.error('Message assessment error:', error.message);
+    }
+
+    if (strategy === 'claude_only' && !allowHeuristicFallback) {
+      throw new Error('Claude assessment unavailable');
     }
 
     // Ultimate fallback: heuristics
-    return heuristicFallback;
+    return parseAssessment(heuristicFallback, { source: 'heuristic', model: 'heuristic' });
   }
 
   /**
