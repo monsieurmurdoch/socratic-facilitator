@@ -18,9 +18,13 @@
   let accountUser = null;
   let savedClasses = [];
   let sessionHistory = [];
+  let demoTeacherConfig = { enabled: false, name: "", email: "" };
   const MAX_MATERIALS = 5;
   let sttBatchBuffer = '';
   let sttBatchTimer = null;
+  let discussionActive = false;
+  const STT_FLUSH_MS_WARMUP = 1400;
+  const STT_FLUSH_MS_DISCUSSION = 1100;
 
   // ---- State Persistence ----
   const STORAGE_KEY = "socratic_state";
@@ -56,6 +60,15 @@
 
   function clearState() {
     localStorage.removeItem(STORAGE_KEY);
+    currentSessionId = null;
+    myId = "";
+    participants = [];
+    isHost = false;
+    discussionActive = false;
+    sttBatchBuffer = "";
+    clearTimeout(sttBatchTimer);
+    sttBatchTimer = null;
+    clearLocalSpeechDraft();
   }
 
   function loadAuthState() {
@@ -236,6 +249,15 @@
     const accountName = document.getElementById("account-name");
     const accountEmail = document.getElementById("account-email");
     const classHelp = document.getElementById("session-class-help");
+    const demoLoginSection = document.getElementById("demo-login-section");
+    const demoLoginCopy = document.getElementById("demo-login-copy");
+
+    if (demoLoginSection) {
+      demoLoginSection.style.display = !accountUser && demoTeacherConfig.enabled ? "block" : "none";
+    }
+    if (demoLoginCopy && demoTeacherConfig.enabled) {
+      demoLoginCopy.textContent = `Use ${demoTeacherConfig.name} (${demoTeacherConfig.email}) for quick teacher access.`;
+    }
 
     if (accountUser) {
       signedOut.style.display = "none";
@@ -561,12 +583,13 @@
 
       case "session_created":
         currentSessionId = msg.sessionId;
-        send({ type: "join_session", sessionId: msg.sessionId, name: myName, age: getAge() });
+        send({ type: "join_session", sessionId: msg.sessionId, name: myName, age: getAge(), authToken });
         isHost = true;
         break;
 
       case "session_joined":
         currentSessionId = msg.sessionId;
+        discussionActive = false;
         myId = msg.yourId;
         participants = msg.participants;
         updateParticipantList();
@@ -600,6 +623,7 @@
         break;
 
       case "enter_video":
+        discussionActive = false;
         showScreen("video");
         launchJitsi(currentSessionId, myName);
         startSpeechRecognition();
@@ -609,6 +633,7 @@
         break;
 
       case "discussion_started":
+        discussionActive = true;
         // If already in video room (warmup → active), just hide the start button
         if (!document.getElementById("video-screen").classList.contains("active")) {
           showScreen("video");
@@ -640,22 +665,16 @@
       case "stt_transcript":
         if (msg.isFinal) {
           if (msg.text && msg.text.trim().length > 2) {
-            // Batch consecutive STT finals into a single message (2s debounce)
+            // Batch consecutive STT finals into a single utterance.
             sttBatchBuffer += (sttBatchBuffer ? ' ' : '') + msg.text.trim();
-            addTranscriptEntry(myName, sttBatchBuffer, true, false);
-            clearTimeout(sttBatchTimer);
-            sttBatchTimer = setTimeout(() => {
-              if (sttBatchBuffer) {
-                send({ type: "message", text: sttBatchBuffer });
-                console.log("[STT] Batched final:", sttBatchBuffer);
-                sttBatchBuffer = '';
-              }
-            }, 2000);
+            updateLocalSpeechDraft(sttBatchBuffer, false);
+            scheduleSttFlush();
           }
         } else {
           if (msg.text && msg.text.trim()) {
             const preview = sttBatchBuffer ? sttBatchBuffer + ' ' + msg.text : msg.text;
-            addTranscriptEntry(myName, preview + " ...", true, true);
+            updateLocalSpeechDraft(preview, true);
+            scheduleSttFlush();
           }
         }
         break;
@@ -665,6 +684,7 @@
         break;
 
       case "discussion_ended":
+        discussionActive = false;
         addFacilitatorMessage("The discussion has ended. Thank you for participating.", "closing");
         destroySttStream();
         destroyJitsi();
@@ -825,6 +845,55 @@
     scrollChatToBottom();
   }
 
+  function getSttFlushDelay() {
+    return discussionActive ? STT_FLUSH_MS_DISCUSSION : STT_FLUSH_MS_WARMUP;
+  }
+
+  function updateLocalSpeechDraft(text, isInterim) {
+    const container = document.getElementById("conversation-feed");
+    if (!container) return;
+
+    let draft = container.querySelector('.transcript-interim');
+    if (!draft) {
+      draft = document.createElement("div");
+      draft.className = "transcript-entry self transcript-interim";
+      container.appendChild(draft);
+    }
+
+    const suffix = isInterim ? " ..." : "";
+    const body = isInterim
+      ? `<em>${escapeHtml(text + suffix)}</em>`
+      : escapeHtml(text);
+    draft.innerHTML = `<strong>${escapeHtml(myName)}:</strong> ${body}`;
+    scrollChatToBottom();
+  }
+
+  function clearLocalSpeechDraft() {
+    const container = document.getElementById("conversation-feed");
+    if (!container) return;
+    const draft = container.querySelector('.transcript-interim');
+    if (draft) draft.remove();
+  }
+
+  function flushSttBatch() {
+    clearTimeout(sttBatchTimer);
+    sttBatchTimer = null;
+    const text = sttBatchBuffer.trim();
+    if (!text) return;
+    sttBatchBuffer = '';
+    clearLocalSpeechDraft();
+    addTranscriptEntry(myName, text, true, false);
+    send({ type: "message", text, source: "stt" });
+    console.log("[STT] Batched final:", text);
+  }
+
+  function scheduleSttFlush() {
+    clearTimeout(sttBatchTimer);
+    sttBatchTimer = setTimeout(() => {
+      flushSttBatch();
+    }, getSttFlushDelay());
+  }
+
   function updatePartialTranscript(name, text) {
     const container = document.getElementById("conversation-feed");
     if (!container) return;
@@ -935,6 +1004,28 @@
     }
   }
 
+  async function loadDemoTeacherConfig() {
+    try {
+      demoTeacherConfig = await apiGet("/api/auth/demo-teacher");
+    } catch (_error) {
+      demoTeacherConfig = { enabled: false, name: "", email: "" };
+    }
+    renderAuthState();
+  }
+
+  async function handleDemoTeacherLogin() {
+    try {
+      const result = await apiPost("/api/auth/demo-teacher/login", {});
+      saveAuthState(result.user, result.token);
+      document.getElementById("name-input").value = result.user.name;
+      document.getElementById("login-email-input").value = result.user.email;
+      document.getElementById("login-password-input").value = "";
+      await refreshWorkspace();
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
   async function handleCreateClass() {
     if (!accountUser || !canManageClasses()) {
       alert("Only teachers and admins can create classes.");
@@ -974,6 +1065,7 @@
 
   document.getElementById("register-btn").addEventListener("click", handleRegister);
   document.getElementById("login-btn").addEventListener("click", handleLogin);
+  document.getElementById("demo-login-btn")?.addEventListener("click", handleDemoTeacherLogin);
   document.getElementById("create-class-btn").addEventListener("click", handleCreateClass);
   document.getElementById("logout-btn").addEventListener("click", handleLogout);
 
@@ -1125,7 +1217,9 @@
     const input = document.getElementById("chat-input");
     const text = input.value.trim();
     if (!text) return;
-    send({ type: "message", text });
+    clearLocalSpeechDraft();
+    addTranscriptEntry(myName, text, true, false);
+    send({ type: "message", text, source: "text" });
     input.value = "";
   });
 
@@ -1212,6 +1306,7 @@
   }
 
   function stopSpeechRecognition() {
+    flushSttBatch();
     if (sttNode) {
       try { sttNode.disconnect(); } catch (e) {}
       sttNode = null;
@@ -1309,6 +1404,7 @@
   renderAuthState();
   renderClasses();
   renderSessionHistory();
+  loadDemoTeacherConfig();
   refreshWorkspace();
   connect();
   checkDirectJoin();

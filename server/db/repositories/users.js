@@ -42,9 +42,26 @@ async function updatePassword(userId, passwordHash) {
   return result.rows[0] || null;
 }
 
+async function upsertDemoTeacher({ name, email, passwordHash }) {
+  const result = await db.query(
+    `INSERT INTO users (name, email, role, password_hash)
+     VALUES ($1, $2, 'Teacher', $3)
+     ON CONFLICT (email)
+     DO UPDATE SET
+       name = EXCLUDED.name,
+       role = 'Teacher',
+       password_hash = EXCLUDED.password_hash,
+       updated_at = NOW()
+     RETURNING id, name, email, role, created_at`,
+    [name, email, passwordHash]
+  );
+  return result.rows[0] || null;
+}
+
 module.exports = {
   create,
   findById,
   findWithPasswordByEmail,
-  updatePassword
+  updatePassword,
+  upsertDemoTeacher
 };

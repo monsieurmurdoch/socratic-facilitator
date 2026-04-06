@@ -183,6 +183,10 @@ app.get("/api/telemetry", (req, res) => {
 // ---- In-Memory Session State (for active WebSocket connections) ----
 // This maps short codes to active session state
 const activeSessions = new Map();
+const WARMUP_STT_MERGE_MS = Number(process.env.WARMUP_STT_MERGE_MS || 1000);
+const WARMUP_STT_SETTLE_MS = Number(process.env.WARMUP_STT_SETTLE_MS || 900);
+const WARMUP_REPLY_BASE_DELAY_MS = Number(process.env.WARMUP_REPLY_BASE_DELAY_MS || 250);
+const WARMUP_REPLY_JITTER_MS = Number(process.env.WARMUP_REPLY_JITTER_MS || 450);
 
 // Jitsi bot launcher (for video mode)
 // Disabled on Railway — Puppeteer/Chrome can't run in Alpine containers.
@@ -366,9 +370,162 @@ function broadcastToSession(sessionShortCode, message) {
   }
 }
 
+function ensureWarmupState(session) {
+  if (!session.pendingWarmupTurns) {
+    session.pendingWarmupTurns = new Map();
+  }
+  if (!session.pendingWarmupReplies) {
+    session.pendingWarmupReplies = new Map();
+  }
+  if (!session.warmupSpeechActivity) {
+    session.warmupSpeechActivity = new Map();
+  }
+  if (!session.warmupSpeechVersions) {
+    session.warmupSpeechVersions = new Map();
+  }
+}
+
+function clearPendingWarmupReply(session, clientId) {
+  ensureWarmupState(session);
+  const pendingReply = session.pendingWarmupReplies.get(clientId);
+  if (pendingReply?.timer) {
+    clearTimeout(pendingReply.timer);
+  }
+  session.pendingWarmupReplies.delete(clientId);
+}
+
+function markWarmupSpeechActivity(sessionShortCode, clientId) {
+  const session = activeSessions.get(sessionShortCode);
+  if (!session || session.active) return;
+  ensureWarmupState(session);
+  session.warmupSpeechActivity.set(clientId, Date.now());
+  session.warmupSpeechVersions.set(clientId, (session.warmupSpeechVersions.get(clientId) || 0) + 1);
+  clearPendingWarmupReply(session, clientId);
+}
+
+async function finalizeWarmupTurn(sessionShortCode, clientId) {
+  const session = activeSessions.get(sessionShortCode);
+  if (!session || session.active) return;
+
+  ensureWarmupState(session);
+  const pendingTurn = session.pendingWarmupTurns.get(clientId);
+  if (!pendingTurn) return;
+
+  session.pendingWarmupTurns.delete(clientId);
+  const participant = session.stateTracker.participants.get(clientId);
+  if (!participant) return;
+
+  const text = pendingTurn.text
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return;
+  const expectedSpeechVersion = session.warmupSpeechVersions.get(clientId) || 0;
+
+  broadcastToSession(sessionShortCode, {
+    type: "participant_message",
+    name: participant.name,
+    text,
+    timestamp: Date.now()
+  });
+
+  const names = Array.from(session.stateTracker.participants.values()).map(p => p.name);
+  const ages = Array.from(session.stateTracker.participants.values()).map(p => p.age);
+  const ageCalibration = getAgeCalibration(ages);
+
+  const generateReply = async () => {
+    const latestSpeechAt = session.warmupSpeechActivity.get(clientId) || 0;
+    const latestSpeechVersion = session.warmupSpeechVersions.get(clientId) || 0;
+    if (latestSpeechVersion !== expectedSpeechVersion) {
+      clearPendingWarmupReply(session, clientId);
+      return;
+    }
+    if (pendingTurn.source === "stt" && Date.now() - latestSpeechAt < WARMUP_STT_SETTLE_MS) {
+      const retryDelay = Math.max(150, WARMUP_STT_SETTLE_MS - (Date.now() - latestSpeechAt));
+      const timer = setTimeout(generateReply, retryDelay);
+      session.pendingWarmupReplies.set(clientId, { timer });
+      return;
+    }
+
+    clearPendingWarmupReply(session, clientId);
+
+    const reply = await enhancedEngine.warmupChat(
+      sessionShortCode, participant.name, text, names, ageCalibration, session.topic
+    );
+    const currentSpeechVersion = session.warmupSpeechVersions.get(clientId) || 0;
+    if (currentSpeechVersion !== expectedSpeechVersion) {
+      return;
+    }
+
+    if (reply) {
+      const replyDelay = WARMUP_REPLY_BASE_DELAY_MS + Math.random() * WARMUP_REPLY_JITTER_MS;
+      setTimeout(() => {
+        const stillActiveSession = activeSessions.get(sessionShortCode);
+        if (!stillActiveSession || stillActiveSession.active) return;
+        const newestSpeechVersion = stillActiveSession.warmupSpeechVersions?.get(clientId) || 0;
+        if (newestSpeechVersion !== expectedSpeechVersion) return;
+        broadcastToSession(sessionShortCode, {
+          type: "facilitator_message",
+          text: reply,
+          move: "warmup",
+          timestamp: Date.now()
+        });
+      }, replyDelay);
+    }
+
+    console.log(`[${sessionShortCode}] ☀ WARMUP | ${participant.name}: "${text}"`);
+    console.log(`  → Plato: "${reply?.substring(0, 80)}${reply?.length > 80 ? '...' : ''}"`);
+  };
+
+  if (pendingTurn.source === "stt") {
+    const timer = setTimeout(generateReply, WARMUP_STT_SETTLE_MS);
+    session.pendingWarmupReplies.set(clientId, { timer });
+    return;
+  }
+
+  await generateReply();
+}
+
+function queueWarmupTurn(sessionShortCode, clientId, text, source = "text") {
+  const session = activeSessions.get(sessionShortCode);
+  if (!session || session.active) return;
+
+  ensureWarmupState(session);
+
+  const normalizedText = String(text || "").trim();
+  if (!normalizedText) return;
+
+  if (source === "stt") {
+    markWarmupSpeechActivity(sessionShortCode, clientId);
+  } else {
+    session.warmupSpeechActivity.set(clientId, Date.now());
+    session.warmupSpeechVersions.set(clientId, (session.warmupSpeechVersions.get(clientId) || 0) + 1);
+    clearPendingWarmupReply(session, clientId);
+  }
+
+  const existing = session.pendingWarmupTurns.get(clientId);
+  const pendingTurn = existing || { text: "", source };
+  pendingTurn.text = pendingTurn.text
+    ? `${pendingTurn.text} ${normalizedText}`
+    : normalizedText;
+  pendingTurn.source = source;
+
+  if (pendingTurn.timer) {
+    clearTimeout(pendingTurn.timer);
+  }
+
+  const delay = source === "stt" ? WARMUP_STT_MERGE_MS : 0;
+  pendingTurn.timer = setTimeout(() => {
+    finalizeWarmupTurn(sessionShortCode, clientId).catch((error) => {
+      console.error("[warmup] finalize turn error:", error.message);
+    });
+  }, delay);
+
+  session.pendingWarmupTurns.set(clientId, pendingTurn);
+}
+
 // ---- WebSocket Handling ----
 
-async function handleParticipantMessage(sessionShortCode, clientId, text) {
+async function handleParticipantMessage(sessionShortCode, clientId, text, meta = {}) {
   const session = activeSessions.get(sessionShortCode);
   if (!session) return;
 
@@ -377,45 +534,7 @@ async function handleParticipantMessage(sessionShortCode, clientId, text) {
 
   // ── Pre-discussion: warmup chat mode ──
   if (!session.active) {
-    broadcastToSession(sessionShortCode, {
-      type: "participant_message",
-      name: participant.name,
-      text: text,
-      timestamp: Date.now()
-    });
-
-    const names = Array.from(session.stateTracker.participants.values()).map(p => p.name);
-    const ages = Array.from(session.stateTracker.participants.values()).map(p => p.age);
-    const ageCalibration = getAgeCalibration(ages);
-
-    const reply = await enhancedEngine.warmupChat(
-      sessionShortCode, participant.name, text, names, ageCalibration, session.topic
-    );
-
-    if (reply) {
-      // Small delay to feel natural
-      setTimeout(async () => {
-        broadcastToSession(sessionShortCode, {
-          type: "facilitator_message",
-          text: reply,
-          move: "warmup",
-          timestamp: Date.now()
-        });
-
-        // TTS disabled for beta — text-only Plato
-        // try {
-        //   const wavBuffer = await generateTTS(reply);
-        //   for (const client of session.clients) {
-        //     if (client.ws.readyState === 1) client.ws.send(wavBuffer);
-        //   }
-        // } catch (e) {
-        //   console.error("[TTS] Warmup TTS error:", e.message);
-        // }
-      }, 800 + Math.random() * 1200);
-    }
-
-    console.log(`[${sessionShortCode}] ☀ WARMUP | ${participant.name}: "${text}"`);
-    console.log(`  → Plato: "${reply?.substring(0, 80)}${reply?.length > 80 ? '...' : ''}"`);
+    queueWarmupTurn(sessionShortCode, clientId, text, meta.source || "text");
     return;
   }
 
@@ -892,7 +1011,9 @@ wss.on("connection", (ws, req) => {
       }
 
       case "message": {
-        handleParticipantMessage(currentSessionShortCode, clientId, msg.text);
+        handleParticipantMessage(currentSessionShortCode, clientId, msg.text, {
+          source: msg.source || "text"
+        });
         break;
       }
 
@@ -924,6 +1045,7 @@ wss.on("connection", (ws, req) => {
                 const transcript = alt[0].transcript;
                 const isFinal = result.is_final;
                 if (transcript.trim()) {
+                  markWarmupSpeechActivity(currentSessionShortCode, clientId);
                   ws.send(JSON.stringify({
                     type: "stt_transcript",
                     text: transcript,

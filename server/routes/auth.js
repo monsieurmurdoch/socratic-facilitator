@@ -18,6 +18,23 @@ const { logAudit, getRequestIp } = require('../audit');
 router.use(express.json({ limit: '1mb' }));
 
 const loginAttempts = new Map();
+const DEFAULT_DEMO_TEACHER = {
+  name: process.env.DEMO_TEACHER_NAME || 'Demo Teacher',
+  email: normalizeEmail(process.env.DEMO_TEACHER_EMAIL || 'teacher@socratic.local'),
+  password: process.env.DEMO_TEACHER_PASSWORD || 'plato-demo'
+};
+
+function isDemoTeacherEnabled() {
+  return process.env.DEMO_TEACHER_LOGIN_ENABLED === 'true' || process.env.NODE_ENV !== 'production';
+}
+
+function getDemoTeacherConfig() {
+  return {
+    enabled: isDemoTeacherEnabled(),
+    name: DEFAULT_DEMO_TEACHER.name,
+    email: DEFAULT_DEMO_TEACHER.email
+  };
+}
 
 function getClientKey(req, email = '') {
   return `${getRequestIp(req) || 'unknown'}:${normalizeEmail(email) || 'unknown'}`;
@@ -57,6 +74,52 @@ function formatUser(user) {
 function hashResetToken(rawToken) {
   return crypto.createHash('sha256').update(rawToken).digest('hex');
 }
+
+router.get('/demo-teacher', (_req, res) => {
+  res.json(getDemoTeacherConfig());
+});
+
+router.post('/demo-teacher/login', async (req, res) => {
+  try {
+    if (!isDemoTeacherEnabled()) {
+      return res.status(403).json({ error: 'Demo teacher login is not enabled' });
+    }
+
+    const passwordHash = await hashPassword(DEFAULT_DEMO_TEACHER.password);
+    const user = await usersRepo.upsertDemoTeacher({
+      name: DEFAULT_DEMO_TEACHER.name,
+      email: DEFAULT_DEMO_TEACHER.email,
+      passwordHash
+    });
+
+    const { token, session } = await issueAuthToken(user, {
+      sessionLabel: 'Demo Teacher',
+      userAgent: req.headers['user-agent'] || null,
+      ipAddress: getRequestIp(req)
+    });
+
+    await logAudit({
+      req,
+      actorUserId: user.id,
+      action: 'auth.demo_teacher_logged_in',
+      entityType: 'auth_session',
+      entityId: session.id,
+      metadata: { sessionId: session.id }
+    });
+
+    res.json({
+      user: formatUser(user),
+      token,
+      demoTeacher: {
+        name: DEFAULT_DEMO_TEACHER.name,
+        email: DEFAULT_DEMO_TEACHER.email
+      }
+    });
+  } catch (error) {
+    console.error('Demo teacher login error:', error);
+    res.status(500).json({ error: 'Failed to sign in as demo teacher' });
+  }
+});
 
 router.post('/register', async (req, res) => {
   try {
