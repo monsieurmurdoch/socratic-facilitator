@@ -24,6 +24,7 @@
   let sttBatchTimer = null;
   let lastInterimTranscript = '';
   let discussionActive = false;
+  let currentScreen = "welcome";
   const STT_FLUSH_MS_WARMUP = 1400;
   const STT_FLUSH_MS_DISCUSSION = 1100;
 
@@ -40,6 +41,7 @@
         currentSessionId,
         isHost,
         participants,
+        currentScreen,
         savedAt: Date.now()
       }));
     } catch (e) { /* storage full or unavailable */ }
@@ -66,6 +68,7 @@
     participants = [];
     isHost = false;
     discussionActive = false;
+    currentScreen = "welcome";
     sttBatchBuffer = "";
     lastInterimTranscript = "";
     clearTimeout(sttBatchTimer);
@@ -130,8 +133,13 @@
   };
 
   function showScreen(name) {
+    currentScreen = name;
     Object.values(screens).forEach(s => s && s.classList.remove("active"));
     if (screens[name]) screens[name].classList.add("active");
+  }
+
+  function shouldAutoRestore(saved) {
+    return !!(saved && saved.currentSessionId && saved.myId && ["lobby", "video"].includes(saved.currentScreen));
   }
 
   function getAuthHeaders(extra = {}) {
@@ -180,7 +188,7 @@
 
       // Try to restore saved session
       const saved = loadState();
-      if (saved && saved.currentSessionId && saved.myId) {
+      if (shouldAutoRestore(saved)) {
         console.log("[WS] Restoring session:", saved.currentSessionId, "as", saved.myName);
         myName = saved.myName;
         myId = saved.myId;
@@ -1452,7 +1460,7 @@
   // ---- Init ----
   loadAuthState();
   const savedState = loadState();
-  if (savedState && savedState.currentSessionId) {
+  if (shouldAutoRestore(savedState)) {
     // Show a loading state while we try to rejoin
     showScreen("lobby");
     document.getElementById("session-code").textContent = savedState.currentSessionId;
