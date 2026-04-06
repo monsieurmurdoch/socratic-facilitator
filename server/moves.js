@@ -283,7 +283,6 @@ const MOVES = {
       "Follow that thought — where does it lead?",
       "And if you take that one step further... what happens?"
     ]
-  }
   },
 
   LITERAL: {
