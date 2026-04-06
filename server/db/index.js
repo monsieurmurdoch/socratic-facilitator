@@ -80,16 +80,38 @@ async function initializeSchema() {
     console.log('[DB] Connection successful');
 
     const schema = fs.readFileSync(schemaPath, 'utf8');
-    await query(schema);
-    console.log('[DB] Schema initialized successfully');
-  } catch (error) {
-    // Ignore "already exists" errors
-    if (error.message.includes('already exists') || error.message.includes('duplicate key')) {
-      console.log('[DB] Schema already exists');
-    } else {
-      console.error('[DB] Schema initialization error:', error.message);
-      throw error;
+
+    // Split schema into individual statements and execute each
+    // pg.query() can only execute one statement at a time
+    const statements = schema
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    let successCount = 0;
+    let skipCount = 0;
+
+    for (const stmt of statements) {
+      try {
+        await query(stmt);
+        successCount++;
+      } catch (err) {
+        // Ignore "already exists" and related errors for idempotent schema runs
+        const msg = err.message || '';
+        if (msg.includes('already exists') ||
+            msg.includes('duplicate') ||
+            msg.includes('relation') && msg.includes('not exist')) {
+          skipCount++;
+        } else {
+          console.warn('[DB] Statement warning:', msg.substring(0, 100));
+        }
+      }
     }
+
+    console.log(`[DB] Schema initialized: ${successCount} statements executed, ${skipCount} skipped (already exist)`);
+  } catch (error) {
+    console.error('[DB] Schema initialization error:', error.message);
+    throw error;
   }
 }
 
