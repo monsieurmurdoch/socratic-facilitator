@@ -1,12 +1,9 @@
 -- Socratic Facilitator Database Schema
 -- Run this to initialize the database
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(120) NOT NULL,
   email VARCHAR(255) UNIQUE NOT NULL,
   role VARCHAR(20) NOT NULL DEFAULT 'Teacher' CHECK (role IN ('Admin', 'SuperAdmin', 'Teacher', 'Student', 'Parent')),
@@ -17,7 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Classes table
 CREATE TABLE IF NOT EXISTS classes (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   name VARCHAR(160) NOT NULL,
   description TEXT,
@@ -28,7 +25,7 @@ CREATE TABLE IF NOT EXISTS classes (
 
 -- Sessions table
 CREATE TABLE IF NOT EXISTS sessions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   short_code VARCHAR(8) UNIQUE NOT NULL,
   title VARCHAR(255) NOT NULL,
   opening_question TEXT,
@@ -75,7 +72,7 @@ END $$;
 
 -- Participants table
 CREATE TABLE IF NOT EXISTS participants (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
   user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   name VARCHAR(100) NOT NULL,
@@ -88,7 +85,7 @@ CREATE TABLE IF NOT EXISTS participants (
 
 -- Class memberships (students, teachers, parents, etc.)
 CREATE TABLE IF NOT EXISTS class_memberships (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   class_id UUID REFERENCES classes(id) ON DELETE CASCADE,
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   role VARCHAR(20) NOT NULL CHECK (role IN ('Teacher', 'Student', 'Parent', 'Admin', 'SuperAdmin')),
@@ -102,7 +99,7 @@ ALTER TABLE sessions ADD CONSTRAINT fk_created_by
 
 -- Messages table
 CREATE TABLE IF NOT EXISTS messages (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
   participant_id UUID REFERENCES participants(id) ON DELETE SET NULL,
   sender_type VARCHAR(20) NOT NULL CHECK (sender_type IN ('participant', 'facilitator', 'system')),
@@ -115,7 +112,7 @@ CREATE TABLE IF NOT EXISTS messages (
 
 -- Source materials table
 CREATE TABLE IF NOT EXISTS source_materials (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
   filename VARCHAR(255),
   original_type VARCHAR(50) CHECK (original_type IN ('pdf', 'url', 'txt', 'docx', 'other')),
@@ -127,7 +124,7 @@ CREATE TABLE IF NOT EXISTS source_materials (
 
 -- Primed context table (AI comprehension of materials)
 CREATE TABLE IF NOT EXISTS primed_context (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
   summary TEXT,
   key_themes JSONB,
@@ -141,7 +138,7 @@ CREATE TABLE IF NOT EXISTS primed_context (
 
 -- Conversation state table (for analytics)
 CREATE TABLE IF NOT EXISTS conversation_state (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
   message_id UUID REFERENCES messages(id),
 
@@ -169,7 +166,7 @@ CREATE TABLE IF NOT EXISTS conversation_state (
 
 -- Session-level participant history and aggregate contribution metrics
 CREATE TABLE IF NOT EXISTS session_memberships (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
   participant_id UUID REFERENCES participants(id) ON DELETE CASCADE,
   user_id UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -190,7 +187,7 @@ CREATE TABLE IF NOT EXISTS session_memberships (
 
 -- Per-message analytics used for scoring, ranking, and future overlays
 CREATE TABLE IF NOT EXISTS message_analytics (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
   message_id UUID REFERENCES messages(id) ON DELETE CASCADE,
   participant_id UUID REFERENCES participants(id) ON DELETE SET NULL,
@@ -228,7 +225,7 @@ CREATE INDEX IF NOT EXISTS idx_message_analytics_session ON message_analytics(se
 
 -- Session debriefs and generated reports
 CREATE TABLE IF NOT EXISTS session_reports (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   report_type VARCHAR(40) NOT NULL DEFAULT 'teacher_debrief',
   report_json JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -238,7 +235,7 @@ CREATE TABLE IF NOT EXISTS session_reports (
 
 -- Class privacy controls
 CREATE TABLE IF NOT EXISTS class_privacy_settings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
   retention_days INTEGER NOT NULL DEFAULT 180,
   allow_ai_scoring BOOLEAN NOT NULL DEFAULT TRUE,
@@ -253,7 +250,7 @@ CREATE TABLE IF NOT EXISTS class_privacy_settings (
 
 -- Parent/student links for class-level access
 CREATE TABLE IF NOT EXISTS parent_student_links (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
   parent_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   student_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -263,7 +260,7 @@ CREATE TABLE IF NOT EXISTS parent_student_links (
 
 -- External OAuth/LMS integrations
 CREATE TABLE IF NOT EXISTS external_integrations (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   provider VARCHAR(40) NOT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'connected',
@@ -281,7 +278,7 @@ CREATE TABLE IF NOT EXISTS external_integrations (
 
 -- LTI platform registrations
 CREATE TABLE IF NOT EXISTS lti_registrations (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   label VARCHAR(160) NOT NULL,
   issuer TEXT NOT NULL,
   client_id TEXT NOT NULL,
@@ -304,7 +301,7 @@ CREATE TABLE IF NOT EXISTS lti_registrations (
 
 -- LTI launch/account linkage
 CREATE TABLE IF NOT EXISTS lti_account_links (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   registration_id UUID NOT NULL REFERENCES lti_registrations(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   lti_subject TEXT NOT NULL,
@@ -320,7 +317,7 @@ CREATE TABLE IF NOT EXISTS lti_account_links (
 
 -- LTI gradebook line item mapping
 CREATE TABLE IF NOT EXISTS lti_gradebook_links (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   registration_id UUID NOT NULL REFERENCES lti_registrations(id) ON DELETE CASCADE,
   context_id TEXT,
@@ -337,7 +334,7 @@ CREATE TABLE IF NOT EXISTS lti_gradebook_links (
 
 -- Revocable auth sessions
 CREATE TABLE IF NOT EXISTS auth_sessions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_jti TEXT NOT NULL,
   session_label TEXT,
@@ -352,7 +349,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 
 -- Password reset tokens
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL UNIQUE,
   expires_at TIMESTAMPTZ NOT NULL,
@@ -364,7 +361,7 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 
 -- Audit trail
 CREATE TABLE IF NOT EXISTS audit_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   action TEXT NOT NULL,
@@ -378,7 +375,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 -- Model eval history
 CREATE TABLE IF NOT EXISTS model_eval_runs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   requested_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   eval_key TEXT NOT NULL,
   strategy TEXT NOT NULL,
@@ -393,7 +390,7 @@ CREATE TABLE IF NOT EXISTS model_eval_runs (
 
 -- Background maintenance history
 CREATE TABLE IF NOT EXISTS maintenance_runs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   job_name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'completed',
   result_json JSONB NOT NULL DEFAULT '{}'::jsonb,
