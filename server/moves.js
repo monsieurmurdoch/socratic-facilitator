@@ -284,6 +284,25 @@ const MOVES = {
       "And if you take that one step further... what happens?"
     ]
   }
+  },
+
+  LITERAL: {
+    id: "literal",
+    name: "Literal",
+    description: "Ask questions about the literal meaning of the text, words, or direct statements.",
+    conditions: [
+      "The discussion is jumping to interpretation without establishing literal meaning",
+      "A word or phrase in the text is unclear",
+      "Participants are discussing implications before what's directly said"
+    ],
+    priority: 3,
+    examples: [
+      "What does the word '{word}' mean in this context?",
+      "Can you point to where in the text it says that?",
+      "What is literally happening in this part of the poem?",
+      "Before we talk about what it means, what does the text actually say here?"
+    ]
+  }
 };
 
 /**
@@ -320,20 +339,3 @@ function getMoveTaxonomyPrompt(opts = {}) {
 module.exports = { MOVES, getMoveTaxonomyPrompt };
 
 
-  LITERAL: {
-    id: "literal",
-    name: "Literal",
-    description: "Ask questions about the literal meaning of the text, words, or direct statements.",
-    conditions: [
-      "The discussion is jumping to interpretation without establishing literal meaning",
-      "A word or phrase in the text is unclear",
-      "Participants are discussing implications before what's directly said"
-    ],
-    priority: 3,
-    examples: [
-      "What does the word '{word}' mean in this context?",
-      "Can you point to where in the text it says that?",
-      "What is literally happening in this part of the poem?",
-      "Before we talk about what it means, what does the text actually say here?"
-    ]
-  },
