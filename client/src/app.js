@@ -618,10 +618,14 @@
         isHost = true;
         break;
 
-      case "session_joined":
+      case "session_joined": {
+        const isRejoin = currentSessionId === msg.sessionId && myId === msg.yourId;
         currentSessionId = msg.sessionId;
         discussionActive = false;
-        resetConversationFeed();
+        // Only reset feed on fresh join — preserve transcript on reconnect
+        if (!isRejoin) {
+          resetConversationFeed();
+        }
         myId = msg.yourId;
         participants = msg.participants;
         updateParticipantList();
@@ -641,6 +645,7 @@
           primeMaterials();
         }
         break;
+      }
 
       case "participant_joined":
         participants.push({ name: msg.name });
@@ -656,9 +661,14 @@
 
       case "enter_video":
         discussionActive = false;
-        showScreen("video");
-        launchJitsi(currentSessionId, myName);
-        startSpeechRecognition();
+        if (!document.getElementById("video-screen").classList.contains("active")) {
+          showScreen("video");
+          launchJitsi(currentSessionId, myName);
+          startSpeechRecognition();
+        } else if (!sttActive) {
+          // Video already showing but STT died after reconnect — restart
+          startSpeechRecognition();
+        }
         // Only the host sees the Start Discussion button
         document.getElementById("start-discussion-btn").style.display = isHost ? "" : "none";
         saveState();
@@ -666,10 +676,13 @@
 
       case "discussion_started":
         discussionActive = true;
-        // If already in video room (warmup → active), just hide the start button
         if (!document.getElementById("video-screen").classList.contains("active")) {
+          // First time entering video — full setup
           showScreen("video");
           launchJitsi(currentSessionId, myName);
+          startSpeechRecognition();
+        } else if (!sttActive) {
+          // Already in video but STT died (e.g. after WS reconnect) — restart it
           startSpeechRecognition();
         }
         document.getElementById("start-discussion-btn").style.display = "none";
@@ -1168,12 +1181,17 @@
     uploadArea.classList.remove("dragover");
     handleFiles(e.dataTransfer.files);
   });
+  // Block ALL drag-and-drop outside the upload area — prevents browser from
+  // opening dragged files as a new page (which would destroy the session)
   document.addEventListener("dragover", (e) => {
     e.preventDefault();
   });
   document.addEventListener("drop", (e) => {
-    if (e.target !== uploadArea && !uploadArea.contains(e.target)) {
-      e.preventDefault();
+    e.preventDefault();
+    e.stopPropagation();
+    // If dropped on the upload area, route through its handler
+    if (uploadArea.contains(e.target) || e.target === uploadArea) {
+      handleFiles(e.dataTransfer.files);
     }
   });
   fileInput.addEventListener("change", () => {
@@ -1385,8 +1403,9 @@
     // Don't destroy the stream — keep it for reuse to avoid re-prompting mic
     if (sttActive) {
       send({ type: "stt_stop" });
-      sttActive = false;
     }
+    // Always reset flag so reconnect can re-establish the Deepgram relay
+    sttActive = false;
     console.log("[STT] Stopped (stream kept for reuse)");
   }
 

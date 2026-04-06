@@ -887,6 +887,11 @@ wss.on("connection", (ws, req) => {
         }
 
         currentSessionShortCode = sessionId;
+        // Cancel cleanup grace period if someone joins
+        if (session._cleanupTimer) {
+          clearTimeout(session._cleanupTimer);
+          session._cleanupTimer = null;
+        }
         session.clients.push({ ws, clientId, name, userId: authUser?.id || null, role: authUser?.role || null });
         console.log(`[join_session] Sending session_joined response`);
 
@@ -931,6 +936,13 @@ wss.on("connection", (ws, req) => {
 
         clientId = oldClientId;
         currentSessionShortCode = sessionId;
+
+        // Cancel cleanup grace period if we're reconnecting
+        if (session._cleanupTimer) {
+          clearTimeout(session._cleanupTimer);
+          session._cleanupTimer = null;
+          console.log(`[${sessionId}] Reconnect cancelled cleanup timer`);
+        }
 
         session.clients = session.clients.filter(c => c.clientId !== clientId);
         session.clients.push({ ws, clientId, name: participant.name });
@@ -1162,10 +1174,20 @@ wss.on("connection", (ws, req) => {
         }
 
         if (session.clients.length === 0) {
-          const checker = silenceCheckers.get(currentSessionShortCode);
-          if (checker) clearInterval(checker);
-          silenceCheckers.delete(currentSessionShortCode);
-          activeSessions.delete(currentSessionShortCode);
+          // Grace period: keep session alive for 30s so reconnects don't lose state
+          const shortCode = currentSessionShortCode;
+          console.log(`[${shortCode}] All clients disconnected — 30s grace period before cleanup`);
+          if (session._cleanupTimer) clearTimeout(session._cleanupTimer);
+          session._cleanupTimer = setTimeout(() => {
+            const s = activeSessions.get(shortCode);
+            if (s && s.clients.length === 0) {
+              console.log(`[${shortCode}] Grace period expired — cleaning up session`);
+              const checker = silenceCheckers.get(shortCode);
+              if (checker) clearInterval(checker);
+              silenceCheckers.delete(shortCode);
+              activeSessions.delete(shortCode);
+            }
+          }, 30000);
         }
       }
     }
