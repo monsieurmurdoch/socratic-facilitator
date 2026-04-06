@@ -424,6 +424,7 @@ async function finalizeWarmupTurn(sessionShortCode, clientId) {
   broadcastToSession(sessionShortCode, {
     type: "participant_message",
     name: participant.name,
+    senderId: clientId,
     text,
     timestamp: Date.now()
   });
@@ -544,6 +545,7 @@ async function handleParticipantMessage(sessionShortCode, clientId, text, meta =
   broadcastToSession(sessionShortCode, {
     type: "participant_message",
     name: participant.name,
+    senderId: clientId,
     text: text,
     timestamp: Date.now()
   });
@@ -828,6 +830,10 @@ wss.on("connection", (ws, req) => {
               const SessionStateTracker = require("./stateTracker").SessionStateTracker;
               const stateTracker = new SessionStateTracker(dbSession.id, dbSession);
               await stateTracker.loadFromDatabase();
+              // Persisted participant rows are historical state; rebuild the live
+              // roster from actual websocket joins so warmup/solo mode isn't
+              // polluted by stale "present" participants from previous runs.
+              stateTracker.participants.clear();
               console.log(`[join_session] State tracker loaded`);
 
               // Try to find a matching topic for context
@@ -1140,10 +1146,14 @@ wss.on("connection", (ws, req) => {
     if (currentSessionShortCode) {
       const session = activeSessions.get(currentSessionShortCode);
       if (session) {
-        session.clients = session.clients.filter(c => c.clientId !== clientId);
+        session.clients = session.clients.filter(c => c.ws !== ws);
 
         const participant = session.stateTracker.participants.get(clientId);
-        if (participant) {
+        const hasRemainingConnection = session.clients.some(c => c.clientId === clientId);
+        if (participant && !hasRemainingConnection) {
+          session.stateTracker.removeParticipant(clientId).catch((error) => {
+            console.error('[session] Failed to remove participant on disconnect:', error.message);
+          });
           broadcastToSession(currentSessionShortCode, {
             type: "participant_left",
             name: participant.name,

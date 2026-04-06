@@ -104,8 +104,17 @@ class SessionStateTracker {
     return participant;
   }
 
-  removeParticipant(id) {
+  async removeParticipant(id) {
+    const participant = this.participants.get(id);
+    if (!participant) return;
+
     this.participants.delete(id);
+
+    try {
+      await participantsRepo.markLeft(participant.dbId || id);
+    } catch (error) {
+      console.error('Error marking participant left in database:', error);
+    }
   }
 
   async recordMessage(participantId, text, timestamp = Date.now()) {

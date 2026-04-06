@@ -22,6 +22,7 @@
   const MAX_MATERIALS = 5;
   let sttBatchBuffer = '';
   let sttBatchTimer = null;
+  let lastInterimTranscript = '';
   let discussionActive = false;
   const STT_FLUSH_MS_WARMUP = 1400;
   const STT_FLUSH_MS_DISCUSSION = 1100;
@@ -66,9 +67,31 @@
     isHost = false;
     discussionActive = false;
     sttBatchBuffer = "";
+    lastInterimTranscript = "";
     clearTimeout(sttBatchTimer);
     sttBatchTimer = null;
     clearLocalSpeechDraft();
+  }
+
+  function resetConversationFeed() {
+    const container = document.getElementById("conversation-feed");
+    if (container) container.innerHTML = "";
+    sttBatchBuffer = "";
+    lastInterimTranscript = "";
+    clearTimeout(sttBatchTimer);
+    sttBatchTimer = null;
+  }
+
+  function clearSessionUrlState() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("join");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  function abandonDraftSession() {
+    clearState();
+    resetConversationFeed();
+    clearSessionUrlState();
   }
 
   function loadAuthState() {
@@ -590,6 +613,7 @@
       case "session_joined":
         currentSessionId = msg.sessionId;
         discussionActive = false;
+        resetConversationFeed();
         myId = msg.yourId;
         participants = msg.participants;
         updateParticipantList();
@@ -645,8 +669,7 @@
         break;
 
       case "participant_message":
-        // Skip our own messages — already added locally via STT
-        if (msg.name === myName) break;
+        if (msg.senderId && msg.senderId === myId) break;
         addTranscriptEntry(msg.name, msg.text, false);
         break;
 
@@ -666,13 +689,15 @@
         if (msg.isFinal) {
           if (msg.text && msg.text.trim().length > 2) {
             // Batch consecutive STT finals into a single utterance.
-            sttBatchBuffer += (sttBatchBuffer ? ' ' : '') + msg.text.trim();
+            sttBatchBuffer = mergeTranscriptText(sttBatchBuffer, msg.text.trim());
+            lastInterimTranscript = "";
             updateLocalSpeechDraft(sttBatchBuffer, false);
             scheduleSttFlush();
           }
         } else {
           if (msg.text && msg.text.trim()) {
-            const preview = sttBatchBuffer ? sttBatchBuffer + ' ' + msg.text : msg.text;
+            lastInterimTranscript = msg.text.trim();
+            const preview = mergeTranscriptText(sttBatchBuffer, lastInterimTranscript);
             updateLocalSpeechDraft(preview, true);
             scheduleSttFlush();
           }
@@ -849,6 +874,27 @@
     return discussionActive ? STT_FLUSH_MS_DISCUSSION : STT_FLUSH_MS_WARMUP;
   }
 
+  function mergeTranscriptText(base, incoming) {
+    const left = String(base || "").trim();
+    const right = String(incoming || "").trim();
+    if (!left) return right;
+    if (!right) return left;
+    if (right === left) return left;
+    if (right.startsWith(left)) return right;
+    if (left.startsWith(right)) return left;
+    if (left.includes(right)) return left;
+    if (right.includes(left)) return right;
+
+    const maxOverlap = Math.min(left.length, right.length);
+    for (let i = maxOverlap; i >= 1; i -= 1) {
+      if (left.slice(-i).toLowerCase() === right.slice(0, i).toLowerCase()) {
+        return `${left}${right.slice(i)}`.trim();
+      }
+    }
+
+    return `${left} ${right}`.trim();
+  }
+
   function updateLocalSpeechDraft(text, isInterim) {
     const container = document.getElementById("conversation-feed");
     if (!container) return;
@@ -881,6 +927,7 @@
     const text = sttBatchBuffer.trim();
     if (!text) return;
     sttBatchBuffer = '';
+    lastInterimTranscript = "";
     clearLocalSpeechDraft();
     addTranscriptEntry(myName, text, true, false);
     send({ type: "message", text, source: "stt" });
@@ -1083,11 +1130,13 @@
       alert("Only teachers and admins can create sessions right now.");
       return;
     }
+    abandonDraftSession();
     showScreen("setup");
   });
 
   // Back from setup
   document.getElementById("back-to-welcome-btn")?.addEventListener("click", () => {
+    abandonDraftSession();
     showScreen("welcome");
   });
 
@@ -1107,8 +1156,17 @@
   });
   uploadArea.addEventListener("drop", (e) => {
     e.preventDefault();
+    e.stopPropagation();
     uploadArea.classList.remove("dragover");
     handleFiles(e.dataTransfer.files);
+  });
+  document.addEventListener("dragover", (e) => {
+    e.preventDefault();
+  });
+  document.addEventListener("drop", (e) => {
+    if (e.target !== uploadArea && !uploadArea.contains(e.target)) {
+      e.preventDefault();
+    }
   });
   fileInput.addEventListener("change", () => {
     handleFiles(fileInput.files);
@@ -1158,6 +1216,7 @@
 
     const sessionTitle = title || "Open Discussion";
     const btn = document.getElementById("start-session-btn");
+    btn.blur();
     btn.disabled = true;
     btn.textContent = "Creating...";
 
