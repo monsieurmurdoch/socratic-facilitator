@@ -7,6 +7,7 @@
 
 const WebSocket = require("ws");
 const fetch = require("node-fetch");
+const { ConfidenceChecker } = require("../confidence-checker");
 
 class STTService {
   constructor(config) {
@@ -22,6 +23,7 @@ class STTService {
     this.connections = new Map();
     this.onTranscript = null;
     this.onVadEvent = null; // Callback for VAD events: { participantId, type: 'speech_started'|'speech_stopped', timestamp }
+    this.confidenceChecker = new ConfidenceChecker();
   }
 
   /**
@@ -55,7 +57,7 @@ class STTService {
         punctuate: "true",
         diarize: "true",
         language: this.config.language,
-        endpointing: "300",
+        endpointing: "500",
         vad_events: "true"
       }),
       {
@@ -102,6 +104,27 @@ class STTService {
               const speaker = alternatives[0].words?.[0]?.speaker || 0;
 
               if (transcript && transcript.trim()) {
+                // Check confidence for interim transcripts
+                let shouldProcessAsFinal = isFinal;
+                if (!isFinal && this.confidenceChecker) {
+                  // Assess if this interim transcript is ready for processing
+                  this.confidenceChecker.assessConfidence(transcript).then(result => {
+                    if (result.isReady) {
+                      console.log(`[STT] Predictive processing: "${transcript}" (${result.confidence.toFixed(2)})`);
+                      this.handleTranscript(
+                        participantId,
+                        participantName,
+                        transcript,
+                        true, // Treat as final for processing
+                        { speaker, confidence: result.confidence, reasoning: result.reasoning }
+                      );
+                    }
+                  }).catch(err => {
+                    console.warn('[STT] Confidence check failed:', err.message);
+                  });
+                }
+
+                // Always handle as normal (interim or final)
                 this.handleTranscript(
                   participantId,
                   participantName,

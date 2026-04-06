@@ -25,8 +25,8 @@
   let lastInterimTranscript = '';
   let discussionActive = false;
   let currentScreen = "welcome";
-  const STT_FLUSH_MS_WARMUP = 2000;
-  const STT_FLUSH_MS_DISCUSSION = 1500;
+  const STT_FLUSH_MS_WARMUP = 1200;
+  const STT_FLUSH_MS_DISCUSSION = 800;
 
   // ---- State Persistence ----
   const STORAGE_KEY = "socratic_state";
@@ -727,6 +727,12 @@
 
       case "stt_error":
         console.warn("[STT] Server error:", msg.text);
+        break;
+
+      case "stt_flush_now":
+        // Server indicates this interim transcript is ready for immediate processing
+        console.log(`[STT] Predictive flush triggered: ${msg.confidence?.toFixed(2)} - ${msg.reasoning}`);
+        flushSttBatch();
         break;
 
       case "discussion_ended":

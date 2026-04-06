@@ -37,6 +37,7 @@ const { MessageAssessor } = require("./analysis/messageAssessor");
 const { fastLLM } = require("./analysis/fastLLMProvider");
 const { stalenessGuard } = require("./analysis/stalenessGuard");
 const { DISCUSSION_TOPICS, FACILITATION_PARAMS, getAgeCalibration } = require("./config");
+const { ConfidenceChecker } = require("./confidence-checker");
 
 // Auth
 const { attachUser, authenticateToken } = require("./auth");
@@ -639,6 +640,7 @@ wss.on("connection", (ws, req) => {
 
   // Per-client Deepgram relay state
   let deepgramWs = null;
+  let confidenceChecker = new ConfidenceChecker();
 
   ws.on("message", async (raw, isBinary) => {
     // Binary data = audio frames for Deepgram relay
@@ -1053,7 +1055,7 @@ wss.on("connection", (ws, req) => {
         const dgUrl = `wss://api.deepgram.com/v1/listen?` +
           `encoding=linear16&sample_rate=16000&channels=1` +
           `&interim_results=true&punctuate=true&language=en-US` +
-          `&endpointing=300&vad_events=true`;
+          `&endpointing=500&vad_events=true`;
         deepgramWs = new WebSocket(dgUrl, {
           headers: { Authorization: `Token ${dgKey}` }
         });
@@ -1075,6 +1077,23 @@ wss.on("connection", (ws, req) => {
                     text: transcript,
                     isFinal
                   }));
+                  
+                  // Check confidence for interim transcripts
+                  if (!isFinal && confidenceChecker) {
+                    confidenceChecker.assessConfidence(transcript).then(result => {
+                      if (result.isReady) {
+                        console.log(`[STT] Predictive flush: "${transcript}" (${result.confidence.toFixed(2)})`);
+                        // Send flush signal to client
+                        ws.send(JSON.stringify({
+                          type: "stt_flush_now",
+                          confidence: result.confidence,
+                          reasoning: result.reasoning
+                        }));
+                      }
+                    }).catch(err => {
+                      console.warn('[STT] Confidence check failed:', err.message);
+                    });
+                  }
                 }
               }
             } else if (result.type === "SpeechStarted" || result.type === "SpeechStopped") {
