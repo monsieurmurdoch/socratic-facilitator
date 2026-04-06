@@ -27,7 +27,7 @@ router.use(express.urlencoded({ extended: true }));
  */
 router.post('/', async (req, res) => {
   try {
-    const { title, openingQuestion, conversationGoal, topicId, classId = null } = req.body;
+    const { title, openingQuestion, conversationGoal, topicId, classId = null, previousSessionShortCode = null } = req.body;
 
     // If topicId provided, use that topic's data
     let sessionTitle = title;
@@ -63,7 +63,8 @@ router.post('/', async (req, res) => {
       openingQuestion: sessionQuestion,
       conversationGoal,
       ownerUserId: req.user?.id || null,
-      classId: req.user ? classId : null
+      classId: req.user ? classId : null,
+      previousSessionShortCode
     });
 
     res.status(201).json({

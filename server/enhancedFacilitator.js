@@ -453,7 +453,26 @@ Respond with ONLY the JSON.`;
     let materialsContext = '';
     try {
       if (dbSessionId) {
-        const primedCtx = await primedContextRepo.getBySession(dbSessionId);
+        let primedCtx = await primedContextRepo.getBySession(dbSessionId);
+        if (!primedCtx || primedCtx.comprehension_status !== 'complete') {
+          // Check if there are materials to prime
+          const materialsRepo = require('./db/repositories/materials');
+          const combinedText = await materialsRepo.getCombinedText(dbSessionId);
+          if (combinedText) {
+            if (!primedCtx) {
+              primedCtx = await primedContextRepo.create(dbSessionId);
+            }
+            await primedContextRepo.markProcessing(primedCtx.id);
+            try {
+              const result = await sessionPrimer.prime(combinedText, topic.conversationGoal);
+              await primedContextRepo.markComplete(primedCtx.id, result);
+              console.log(`[Opening] Primed materials for session ${dbSessionId}`);
+            } catch (primeError) {
+              await primedContextRepo.markFailed(primedCtx.id, primeError.message);
+              console.error(`[Opening] Priming failed for session ${dbSessionId}:`, primeError.message);
+            }
+          }
+        }
         const snippet = sessionPrimer.getContextSnippet(primedCtx);
         if (snippet) {
           materialsContext = `\nSOURCE MATERIALS SUMMARY:\n${snippet}\n`;

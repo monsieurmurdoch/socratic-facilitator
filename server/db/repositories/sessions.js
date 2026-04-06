@@ -27,7 +27,8 @@ async function create({
   conversationGoal,
   creatorId = null,
   ownerUserId = null,
-  classId = null
+  classId = null,
+  previousSessionShortCode = null
 }) {
   let shortCode;
   let attempts = 0;
@@ -50,10 +51,10 @@ async function create({
   let result;
   try {
     result = await db.query(
-      `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by, owner_user_id, class_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by, owner_user_id, class_id, previous_session_short_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId, ownerUserId, classId]
+      [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId, ownerUserId, classId, previousSessionShortCode]
     );
   } catch (error) {
     const isMissingOwnershipColumns = error?.code === '42703' && (
@@ -66,10 +67,10 @@ async function create({
     }
 
     result = await db.query(
-      `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by, previous_session_short_code)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId]
+      [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId, previousSessionShortCode]
     );
   }
 

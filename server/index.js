@@ -183,7 +183,7 @@ app.get("/api/telemetry", (req, res) => {
 // ---- In-Memory Session State (for active WebSocket connections) ----
 // This maps short codes to active session state
 const activeSessions = new Map();
-const WARMUP_STT_MERGE_MS = Number(process.env.WARMUP_STT_MERGE_MS || 1000);
+const WARMUP_STT_MERGE_MS = Number(process.env.WARMUP_STT_MERGE_MS || 4000);
 const WARMUP_STT_SETTLE_MS = Number(process.env.WARMUP_STT_SETTLE_MS || 900);
 const WARMUP_REPLY_BASE_DELAY_MS = Number(process.env.WARMUP_REPLY_BASE_DELAY_MS || 250);
 const WARMUP_REPLY_JITTER_MS = Number(process.env.WARMUP_REPLY_JITTER_MS || 450);

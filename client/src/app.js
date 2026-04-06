@@ -25,8 +25,8 @@
   let lastInterimTranscript = '';
   let discussionActive = false;
   let currentScreen = "welcome";
-  const STT_FLUSH_MS_WARMUP = 1400;
-  const STT_FLUSH_MS_DISCUSSION = 1100;
+  const STT_FLUSH_MS_WARMUP = 4000;
+  const STT_FLUSH_MS_DISCUSSION = 3000;
 
   // ---- State Persistence ----
   const STORAGE_KEY = "socratic_state";

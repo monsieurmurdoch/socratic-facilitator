@@ -37,11 +37,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   started_at TIMESTAMPTZ,
   ended_at TIMESTAMPTZ,
-  created_by UUID
+  created_by UUID,
+  previous_session_short_code VARCHAR(8)
 );
 
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS owner_user_id UUID;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS class_id UUID;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS previous_session_short_code VARCHAR(8);
 
 DO $$
 BEGIN
