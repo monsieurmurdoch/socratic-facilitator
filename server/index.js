@@ -183,7 +183,7 @@ app.get("/api/telemetry", (req, res) => {
 // ---- In-Memory Session State (for active WebSocket connections) ----
 // This maps short codes to active session state
 const activeSessions = new Map();
-const WARMUP_STT_MERGE_MS = Number(process.env.WARMUP_STT_MERGE_MS || 4000);
+const WARMUP_STT_MERGE_MS = Number(process.env.WARMUP_STT_MERGE_MS || 2500);
 const WARMUP_STT_SETTLE_MS = Number(process.env.WARMUP_STT_SETTLE_MS || 900);
 const WARMUP_REPLY_BASE_DELAY_MS = Number(process.env.WARMUP_REPLY_BASE_DELAY_MS || 250);
 const WARMUP_REPLY_JITTER_MS = Number(process.env.WARMUP_REPLY_JITTER_MS || 450);
@@ -597,7 +597,7 @@ async function handleParticipantMessage(sessionShortCode, clientId, text, meta =
       console.warn(`[${sessionShortCode}] ⚠ Pipeline latency: ${pipelineLatencyMs}ms — consider tuning timeouts`);
     }
 
-    const delay = 1500 + Math.random() * 2000;
+    const delay = 500 + Math.random() * 1000;
     setTimeout(async () => {
       await handleFacilitatorMessage(sessionShortCode, decision);
     }, delay);
@@ -620,10 +620,13 @@ async function initialize() {
     console.log('Database initialized');
   } catch (error) {
     console.error('Database initialization error:', error);
+    throw error; // Re-throw to prevent server from starting
   }
 }
 
-initialize();
+async function startServer() {
+  await initialize();
+}
 
 wss.on("connection", (ws, req) => {
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -1045,9 +1048,12 @@ wss.on("connection", (ws, req) => {
         if (deepgramWs) {
           try { deepgramWs.close(); } catch (e) {}
         }
+        // endpointing: ms of silence before finalizing utterance (lower = faster response)
+        // vad_events: enables SpeechStarted/SpeechStopped events for better timing
         const dgUrl = `wss://api.deepgram.com/v1/listen?` +
           `encoding=linear16&sample_rate=16000&channels=1` +
-          `&interim_results=true&punctuate=true&language=en-US`;
+          `&interim_results=true&punctuate=true&language=en-US` +
+          `&endpointing=300&vad_events=true`;
         deepgramWs = new WebSocket(dgUrl, {
           headers: { Authorization: `Token ${dgKey}` }
         });
@@ -1071,6 +1077,14 @@ wss.on("connection", (ws, req) => {
                   }));
                 }
               }
+            } else if (result.type === "SpeechStarted" || result.type === "SpeechStopped") {
+              // Forward VAD events to client for better timing
+              const vadType = result.type === "SpeechStarted" ? "speech_started" : "speech_stopped";
+              ws.send(JSON.stringify({
+                type: "vad_event",
+                event: vadType,
+                timestamp: result.timestamp || Date.now()
+              }));
             }
           } catch (e) {
             console.error("[STT:Deepgram] Parse error:", e.message);
@@ -1194,8 +1208,13 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`\n  Socratic Facilitator running at http://localhost:${PORT}`);
-  console.log(`  WebSocket server attached to HTTP server`);
-  console.log(`  Ready.\n`);
+startServer().then(() => {
+  server.listen(PORT, () => {
+    console.log(`\n  Socratic Facilitator running at http://localhost:${PORT}`);
+    console.log(`  WebSocket server attached to HTTP server`);
+    console.log(`  Ready.\n`);
+  });
+}).catch((error) => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
 });

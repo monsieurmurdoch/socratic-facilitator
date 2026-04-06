@@ -16,7 +16,7 @@
 
 class StalenessGuard {
   constructor(opts = {}) {
-    this.defaultTimeoutMs = opts.defaultTimeoutMs || parseInt(process.env.STALENESS_GUARD_TIMEOUT_MS) || 5000;
+    this.defaultTimeoutMs = opts.defaultTimeoutMs || parseInt(process.env.STALENESS_GUARD_TIMEOUT_MS) || 3000;
     this.stats = {
       totalCalls: 0,
       onTime: 0,

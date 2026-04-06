@@ -199,12 +199,17 @@ class EnhancedFacilitationEngine {
     );
 
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 400,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userMessage }]
-      });
+      const response = await Promise.race([
+        this.client.messages.create({
+          model: this.model,
+          max_tokens: 300,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userMessage }]
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Message generation timeout')), 3000)
+        )
+      ]);
 
       const text = response.content[0].text.trim();
       const jsonStr = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();

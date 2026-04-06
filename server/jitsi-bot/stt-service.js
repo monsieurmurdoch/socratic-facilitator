@@ -21,6 +21,7 @@ class STTService {
 
     this.connections = new Map();
     this.onTranscript = null;
+    this.onVadEvent = null; // Callback for VAD events: { participantId, type: 'speech_started'|'speech_stopped', timestamp }
   }
 
   /**
@@ -42,6 +43,8 @@ class STTService {
    * Deepgram streaming transcription (recommended)
    */
   async startDeepgramStream(participantId, participantName) {
+    // endpointing: ms of silence before finalizing (300ms for faster response)
+    // vad_events: enables SpeechStarted/SpeechStopped for better timing
     const ws = new WebSocket(
       `wss://api.deepgram.com/v1/listen?` +
       new URLSearchParams({
@@ -51,7 +54,9 @@ class STTService {
         interim_results: "true",
         punctuate: "true",
         diarize: "true",
-        language: this.config.language
+        language: this.config.language,
+        endpointing: "300",
+        vad_events: "true"
       }),
       {
         headers: {
@@ -74,6 +79,20 @@ class STTService {
       ws.on("message", (data) => {
         try {
           const result = JSON.parse(data.toString());
+
+          // Handle VAD events (SpeechStarted / SpeechStopped)
+          if (result.type === "SpeechStarted" || result.type === "SpeechStopped") {
+            const vadType = result.type === "SpeechStarted" ? "speech_started" : "speech_stopped";
+            if (this.onVadEvent) {
+              this.onVadEvent({
+                participantId,
+                participantName,
+                type: vadType,
+                timestamp: result.timestamp || Date.now() / 1000
+              });
+            }
+            return;
+          }
 
           if (result.type === "Results" && result.channel) {
             const alternatives = result.channel.alternatives;
