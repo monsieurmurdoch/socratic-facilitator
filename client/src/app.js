@@ -293,6 +293,8 @@
     const classHelp = document.getElementById("session-class-help");
     const demoLoginSection = document.getElementById("demo-login-section");
     const demoLoginCopy = document.getElementById("demo-login-copy");
+    const classesCard = document.getElementById("classes-card");
+    const sessionsCard = document.getElementById("recent-sessions-card");
 
     if (demoLoginSection) {
       demoLoginSection.style.display = !accountUser && demoTeacherConfig.enabled ? "block" : "none";
@@ -304,6 +306,9 @@
     if (accountUser) {
       signedOut.style.display = "none";
       signedIn.style.display = "block";
+      // Show workspace cards when signed in
+      if (classesCard) classesCard.style.display = "";
+      if (sessionsCard) sessionsCard.style.display = "";
       classCreation.style.display = canManageClasses() ? "block" : "none";
       classesLocked.style.display = canManageClasses() ? "none" : "block";
       accountName.textContent = accountUser.name;
@@ -319,6 +324,9 @@
     } else {
       signedOut.style.display = "block";
       signedIn.style.display = "none";
+      // Hide workspace cards when not signed in — no need to nag
+      if (classesCard) classesCard.style.display = "none";
+      if (sessionsCard) sessionsCard.style.display = "none";
       classCreation.style.display = "none";
       classesLocked.style.display = "block";
       if (classHelp) {
@@ -358,7 +366,7 @@
       list.innerHTML = '<p class="empty-state">No classes yet. Create your first one here.</p>';
     } else {
       list.innerHTML = savedClasses.map(cls => `
-        <div class="workspace-item session-item" data-shortcode="${escapeHtml(session.shortCode)}">
+        <div class="workspace-item class-item" data-class-id="${escapeHtml(cls.id)}">
           <strong>${escapeHtml(cls.name)}</strong>
           <div class="workspace-item-meta">${escapeHtml(cls.description || "No notes yet.")}</div>
           <span class="workspace-item-tag">${cls.sessionCount} saved session${cls.sessionCount === 1 ? "" : "s"}${cls.ageRange ? ` · Ages ${escapeHtml(cls.ageRange)}` : ""}</span>
