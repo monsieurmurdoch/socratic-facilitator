@@ -337,6 +337,7 @@
         signedOut.style.display = "none";
       } else {
         // Panel is open — keep it visible, just update the auth card contents
+        if (workspacePanel) workspacePanel.style.display = "";
         if (signInLink) signInLink.style.display = "none";
         signedOut.style.display = "block";
       }
