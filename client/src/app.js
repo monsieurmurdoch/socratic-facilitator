@@ -18,7 +18,7 @@
   let accountUser = null;
   let savedClasses = [];
   let sessionHistory = [];
-  let demoTeacherConfig = { enabled: false, name: "", email: "" };
+  let demoTeacherConfig = null; // null until server responds
   const MAX_MATERIALS = 5;
   let sttBatchBuffer = '';
   let sttBatchTimer = null;
@@ -298,9 +298,11 @@
     const workspacePanel = document.querySelector(".workspace-panel");
 
     if (demoLoginSection) {
-      demoLoginSection.style.display = !accountUser && demoTeacherConfig.enabled ? "block" : "none";
+      // Show demo button unless: user is signed in, or server explicitly said disabled
+      const demoDisabled = demoTeacherConfig && !demoTeacherConfig.enabled;
+      demoLoginSection.style.display = !accountUser && !demoDisabled ? "block" : "none";
     }
-    if (demoLoginCopy && demoTeacherConfig.enabled) {
+    if (demoLoginCopy && demoTeacherConfig && demoTeacherConfig.enabled) {
       demoLoginCopy.textContent = `Use ${demoTeacherConfig.name} (${demoTeacherConfig.email}) for quick teacher access.`;
     }
 
@@ -1200,7 +1202,8 @@
     if (sessionsCard) sessionsCard.style.display = "none";
     // Show demo teacher button if enabled
     const demoSection = document.getElementById("demo-login-section");
-    if (demoSection && demoTeacherConfig && demoTeacherConfig.enabled) {
+    const demoDisabled = demoTeacherConfig && !demoTeacherConfig.enabled;
+    if (demoSection && !demoDisabled) {
       demoSection.style.display = "block";
     }
     document.getElementById("sign-in-link").style.display = "none";
