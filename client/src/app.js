@@ -1186,13 +1186,18 @@
   document.getElementById("create-class-btn").addEventListener("click", handleCreateClass);
   document.getElementById("logout-btn").addEventListener("click", handleLogout);
 
-  // "Sign in" link on welcome screen — reveals the sidebar auth panel
+  // "Sign in" link on welcome screen — reveals only the auth card (not classes/sessions)
   document.getElementById("show-auth-btn")?.addEventListener("click", (e) => {
     e.preventDefault();
     const panel = document.querySelector(".workspace-panel");
     const signedOut = document.getElementById("auth-signed-out");
     if (panel) panel.style.display = "";
     if (signedOut) signedOut.style.display = "block";
+    // Keep classes and sessions hidden — those require being signed in
+    const classesCard = document.getElementById("classes-card");
+    const sessionsCard = document.getElementById("recent-sessions-card");
+    if (classesCard) classesCard.style.display = "none";
+    if (sessionsCard) sessionsCard.style.display = "none";
     // Show demo teacher button if enabled
     const demoSection = document.getElementById("demo-login-section");
     if (demoSection && demoTeacherConfig && demoTeacherConfig.enabled) {
