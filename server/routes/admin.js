@@ -235,4 +235,15 @@ router.post('/maintenance/retention/run', async (_req, res) => {
   }
 });
 
+// FastLLM token availability and usage
+router.get('/fastllm-tokens', async (req, res) => {
+  try {
+    const tokenInfo = await fastLLM.testTokenAvailability();
+    res.json(tokenInfo);
+  } catch (error) {
+    console.error('FastLLM token check error:', error);
+    res.status(500).json({ error: error.message || 'Failed to check FastLLM tokens' });
+  }
+});
+
 module.exports = router;

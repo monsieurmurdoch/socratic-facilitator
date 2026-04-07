@@ -47,6 +47,9 @@ class FastLLMProvider {
       fallbacks: 0,
       avgLatencyMs: 0,
       latencies: [],     // last 50 latencies for rolling average
+      totalTokensUsed: 0,
+      totalTokensInput: 0,
+      totalTokensOutput: 0,
     };
 
     // Circuit breaker: if too many failures, temporarily disable
@@ -133,8 +136,13 @@ class FastLLMProvider {
         throw new Error('Empty response from fast LLM');
       }
 
+      // Extract token usage if available
+      const usage = data.usage;
+      const outputTokens = usage?.completion_tokens || this._estimateTokens(text);
+      const inputTokens = usage?.prompt_tokens || this._estimateTokens(JSON.stringify(messages));
+
       const latencyMs = Date.now() - startTime;
-      this._recordSuccess(latencyMs);
+      this._recordSuccess(latencyMs, inputTokens, outputTokens);
 
       return { text, latencyMs };
 
@@ -222,11 +230,54 @@ class FastLLMProvider {
     };
   }
 
+  /**
+   * Test token availability and get current usage.
+   */
+  async testTokenAvailability() {
+    if (!this.isAvailable()) {
+      return { available: false, error: 'FastLLM not configured or unavailable' };
+    }
+
+    try {
+      // Make a simple test call
+      const testPrompt = 'Hello, how are you?';
+      const result = await this.completeJSON({
+        prompt: testPrompt,
+        maxTokens: 50,
+        temperature: 0.1,
+        systemPrompt: 'Respond with a simple greeting in JSON format: {"response": "your greeting here"}'
+      });
+
+      if (result) {
+        return {
+          available: true,
+          testSuccessful: true,
+          tokenUsage: {
+            totalUsed: this.stats.totalTokensUsed,
+            inputUsed: this.stats.totalTokensInput,
+            outputUsed: this.stats.totalTokensOutput,
+            testTokens: result.usage ? {
+              input: result.usage.prompt_tokens,
+              output: result.usage.completion_tokens,
+              total: result.usage.total_tokens
+            } : 'estimated'
+          },
+          model: this.model,
+          endpoint: this.endpoint
+        };
+      } else {
+        return { available: true, testSuccessful: false, error: 'Test call failed' };
+      }
+    } catch (error) {
+      return { available: true, testSuccessful: false, error: error.message };
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // INTERNAL
   // ─────────────────────────────────────────────────────────────────────────────
 
-  _recordSuccess(latencyMs) {
+  _recordSuccess(latencyMs, inputTokens = 0, outputTokens = 0) {
     this.stats.successes++;
     this.consecutiveFailures = 0;
 
@@ -235,6 +286,11 @@ class FastLLMProvider {
       this.stats.latencies.shift();
     }
     this.stats.avgLatencyMs = this.stats.latencies.reduce((a, b) => a + b, 0) / this.stats.latencies.length;
+
+    // Record token usage
+    this.stats.totalTokensInput += inputTokens;
+    this.stats.totalTokensOutput += outputTokens;
+    this.stats.totalTokensUsed += (inputTokens + outputTokens);
   }
 
   _recordFailure() {
@@ -274,6 +330,11 @@ class FastLLMProvider {
       .trim();
 
     return candidate || null;
+  }
+
+  _estimateTokens(text) {
+    // Rough estimation: ~4 characters per token for English text
+    return Math.ceil(text.length / 4);
   }
 }
 
