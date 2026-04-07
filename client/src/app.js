@@ -646,7 +646,7 @@
   }
 
   // ---- Message Handlers ----
-  function handleServerMessage(msg) {
+  async function handleServerMessage(msg) {
     console.log("[WS] Received:", msg.type, msg);
     switch (msg.type) {
       case "connected":
