@@ -492,19 +492,18 @@ async function finalizeWarmupTurn(sessionShortCode, clientId) {
     }
 
     if (reply) {
-      const replyDelay = WARMUP_REPLY_BASE_DELAY_MS + Math.random() * WARMUP_REPLY_JITTER_MS;
-      setTimeout(() => {
-        const stillActiveSession = activeSessions.get(sessionShortCode);
-        if (!stillActiveSession || stillActiveSession.active) return;
-        const newestSpeechVersion = stillActiveSession.warmupSpeechVersions?.get(clientId) || 0;
-        if (newestSpeechVersion !== expectedSpeechVersion) return;
-        broadcastToSession(sessionShortCode, {
-          type: "facilitator_message",
-          text: reply,
-          move: "warmup",
-          timestamp: Date.now()
-        });
-      }, replyDelay);
+      // No artificial delay — the LLM call already provides natural latency.
+      // Just verify the user hasn't started speaking again.
+      const stillActiveSession = activeSessions.get(sessionShortCode);
+      if (!stillActiveSession || stillActiveSession.active) return;
+      const newestSpeechVersion = stillActiveSession.warmupSpeechVersions?.get(clientId) || 0;
+      if (newestSpeechVersion !== expectedSpeechVersion) return;
+      broadcastToSession(sessionShortCode, {
+        type: "facilitator_message",
+        text: reply,
+        move: "warmup",
+        timestamp: Date.now()
+      });
     }
 
     console.log(`[${sessionShortCode}] ☀ WARMUP | ${participant.name}: "${text}"`);
@@ -595,8 +594,8 @@ async function handleParticipantMessage(sessionShortCode, clientId, text, meta =
   const pipelineStart = Date.now();
 
   if (USE_ENHANCED_SYSTEM) {
-    // Assess the message through LLM for engagement, anchors, claims
-    // (FastLLMProvider + StalenessGuard are wired inside messageAssessor)
+    // Run assessment with heuristic fallback on timeout for speed.
+    // The fast LLM gets 1500ms; if it misses, heuristics are instant.
     const previousMessage = session.stateTracker.messages.length > 1
       ? session.stateTracker.messages[session.stateTracker.messages.length - 2]
       : null;
@@ -612,7 +611,7 @@ async function handleParticipantMessage(sessionShortCode, clientId, text, meta =
       strategy: 'fast_only'  // Use fastLLM only, no Claude fallback for speed
     });
 
-    // Process through enhanced engine
+    // Process through enhanced engine (neuron decision + message generation if needed)
     decision = await enhancedEngine.processMessage(session.stateTracker, {
       participantName: participant.name,
       text,
@@ -627,16 +626,13 @@ async function handleParticipantMessage(sessionShortCode, clientId, text, meta =
   const pipelineLatencyMs = Date.now() - pipelineStart;
 
   if (decision.shouldSpeak && decision.message) {
-    // Staleness guard on message delivery: if the entire pipeline took too long,
-    // log it but still deliver (the message is already generated)
-    if (pipelineLatencyMs > 10000) {
+    if (pipelineLatencyMs > 8000) {
       console.warn(`[${sessionShortCode}] ⚠ Pipeline latency: ${pipelineLatencyMs}ms — consider tuning timeouts`);
     }
 
-    const delay = 300 + Math.random() * 700;
-    setTimeout(async () => {
-      await handleFacilitatorMessage(sessionShortCode, decision);
-    }, delay);
+    // Pipeline already takes 1-3s — no artificial delay needed.
+    // Deliver immediately for responsiveness.
+    await handleFacilitatorMessage(sessionShortCode, decision);
   }
 
   // Log with neuron info when available

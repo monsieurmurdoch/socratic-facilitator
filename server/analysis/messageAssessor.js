@@ -169,7 +169,7 @@ Respond with ONLY the JSON object, no other text.`;
           temperature: 0.2,
           systemPrompt: 'Return only strict JSON. No markdown, no comments, no trailing commas.'
         }),
-        { timeoutMs: 2000, fallback: null, label: 'fastLLM_messageAssess' }
+        { timeoutMs: 1500, fallback: null, label: 'fastLLM_messageAssess' }
       );
 
       if (!fastResult.stale && fastResult.result?.data) {

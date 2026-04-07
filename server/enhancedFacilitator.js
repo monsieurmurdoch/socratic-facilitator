@@ -202,12 +202,12 @@ class EnhancedFacilitationEngine {
       const response = await Promise.race([
         this.client.messages.create({
           model: this.model,
-          max_tokens: 300,
+          max_tokens: 200,
           system: systemPrompt,
           messages: [{ role: "user", content: userMessage }]
         }),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Message generation timeout')), 3000)
+          setTimeout(() => reject(new Error('Message generation timeout')), 8000)
         )
       ]);
 
@@ -607,12 +607,17 @@ Respond with ONLY the closing message text.`;
     }));
 
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 150,
-        system: this._buildWarmupPrompt(allParticipantNames, ageCalibration, topic, isGroup),
-        messages
-      });
+      const response = await Promise.race([
+        this.client.messages.create({
+          model: this.model,
+          max_tokens: 120,
+          system: this._buildWarmupPrompt(allParticipantNames, ageCalibration, topic, isGroup),
+          messages
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Warmup chat timeout')), 6000)
+        )
+      ]);
 
       const reply = response.content[0].text.trim();
 
