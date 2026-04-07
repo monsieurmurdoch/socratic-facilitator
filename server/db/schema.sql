@@ -200,14 +200,20 @@ CREATE TABLE IF NOT EXISTS message_analytics (
   engagement_estimate FLOAT,
   responded_to_peer BOOLEAN,
   referenced_anchor BOOLEAN,
+  is_anchor BOOLEAN DEFAULT false,  -- Missing column that was causing analytics query to fail
   reasoning TEXT,
   raw_payload JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(message_id)
 );
 
+-- Ensure all analytics columns exist (fixes "column does not exist" errors on existing DBs)
+ALTER TABLE message_analytics 
+  ADD COLUMN IF NOT EXISTS is_anchor BOOLEAN DEFAULT false;
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_message_analytics_anchor ON message_analytics(is_anchor);
 CREATE INDEX IF NOT EXISTS idx_participants_session ON participants(session_id);
 CREATE INDEX IF NOT EXISTS idx_state_session ON conversation_state(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_materials_session ON source_materials(session_id);

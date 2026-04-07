@@ -189,17 +189,17 @@ async function getDetailedAnalytics(sessionId, userId) {
     ORDER BY sm.estimated_speaking_seconds DESC
   `, [sessionId]);
 
-  // Get message analytics summary
+  // Get message analytics summary (robust against missing data/columns)
   const messagesResult = await db.query(`
     SELECT
       COUNT(*) as total_messages,
-      ROUND(AVG(specificity)::numeric, 3) as avg_specificity,
-      ROUND(AVG(profoundness)::numeric, 3) as avg_profoundness,
-      ROUND(AVG(coherence)::numeric, 3) as avg_coherence,
-      ROUND(AVG(discussion_value)::numeric, 3) as avg_discussion_value,
-      COUNT(CASE WHEN referenced_anchor THEN 1 END) as anchor_references,
-      COUNT(CASE WHEN responded_to_peer THEN 1 END) as peer_responses,
-      COUNT(CASE WHEN is_anchor THEN 1 END) as anchors_created
+      ROUND(COALESCE(AVG(specificity), 0)::numeric, 3) as avg_specificity,
+      ROUND(COALESCE(AVG(profoundness), 0)::numeric, 3) as avg_profoundness,
+      ROUND(COALESCE(AVG(coherence), 0)::numeric, 3) as avg_coherence,
+      ROUND(COALESCE(AVG(discussion_value), 0)::numeric, 3) as avg_discussion_value,
+      COUNT(CASE WHEN referenced_anchor IS TRUE THEN 1 END) as anchor_references,
+      COUNT(CASE WHEN responded_to_peer IS TRUE THEN 1 END) as peer_responses,
+      COUNT(CASE WHEN is_anchor IS TRUE THEN 1 END) as anchors_created
     FROM message_analytics ma
     JOIN messages m ON m.id = ma.message_id
     WHERE m.session_id = $1
