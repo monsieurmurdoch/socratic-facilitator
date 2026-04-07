@@ -202,7 +202,7 @@ class EnhancedFacilitationEngine {
       const response = await Promise.race([
         this.client.messages.create({
           model: this.model,
-          max_tokens: 200,
+          max_tokens: 300,
           system: systemPrompt,
           messages: [{ role: "user", content: userMessage }]
         }),

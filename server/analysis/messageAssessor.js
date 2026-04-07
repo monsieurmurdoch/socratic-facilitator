@@ -165,11 +165,11 @@ Respond with ONLY the JSON object, no other text.`;
       const fastResult = await stalenessGuard.guard(
         () => fastLLM.completeJSON({
           prompt,
-          maxTokens: 800,
+          maxTokens: 600,
           temperature: 0.2,
           systemPrompt: 'Return only strict JSON. No markdown, no comments, no trailing commas.'
         }),
-        { timeoutMs: 3000, fallback: null, label: 'fastLLM_messageAssess' }
+        { timeoutMs: 2000, fallback: null, label: 'fastLLM_messageAssess' }
       );
 
       if (!fastResult.stale && fastResult.result?.data) {

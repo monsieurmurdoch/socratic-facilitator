@@ -609,7 +609,7 @@ async function handleParticipantMessage(sessionShortCode, clientId, text, meta =
       openingQuestion: session.topic?.openingQuestion,
       recentAnchors: enhancedEngine.getOrchestrator(sessionShortCode)?.anchorTracker?.getTopAnchors(3) || []
     }, {
-      strategy: 'heuristic_only'  // Use fast heuristic assessment instead of LLM
+      strategy: 'fast_only'  // Use fastLLM only, no Claude fallback for speed
     });
 
     // Process through enhanced engine
