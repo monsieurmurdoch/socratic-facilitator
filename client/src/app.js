@@ -76,6 +76,17 @@
     clearLocalSpeechDraft();
   }
 
+  // Security: Escape HTML to prevent XSS from user names/messages/materials
+  function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
   function resetConversationFeed() {
     const container = document.getElementById("conversation-feed");
     if (container) container.innerHTML = "";
@@ -1517,7 +1528,7 @@
 
   function initCollapsibleSections() {
     const toggleBtn = document.getElementById('session-history-toggle');
-    const card = document.getElementById('session-history-card');
+    const card = document.getElementById('recent-sessions-card');
 
     if (!toggleBtn || !card) return;
 
@@ -1527,7 +1538,7 @@
       card.classList.add('collapsed');
     }
 
-    // Handle toggle click
+    // Handle toggle click - horizontal arrow when collapsed, vertical when expanded
     toggleBtn.addEventListener('click', () => {
       const currentlyCollapsed = card.classList.contains('collapsed');
       card.classList.toggle('collapsed');
@@ -1555,6 +1566,11 @@
   }
 
   function showSessionAnalytics(shortCode) {
+    if (!accountUser) {
+      console.warn('[Analytics] Requires sign-in');
+      return;
+    }
+
     const modal = document.getElementById('session-analytics-modal');
     const title = document.getElementById('analytics-title');
     const content = document.getElementById('analytics-content');

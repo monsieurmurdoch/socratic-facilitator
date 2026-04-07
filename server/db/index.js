@@ -33,7 +33,7 @@ function getPool() {
 async function query(text, params) {
   const start = Date.now();
   const result = await getPool().query(text, params);
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.DEBUG_DB === 'true') {
     const duration = Date.now() - start;
     console.log('Executed query', { text: text.substring(0, 100), duration, rows: result.rowCount });
   }

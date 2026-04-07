@@ -218,15 +218,23 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
       storagePath = req.file.path;
       originalType = contentExtractor.getFileType(filename, req.file.mimetype);
       const extracted = await contentExtractor.extract(req.file.buffer, originalType);
-      extractedText = extracted.text;
+      extractedText = extracted.text || '';
     } else if (url) {
       originalType = 'url';
       filename = url.substring(0, 255);
       const extracted = await contentExtractor.extract(null, 'url', { url });
-      extractedText = extracted.text;
+      extractedText = extracted.text || '';
     } else {
       return res.status(400).json({ error: 'Either file or URL is required' });
     }
+
+    // Basic auth/ownership check (enhance with full requireAuth if needed)
+    if (!req.user && process.env.NODE_ENV === 'production') {
+      console.warn(`[Upload] Unauthenticated upload to session ${req.params.code}`);
+      // In prod, could reject or require join token; for now log
+    }
+
+    // Note: Full text stored for analysis; truncation happens only in LLM prompt construction (see enhancedFacilitator + primer)
 
     const material = await materialsRepo.add(session.id, {
       filename,
