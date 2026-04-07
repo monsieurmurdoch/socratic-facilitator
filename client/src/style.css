@@ -1237,18 +1237,18 @@ body {
 
 /* Beautiful centered analytics popup card (no longer a sidebar) */
 .modal {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  align-items: center;
-  justify-content: center;
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(12px);
+  display: none !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10000 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(15, 23, 42, 0.8) !important;
+  backdrop-filter: blur(16px) !important;
 }
 
 .modal.active {
-  display: flex;
+  display: flex !important;
 }
 
 .modal-content {
