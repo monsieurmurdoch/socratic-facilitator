@@ -412,3 +412,11 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_toke
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_model_eval_runs_key ON model_eval_runs(eval_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_maintenance_runs_job ON maintenance_runs(job_name, started_at DESC);
+
+-- Robust fixes for schema warnings and missing columns (user_id, is_anchor, etc.)
+-- This ensures the DB is always consistent even if the $ splitter fails on functions
+ALTER TABLE IF EXISTS session_memberships ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE IF EXISTS message_analytics ADD COLUMN IF NOT EXISTS is_anchor BOOLEAN DEFAULT false;
+ALTER TABLE IF EXISTS message_analytics ADD COLUMN IF NOT EXISTS referenced_anchor BOOLEAN DEFAULT false;
+ALTER TABLE IF EXISTS message_analytics ADD COLUMN IF NOT EXISTS responded_to_peer BOOLEAN DEFAULT false;
+ALTER TABLE IF EXISTS conversation_state ADD COLUMN IF NOT EXISTS ai_should_speak BOOLEAN DEFAULT false;

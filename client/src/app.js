@@ -695,13 +695,12 @@
         discussionActive = false;
         if (!document.getElementById("video-screen").classList.contains("active")) {
           showScreen("video");
+          await preAcquireMedia();          // single permission prompt
           launchJitsi(currentSessionId, myName);
           startSpeechRecognition();
         } else if (!sttActive) {
-          // Video already showing but STT died after reconnect — restart
           startSpeechRecognition();
         }
-        // Only the host sees the Start Discussion button
         document.getElementById("start-discussion-btn").style.display = isHost ? "" : "none";
         saveState();
         break;
@@ -709,12 +708,11 @@
       case "discussion_started":
         discussionActive = true;
         if (!document.getElementById("video-screen").classList.contains("active")) {
-          // First time entering video — full setup
           showScreen("video");
+          await preAcquireMedia();          // single permission prompt
           launchJitsi(currentSessionId, myName);
           startSpeechRecognition();
         } else if (!sttActive) {
-          // Already in video but STT died (e.g. after WS reconnect) — restart it
           startSpeechRecognition();
         }
         document.getElementById("start-discussion-btn").style.display = "none";
@@ -769,10 +767,10 @@
 
       case "discussion_ended":
         discussionActive = false;
-        addFacilitatorMessage("The discussion has ended. Thank you for participating.", "closing");
         destroySttStream();
         destroyJitsi();
         clearState();
+        showScreen("welcome");
         refreshWorkspace();
         break;
 
@@ -917,15 +915,28 @@
     const interim = container.querySelector('.transcript-interim');
     if (interim) interim.remove();
 
-    const div = document.createElement("div");
     if (name === "system") {
+      const div = document.createElement("div");
       div.className = "transcript-system";
       div.textContent = text;
+      container.appendChild(div);
     } else {
-      div.className = `transcript-entry ${isSelf ? "self" : ""}`;
-      div.innerHTML = `<strong>${escapeHtml(name)}:</strong> ${escapeHtml(text)}`;
+      // Batch consecutive messages from the same speaker into one bubble
+      const last = container.lastElementChild;
+      if (last && last.classList.contains('transcript-entry') && last.dataset.speaker === name) {
+        // Append to existing bubble
+        last.querySelector('.transcript-lines').insertAdjacentHTML(
+          'beforeend', `<span class="transcript-line">${escapeHtml(text)}</span>`
+        );
+      } else {
+        // New speaker — create a new entry
+        const div = document.createElement("div");
+        div.className = `transcript-entry ${isSelf ? "self" : ""}`;
+        div.dataset.speaker = name;
+        div.innerHTML = `<strong>${escapeHtml(name)}:</strong> <span class="transcript-lines"><span class="transcript-line">${escapeHtml(text)}</span></span>`;
+        container.appendChild(div);
+      }
     }
-    container.appendChild(div);
     scrollChatToBottom();
   }
 
@@ -1363,10 +1374,38 @@
   });
 
   // ---- Speech Recognition (Deepgram via server relay) ----
-  let sttStream = null;  // MediaStream
+  let sttStream = null;  // MediaStream (audio-only, for STT)
   let sttNode = null;    // AudioWorklet or ScriptProcessor
   let sttContext = null;  // AudioContext
   let sttActive = false;
+
+  /**
+   * Pre-acquire camera+mic in a single getUserMedia call so Safari only
+   * shows ONE permission prompt. The video track is immediately stopped
+   * (Jitsi will open its own), but the permission grant persists for the
+   * page lifetime, so Jitsi's subsequent getUserMedia won't re-prompt.
+   * The audio track is kept alive and reused for STT.
+   */
+  async function preAcquireMedia() {
+    try {
+      if (sttStream && sttStream.getAudioTracks().some(t => t.readyState === 'live')) {
+        console.log("[Media] Already have a live audio stream, skipping pre-acquire");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 },
+        video: true
+      });
+      // Stop the video track — we only needed it to grant the permission.
+      // Jitsi manages its own video capture independently.
+      stream.getVideoTracks().forEach(t => t.stop());
+      // Keep the audio track for STT
+      sttStream = new MediaStream(stream.getAudioTracks());
+      console.log("[Media] Pre-acquired mic+camera permissions (single prompt)");
+    } catch (e) {
+      console.warn("[Media] Pre-acquire failed, will fall back to separate prompts:", e.message);
+    }
+  }
 
   async function startSpeechRecognition() {
     if (sttActive) {
@@ -1377,8 +1416,8 @@
     sttActive = true;
 
     try {
-      // Reuse existing stream to avoid re-prompting mic permissions
-      if (!sttStream || sttStream.getTracks().every(t => t.readyState === 'ended')) {
+      // Reuse existing stream (from preAcquireMedia or previous STT session)
+      if (!sttStream || sttStream.getAudioTracks().every(t => t.readyState === 'ended')) {
         sttStream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
         });
