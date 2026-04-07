@@ -19,6 +19,7 @@
   let savedClasses = [];
   let sessionHistory = [];
   let demoTeacherConfig = null; // null until server responds
+  let authPanelManuallyOpened = false; // tracks if user clicked "Sign in"
   const MAX_MATERIALS = 5;
   let sttBatchBuffer = '';
   let sttBatchTimer = null;
@@ -329,10 +330,16 @@
           : "Your account can join sessions and keep history, but class management is limited.";
       }
     } else {
-      // Hide entire sidebar when not signed in — clean landing page
-      if (workspacePanel) workspacePanel.style.display = "none";
-      if (signInLink) signInLink.style.display = "";
-      signedOut.style.display = "none";
+      // Hide sidebar unless user manually clicked "Sign in"
+      if (!authPanelManuallyOpened) {
+        if (workspacePanel) workspacePanel.style.display = "none";
+        if (signInLink) signInLink.style.display = "";
+        signedOut.style.display = "none";
+      } else {
+        // Panel is open — keep it visible, just update the auth card contents
+        if (signInLink) signInLink.style.display = "none";
+        signedOut.style.display = "block";
+      }
       signedIn.style.display = "none";
       if (classesCard) classesCard.style.display = "none";
       if (sessionsCard) sessionsCard.style.display = "none";
@@ -1174,6 +1181,7 @@
 
   function handleLogout() {
     clearAuthState();
+    authPanelManuallyOpened = false;
     renderAuthState();
     renderClasses();
     renderSessionHistory();
@@ -1191,6 +1199,7 @@
   // "Sign in" link on welcome screen — reveals only the auth card (not classes/sessions)
   document.getElementById("show-auth-btn")?.addEventListener("click", (e) => {
     e.preventDefault();
+    authPanelManuallyOpened = true;
     const panel = document.querySelector(".workspace-panel");
     const signedOut = document.getElementById("auth-signed-out");
     if (panel) panel.style.display = "";
