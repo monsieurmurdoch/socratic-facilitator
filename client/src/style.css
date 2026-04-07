@@ -95,6 +95,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-height: calc(100vh - 140px); /* Allows scrolling when Recent Sessions expands */
+  overflow-y: auto;
+  padding-right: 12px; /* Space for scrollbar */
+  scrollbar-width: thin;
 }
 
 .workspace-card {
