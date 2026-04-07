@@ -347,7 +347,7 @@
       list.innerHTML = '<p class="empty-state">No classes yet. Create your first one here.</p>';
     } else {
       list.innerHTML = savedClasses.map(cls => `
-        <div class="workspace-item">
+        <div class="workspace-item session-item" data-shortcode="${escapeHtml(session.shortCode)}">
           <strong>${escapeHtml(cls.name)}</strong>
           <div class="workspace-item-meta">${escapeHtml(cls.description || "No notes yet.")}</div>
           <span class="workspace-item-tag">${cls.sessionCount} saved session${cls.sessionCount === 1 ? "" : "s"}${cls.ageRange ? ` · Ages ${escapeHtml(cls.ageRange)}` : ""}</span>
@@ -381,7 +381,7 @@
     }
 
     list.innerHTML = sessionHistory.map(session => `
-      <div class="workspace-item">
+      <div class="workspace-item session-item" data-shortcode="${escapeHtml(session.shortCode)}">
         <strong>${escapeHtml(session.title)}</strong>
         <div class="workspace-item-meta">
           ${escapeHtml(session.className || "Unassigned")} · ${escapeHtml(session.status)} · ${escapeHtml(session.viewerRole || "Member")}<br>
@@ -391,6 +391,15 @@
         <span class="workspace-item-tag">Code ${escapeHtml(session.shortCode)}</span>
       </div>
     `).join("");
+
+    // Add click handlers for session analytics
+    document.querySelectorAll('.session-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const shortCode = item.dataset.shortcode;
+        showSessionAnalytics(shortCode);
+      });
+      item.style.cursor = 'pointer';
+    });
   }
 
   async function refreshWorkspace() {
@@ -1504,6 +1513,7 @@
 
   // Initialize collapsible sections
   initCollapsibleSections();
+  initAnalyticsModal();
 
   function initCollapsibleSections() {
     const toggleBtn = document.getElementById('session-history-toggle');
@@ -1525,5 +1535,178 @@
       // Save state to localStorage
       localStorage.setItem('sessionHistoryCollapsed', !currentlyCollapsed);
     });
+  }
+
+  function initAnalyticsModal() {
+    const modal = document.getElementById('session-analytics-modal');
+    const backdrop = document.getElementById('session-analytics-backdrop');
+    const closeBtn = document.getElementById('analytics-close');
+
+    // Close modal when clicking backdrop or close button
+    backdrop.addEventListener('click', hideAnalyticsModal);
+    closeBtn.addEventListener('click', hideAnalyticsModal);
+
+    // Close on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modal.classList.contains('active')) {
+        hideAnalyticsModal();
+      }
+    });
+  }
+
+  function showSessionAnalytics(shortCode) {
+    const modal = document.getElementById('session-analytics-modal');
+    const title = document.getElementById('analytics-title');
+    const content = document.getElementById('analytics-content');
+
+    // Show loading state
+    title.textContent = `Session ${shortCode} - Analytics`;
+    content.innerHTML = `
+      <div class="analytics-loading">
+        <div class="spinner"></div>
+        <p>Loading detailed analytics...</p>
+      </div>
+    `;
+
+    // Show modal
+    modal.classList.add('active');
+
+    // Fetch analytics data
+    apiGet(`/api/sessions/${shortCode}/analytics`)
+      .then(data => {
+        renderAnalyticsContent(data);
+      })
+      .catch(error => {
+        console.error('Failed to load analytics:', error);
+        content.innerHTML = `
+          <div class="analytics-section">
+            <p style="color: var(--text-secondary); text-align: center; padding: 40px;">
+              Failed to load analytics: ${error.message}
+            </p>
+          </div>
+        `;
+      });
+  }
+
+  function hideAnalyticsModal() {
+    const modal = document.getElementById('session-analytics-modal');
+    modal.classList.remove('active');
+  }
+
+  function renderAnalyticsContent(data) {
+    const { session, analytics } = data;
+    const content = document.getElementById('analytics-content');
+
+    const formatDuration = (seconds) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.round(seconds % 60);
+      return `${mins}m ${secs}s`;
+    };
+
+    const formatDateTime = (dateString) => {
+      return new Date(dateString).toLocaleString();
+    };
+
+    content.innerHTML = `
+      <!-- Session Overview -->
+      <div class="analytics-section">
+        <h3>Session Overview</h3>
+        <div class="analytics-grid">
+          <div class="analytics-metric">
+            <span class="metric-value">${analytics.overview.participantCount}</span>
+            <span class="metric-label">Participants</span>
+          </div>
+          <div class="analytics-metric">
+            <span class="metric-value">${analytics.overview.messageCount}</span>
+            <span class="metric-label">Messages</span>
+          </div>
+          <div class="analytics-metric">
+            <span class="metric-value">${formatDuration(analytics.overview.durationSeconds)}</span>
+            <span class="metric-label">Duration</span>
+          </div>
+          <div class="analytics-metric">
+            <span class="metric-value">${analytics.overview.totalSpeakingTimeSeconds}s</span>
+            <span class="metric-label">Total Speaking</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Discussion Quality -->
+      <div class="analytics-section">
+        <h3>Discussion Quality</h3>
+        <div class="analytics-grid">
+          <div class="analytics-metric">
+            <span class="metric-value">${analytics.quality.avgSpecificity.toFixed(2)}</span>
+            <span class="metric-label">Avg Specificity</span>
+          </div>
+          <div class="analytics-metric">
+            <span class="metric-value">${analytics.quality.avgProfoundness.toFixed(2)}</span>
+            <span class="metric-label">Avg Profoundness</span>
+          </div>
+          <div class="analytics-metric">
+            <span class="metric-value">${analytics.quality.avgCoherence.toFixed(2)}</span>
+            <span class="metric-label">Avg Coherence</span>
+          </div>
+          <div class="analytics-metric">
+            <span class="metric-value">${analytics.quality.avgDiscussionValue.toFixed(2)}</span>
+            <span class="metric-label">Avg Discussion Value</span>
+          </div>
+        </div>
+        <div style="margin-top: 16px; font-size: 0.9rem; color: var(--text-secondary);">
+          <strong>Engagement Metrics:</strong> ${analytics.quality.anchorReferences} anchor references,
+          ${analytics.quality.peerResponses} peer responses, ${analytics.quality.anchorsCreated} anchors created
+        </div>
+      </div>
+
+      <!-- Participant Breakdown -->
+      <div class="analytics-section">
+        <h3>Participant Breakdown</h3>
+        <table class="participants-table">
+          <thead>
+            <tr>
+              <th>Participant</th>
+              <th>Role</th>
+              <th>Messages</th>
+              <th>Speaking Time</th>
+              <th>Contribution</th>
+              <th>Engagement</th>
+              <th>Speaking %</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${analytics.participants.map(p => `
+              <tr>
+                <td>
+                  <span class="participant-name">${escapeHtml(p.name)}</span>
+                  ${p.age ? `<br><small style="color: var(--text-muted);">Age: ${p.age}</small>` : ''}
+                </td>
+                <td><span class="participant-role">${p.role}</span></td>
+                <td>${p.messageCount}</td>
+                <td>${formatDuration(p.speakingSeconds)}</td>
+                <td>${p.contributionScore.toFixed(2)}</td>
+                <td>${p.engagementScore.toFixed(2)}</td>
+                <td>
+                  ${p.speakingPercentage}%
+                  <div class="speaking-bar">
+                    <div class="speaking-fill" style="width: ${p.speakingPercentage}%"></div>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Session Details -->
+      <div class="analytics-section">
+        <h3>Session Details</h3>
+        <div style="background: var(--surface-alt); padding: 16px; border-radius: 10px; font-size: 0.9rem;">
+          <strong>Title:</strong> ${escapeHtml(session.title)}<br>
+          <strong>Status:</strong> ${session.status}<br>
+          <strong>Started:</strong> ${formatDateTime(session.createdAt)}<br>
+          ${session.endedAt ? `<strong>Ended:</strong> ${formatDateTime(session.endedAt)}` : ''}
+        </div>
+      </div>
+    `;
   }
 })();

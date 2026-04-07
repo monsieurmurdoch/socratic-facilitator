@@ -105,6 +105,47 @@ router.get('/history', requireAuth, async (req, res) => {
   }
 });
 
+// Get detailed analytics for a specific session
+router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+    const userId = req.user.id;
+
+    // Verify user has access to this session
+    const session = await sessionsRepo.findByShortCode(shortCode);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Check if user is the owner, in the class, or was a participant
+    const hasAccess = session.owner_user_id === userId ||
+      (session.class_id && await sessionsRepo.userInClass(session.class_id, userId)) ||
+      await sessionsRepo.userWasParticipant(session.id, userId);
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get detailed session analytics
+    const analytics = await sessionsRepo.getDetailedAnalytics(session.id, userId);
+
+    res.json({
+      session: {
+        id: session.id,
+        shortCode: session.short_code,
+        title: session.title,
+        status: session.status,
+        createdAt: session.created_at,
+        endedAt: session.ended_at
+      },
+      analytics
+    });
+  } catch (error) {
+    console.error('Session analytics error:', error);
+    res.status(500).json({ error: 'Failed to load session analytics' });
+  }
+});
+
 /**
  * Get session by short code
  * GET /api/sessions/:code

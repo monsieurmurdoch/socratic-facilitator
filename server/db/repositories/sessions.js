@@ -165,6 +165,130 @@ async function listHistoryByUser(userId, limit = 20) {
   return result.rows;
 }
 
+/**
+ * Get detailed analytics for a session
+ */
+async function getDetailedAnalytics(sessionId, userId) {
+  // Get session participants with their analytics
+  const participantsResult = await db.query(`
+    SELECT
+      p.id,
+      p.name,
+      p.age,
+      p.role,
+      COALESCE(sm.message_count, 0) as message_count,
+      COALESCE(sm.total_word_count, 0) as total_words,
+      COALESCE(sm.estimated_speaking_seconds, 0) as speaking_seconds,
+      ROUND(COALESCE(sm.contribution_score, 0)::numeric, 3) as contribution_score,
+      ROUND(COALESCE(sm.engagement_score, 0)::numeric, 3) as engagement_score,
+      sm.joined_at,
+      sm.left_at
+    FROM participants p
+    LEFT JOIN session_memberships sm ON sm.participant_id = p.id
+    WHERE p.session_id = $1
+    ORDER BY sm.estimated_speaking_seconds DESC
+  `, [sessionId]);
+
+  // Get message analytics summary
+  const messagesResult = await db.query(`
+    SELECT
+      COUNT(*) as total_messages,
+      ROUND(AVG(specificity)::numeric, 3) as avg_specificity,
+      ROUND(AVG(profoundness)::numeric, 3) as avg_profoundness,
+      ROUND(AVG(coherence)::numeric, 3) as avg_coherence,
+      ROUND(AVG(discussion_value)::numeric, 3) as avg_discussion_value,
+      COUNT(CASE WHEN referenced_anchor THEN 1 END) as anchor_references,
+      COUNT(CASE WHEN responded_to_peer THEN 1 END) as peer_responses,
+      COUNT(CASE WHEN is_anchor THEN 1 END) as anchors_created
+    FROM message_analytics ma
+    JOIN messages m ON m.id = ma.message_id
+    WHERE m.session_id = $1
+  `, [sessionId]);
+
+  // Get session duration and basic stats
+  const sessionStats = await db.query(`
+    SELECT
+      COUNT(DISTINCT p.id) as participant_count,
+      COUNT(DISTINCT m.id) as message_count,
+      EXTRACT(EPOCH FROM (s.ended_at - s.created_at)) as duration_seconds,
+      s.created_at,
+      s.ended_at
+    FROM sessions s
+    LEFT JOIN participants p ON p.session_id = s.id
+    LEFT JOIN messages m ON m.session_id = s.id
+    WHERE s.id = $1
+    GROUP BY s.id, s.created_at, s.ended_at
+  `, [sessionId]);
+
+  const participants = participantsResult.rows;
+  const messageStats = messagesResult.rows[0] || {};
+  const stats = sessionStats.rows[0] || {};
+
+  // Calculate additional metrics
+  const totalSpeakingTime = participants.reduce((sum, p) => sum + Number(p.speaking_seconds), 0);
+  const avgMessagesPerParticipant = stats.participant_count > 0 ?
+    Math.round((stats.message_count / stats.participant_count) * 10) / 10 : 0;
+
+  return {
+    overview: {
+      durationSeconds: Math.round(stats.duration_seconds || 0),
+      participantCount: stats.participant_count || 0,
+      messageCount: stats.message_count || 0,
+      avgMessagesPerParticipant,
+      totalSpeakingTimeSeconds: Math.round(totalSpeakingTime),
+      avgSpeakingTimePerParticipant: stats.participant_count > 0 ?
+        Math.round((totalSpeakingTime / stats.participant_count) * 10) / 10 : 0
+    },
+    participants: participants.map(p => ({
+      id: p.id,
+      name: p.name,
+      age: p.age,
+      role: p.role,
+      messageCount: Number(p.message_count),
+      totalWords: Number(p.total_words),
+      speakingSeconds: Math.round(Number(p.speaking_seconds)),
+      contributionScore: Number(p.contribution_score),
+      engagementScore: Number(p.engagement_score),
+      speakingPercentage: totalSpeakingTime > 0 ?
+        Math.round((Number(p.speaking_seconds) / totalSpeakingTime) * 100) : 0,
+      joinedAt: p.joined_at,
+      leftAt: p.left_at
+    })),
+    quality: {
+      avgSpecificity: Number(messageStats.avg_specificity || 0),
+      avgProfoundness: Number(messageStats.avg_profoundness || 0),
+      avgCoherence: Number(messageStats.avg_coherence || 0),
+      avgDiscussionValue: Number(messageStats.avg_discussion_value || 0),
+      anchorReferences: Number(messageStats.anchor_references || 0),
+      peerResponses: Number(messageStats.peer_responses || 0),
+      anchorsCreated: Number(messageStats.anchors_created || 0)
+    }
+  };
+}
+
+/**
+ * Check if user is in a class
+ */
+async function userInClass(classId, userId) {
+  const result = await db.query(
+    'SELECT id FROM class_memberships WHERE class_id = $1 AND user_id = $2',
+    [classId, userId]
+  );
+  return result.rowCount > 0;
+}
+
+/**
+ * Check if user was a participant in a session
+ */
+async function userWasParticipant(sessionId, userId) {
+  const result = await db.query(`
+    SELECT sm.id FROM session_memberships sm
+    JOIN participants p ON p.id = sm.participant_id
+    WHERE p.session_id = $1 AND sm.user_id = $2
+  `, [sessionId, userId]);
+  return result.rowCount > 0;
+}
+
 module.exports = {
   create,
   findById,
@@ -173,5 +297,8 @@ module.exports = {
   getActiveSessions,
   deleteSession,
   listHistoryByUser,
+  getDetailedAnalytics,
+  userInClass,
+  userWasParticipant,
   generateShortCode
 };
