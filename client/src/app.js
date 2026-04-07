@@ -295,6 +295,7 @@
     const demoLoginCopy = document.getElementById("demo-login-copy");
     const classesCard = document.getElementById("classes-card");
     const sessionsCard = document.getElementById("recent-sessions-card");
+    const workspacePanel = document.querySelector(".workspace-panel");
 
     if (demoLoginSection) {
       demoLoginSection.style.display = !accountUser && demoTeacherConfig.enabled ? "block" : "none";
@@ -303,10 +304,14 @@
       demoLoginCopy.textContent = `Use ${demoTeacherConfig.name} (${demoTeacherConfig.email}) for quick teacher access.`;
     }
 
+    const signInLink = document.getElementById("sign-in-link");
+
     if (accountUser) {
+      // Show entire sidebar when signed in
+      if (workspacePanel) workspacePanel.style.display = "";
+      if (signInLink) signInLink.style.display = "none";
       signedOut.style.display = "none";
       signedIn.style.display = "block";
-      // Show workspace cards when signed in
       if (classesCard) classesCard.style.display = "";
       if (sessionsCard) sessionsCard.style.display = "";
       classCreation.style.display = canManageClasses() ? "block" : "none";
@@ -322,16 +327,15 @@
           : "Your account can join sessions and keep history, but class management is limited.";
       }
     } else {
-      signedOut.style.display = "block";
+      // Hide entire sidebar when not signed in — clean landing page
+      if (workspacePanel) workspacePanel.style.display = "none";
+      if (signInLink) signInLink.style.display = "";
+      signedOut.style.display = "none";
       signedIn.style.display = "none";
-      // Hide workspace cards when not signed in — no need to nag
       if (classesCard) classesCard.style.display = "none";
       if (sessionsCard) sessionsCard.style.display = "none";
       classCreation.style.display = "none";
-      classesLocked.style.display = "block";
-      if (classHelp) {
-        classHelp.textContent = "Sign in to organize sessions by class and keep a history.";
-      }
+      classesLocked.style.display = "none";
     }
   }
 
@@ -1170,6 +1174,16 @@
   document.getElementById("demo-login-btn")?.addEventListener("click", handleDemoTeacherLogin);
   document.getElementById("create-class-btn").addEventListener("click", handleCreateClass);
   document.getElementById("logout-btn").addEventListener("click", handleLogout);
+
+  // "Sign in" link on welcome screen — reveals the sidebar auth panel
+  document.getElementById("show-auth-btn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    const panel = document.querySelector(".workspace-panel");
+    const signedOut = document.getElementById("auth-signed-out");
+    if (panel) panel.style.display = "";
+    if (signedOut) signedOut.style.display = "block";
+    document.getElementById("sign-in-link").style.display = "none";
+  });
 
   // Show/hide join section
   document.getElementById("join-toggle-btn").addEventListener("click", () => {
