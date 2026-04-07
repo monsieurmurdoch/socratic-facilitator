@@ -1235,34 +1235,116 @@ body {
   z-index: 1001;
 }
 
-/* Beautiful centered analytics popup card (no longer a sidebar) */
+/* CLEAN, BEAUTIFUL CENTERED ANALYTICS CARD (no sidebar, high specificity, no duplicates) */
 .modal {
   display: none !important;
   position: fixed !important;
   inset: 0 !important;
   z-index: 10000 !important;
+  background: rgba(15, 23, 42, 0.8) !important;
+  backdrop-filter: blur(20px) !important;
   align-items: center !important;
   justify-content: center !important;
-  background: rgba(15, 23, 42, 0.8) !important;
-  backdrop-filter: blur(16px) !important;
 }
 
 .modal.active {
   display: flex !important;
 }
 
-.modal-content {
-  background: var(--surface);
-  border-radius: 24px;
-  box-shadow: 0 30px 80px -10px rgba(0, 0, 0, 0.35),
-              0 0 0 1px rgba(139, 69, 19, 0.1);
-  width: 860px;
-  max-width: 92vw;
-  max-height: 88vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
+.modal-content, .analytics-card {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 25px 70px -10px rgba(0, 0, 0, 0.4) !important;
+  width: 860px !important;
+  max-width: 92vw !important;
+  max-height: 90vh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  margin: 24px !important;
+}
+
+.analytics-header {
+  padding: 28px 32px 20px !important;
+  border-bottom: 1px solid var(--border) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex-shrink: 0 !important;
+}
+
+.analytics-header h2 {
+  margin: 0 !important;
+  font-family: 'Source Serif 4', serif !important;
+  font-size: 1.75rem !important;
+  font-weight: 600 !important;
+  color: var(--text) !important;
+  letter-spacing: -0.02em !important;
+}
+
+.analytics-body {
+  padding: 32px !important;
+  overflow-y: auto !important;
+  flex: 1 !important;
+}
+
+.analytics-loading {
+  text-align: center !important;
+  padding: 60px 20px !important;
+}
+
+.analytics-section {
+  margin-bottom: 32px !important;
+  background: var(--surface-alt) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 16px !important;
+  padding: 28px !important;
+}
+
+.analytics-section h3 {
+  font-family: 'Source Serif 4', serif !important;
+  font-size: 1.4rem !important;
+  color: var(--text) !important;
+  margin-bottom: 20px !important;
+  padding-bottom: 12px !important;
+  border-bottom: 2px solid var(--accent) !important;
+}
+
+.analytics-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)) !important;
+  gap: 20px !important;
+}
+
+.analytics-metric {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 16px !important;
+  padding: 28px 20px !important;
+  text-align: center !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.analytics-metric:hover {
+  transform: translateY(-6px) !important;
+  box-shadow: 0 20px 40px -10px rgba(139, 69, 19, 0.2) !important;
+}
+
+.analytics-metric .metric-value {
+  font-size: 2.4rem !important;
+  font-weight: 700 !important;
+  color: #8b4513 !important;
+  line-height: 1 !important;
+  margin-bottom: 8px !important;
+}
+
+.analytics-metric .metric-label {
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.8px !important;
+  color: var(--text-secondary) !important;
+  text-transform: uppercase !important;
 }
 
 .modal-header {
