@@ -608,6 +608,8 @@ async function handleParticipantMessage(sessionShortCode, clientId, text, meta =
       topicTitle: session.topic?.title,
       openingQuestion: session.topic?.openingQuestion,
       recentAnchors: enhancedEngine.getOrchestrator(sessionShortCode)?.anchorTracker?.getTopAnchors(3) || []
+    }, {
+      strategy: 'heuristic_only'  // Use fast heuristic assessment instead of LLM
     });
 
     // Process through enhanced engine
@@ -631,7 +633,7 @@ async function handleParticipantMessage(sessionShortCode, clientId, text, meta =
       console.warn(`[${sessionShortCode}] ⚠ Pipeline latency: ${pipelineLatencyMs}ms — consider tuning timeouts`);
     }
 
-    const delay = 500 + Math.random() * 1000;
+    const delay = 300 + Math.random() * 700;
     setTimeout(async () => {
       await handleFacilitatorMessage(sessionShortCode, decision);
     }, delay);
