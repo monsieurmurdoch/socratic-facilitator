@@ -1606,7 +1606,8 @@
       </div>
     `;
 
-    // Show modal
+    // Show modal (clear inline display:none, let .active class control visibility)
+    modal.style.display = '';
     modal.classList.add('active');
 
     // Fetch analytics data
@@ -1629,6 +1630,7 @@
   function hideAnalyticsModal() {
     const modal = document.getElementById('session-analytics-modal');
     modal.classList.remove('active');
+    modal.style.display = 'none';
   }
 
   function renderAnalyticsContent(data) {
