@@ -1193,6 +1193,11 @@
     const signedOut = document.getElementById("auth-signed-out");
     if (panel) panel.style.display = "";
     if (signedOut) signedOut.style.display = "block";
+    // Show demo teacher button if enabled
+    const demoSection = document.getElementById("demo-login-section");
+    if (demoSection && demoTeacherConfig && demoTeacherConfig.enabled) {
+      demoSection.style.display = "block";
+    }
     document.getElementById("sign-in-link").style.display = "none";
   });
 
