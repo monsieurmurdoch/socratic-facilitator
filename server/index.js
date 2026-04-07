@@ -340,6 +340,39 @@ async function handleFacilitatorMessage(sessionShortCode, decision) {
     timestamp: Date.now()
   });
 
+  // If this is a synthesis move, the discussion is ending - trigger cleanup
+  if (decision.move === "synthesize") {
+    console.log(`[${sessionShortCode}] AI triggered discussion conclusion - ending session`);
+
+    // Mark session as inactive and update database
+    session.active = false;
+    await sessionsRepo.updateStatus(session.dbSession.id, 'ended');
+
+    // Stop silence checker
+    const checker = silenceCheckers.get(sessionShortCode);
+    if (checker) {
+      clearInterval(checker);
+      silenceCheckers.delete(sessionShortCode);
+    }
+
+    // Stop Jitsi bot if running
+    if (session.jitsiBot && jitsiLauncher) {
+      console.log(`[${sessionShortCode}] Stopping Jitsi bot...`);
+      jitsiLauncher.stopJitsiBot(session.jitsiBot);
+      session.jitsiBot = null;
+    }
+
+    // Clean up facilitation engine session state
+    enhancedEngine.cleanupSession(session.stateTracker?.sessionId);
+
+    // Send discussion_ended to all clients
+    broadcastToSession(sessionShortCode, {
+      type: "discussion_ended"
+    });
+
+    console.log(`[${sessionShortCode}] Discussion ended by AI facilitator.`);
+  }
+
   // TTS disabled for beta — text-only Plato
   // try {
   //   const wavBuffer = await generateTTS(decision.message);
