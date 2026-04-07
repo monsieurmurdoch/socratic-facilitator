@@ -99,7 +99,7 @@
           <p class="workspace-meta">Classes and prior sessions you create while signed in will live here.</p>
         </div>
 
-        <div class="workspace-card">
+        <div class="workspace-card" id="session-history-card">
           <div class="workspace-header">
             <h3>Saved Classes</h3>
             <span class="workspace-kicker">Reuse groups and keep context</span>
@@ -125,9 +125,12 @@
           </div>
         </div>
 
-        <div class="workspace-card">
+        <div class="workspace-card" id="session-history-card">
           <div class="workspace-header">
             <h3>Recent Sessions</h3>
+            <button id="session-history-toggle" class="workspace-toggle" aria-label="Toggle session history">
+              <span class="toggle-icon">▼</span>
+            </button>
             <span class="workspace-kicker">Quick history for follow-up</span>
           </div>
           <div id="session-history-list" class="workspace-list">

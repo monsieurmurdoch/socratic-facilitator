@@ -1501,4 +1501,29 @@
   connect();
   checkDirectJoin();
   renderMaterials();
+
+  // Initialize collapsible sections
+  initCollapsibleSections();
+
+  function initCollapsibleSections() {
+    const toggleBtn = document.getElementById('session-history-toggle');
+    const card = document.getElementById('session-history-card');
+
+    if (!toggleBtn || !card) return;
+
+    // Load collapsed state from localStorage
+    const isCollapsed = localStorage.getItem('sessionHistoryCollapsed') === 'true';
+    if (isCollapsed) {
+      card.classList.add('collapsed');
+    }
+
+    // Handle toggle click
+    toggleBtn.addEventListener('click', () => {
+      const currentlyCollapsed = card.classList.contains('collapsed');
+      card.classList.toggle('collapsed');
+
+      // Save state to localStorage
+      localStorage.setItem('sessionHistoryCollapsed', !currentlyCollapsed);
+    });
+  }
 })();

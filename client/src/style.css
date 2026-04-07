@@ -134,6 +134,40 @@ body {
   line-height: 1.5;
 }
 
+/* Collapsible workspace cards */
+.workspace-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+}
+
+.workspace-toggle:hover {
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+}
+
+.toggle-icon {
+  transition: transform 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.workspace-card.collapsed .workspace-list {
+  display: none;
+}
+
+.workspace-card.collapsed .toggle-icon {
+  transform: rotate(-90deg);
+}
+
 .auth-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
