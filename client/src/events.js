@@ -30,12 +30,19 @@ export function checkDirectJoin() {
 // ---- Initialize Event Listeners ----
 
 export function initEventListeners() {
+  // Helper to safely attach event listeners
+  function on(id, event, fn) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(event, fn);
+    else console.warn(`[Events] Element #${id} not found, skipping ${event} listener`);
+  }
+
   // Auth event handlers
-  document.getElementById("register-btn").addEventListener("click", handleRegister);
-  document.getElementById("login-btn").addEventListener("click", handleLogin);
-  document.getElementById("demo-login-btn")?.addEventListener("click", handleDemoTeacherLogin);
-  document.getElementById("create-class-btn").addEventListener("click", handleCreateClass);
-  document.getElementById("logout-btn").addEventListener("click", handleLogout);
+  on("register-btn", "click", handleRegister);
+  on("login-btn", "click", handleLogin);
+  on("demo-login-btn", "click", handleDemoTeacherLogin);
+  on("create-class-btn", "click", handleCreateClass);
+  on("logout-btn", "click", handleLogout);
 
   // Auth card opening - "Sign in" link
   document.getElementById("show-auth-btn")?.addEventListener("click", (e) => {
@@ -84,13 +91,13 @@ export function initEventListeners() {
   });
 
   // Show/hide join section
-  document.getElementById("join-toggle-btn").addEventListener("click", () => {
+  on("join-toggle-btn", "click", () => {
     const section = document.getElementById("join-section");
-    section.style.display = section.style.display === "none" ? "flex" : "none";
+    if (section) section.style.display = section.style.display === "none" ? "flex" : "none";
   });
 
   // Create button → setup screen
-  document.getElementById("create-btn").addEventListener("click", () => {
+  on("create-btn", "click", () => {
     state.myName = document.getElementById("name-input").value.trim();
     if (!state.myName) { alert("Enter your name"); return; }
     if (state.accountUser && !canManageClasses()) {
@@ -102,7 +109,7 @@ export function initEventListeners() {
   });
 
   // Back from setup
-  document.getElementById("back-to-welcome-btn")?.addEventListener("click", () => {
+  on("back-to-welcome-btn", "click", () => {
     abandonDraftSession(resetConversationFeed);
     showScreen("welcome");
   });
@@ -145,7 +152,7 @@ export function initEventListeners() {
   });
 
   // URL input
-  document.getElementById("add-url-btn").addEventListener("click", () => {
+  on("add-url-btn", "click", () => {
     if (state.materials.length >= MAX_MATERIALS) return;
     const input = document.getElementById("url-input");
     const url = input.value.trim();
@@ -159,7 +166,7 @@ export function initEventListeners() {
   });
 
   // Remove material
-  document.getElementById("materials-list").addEventListener("click", (e) => {
+  on("materials-list", "click", (e) => {
     if (e.target.classList.contains("material-remove")) {
       const index = parseInt(e.target.dataset.index);
       state.materials.splice(index, 1);
@@ -168,7 +175,7 @@ export function initEventListeners() {
   });
 
   // Create session
-  document.getElementById("start-session-btn").addEventListener("click", () => {
+  on("start-session-btn", "click", () => {
     const title = document.getElementById("session-title").value.trim();
     const question = document.getElementById("opening-question").value.trim();
     const classId = document.getElementById("session-class-select").value || null;
@@ -215,7 +222,7 @@ export function initEventListeners() {
   });
 
   // Join existing session (guest panel)
-  document.getElementById("join-btn").addEventListener("click", () => {
+  on("join-btn", "click", () => {
     state.myName = document.getElementById("name-input").value.trim();
     const code = document.getElementById("join-code-input").value.trim().toLowerCase();
     if (!state.myName) { alert("Enter your name"); return; }
@@ -226,7 +233,7 @@ export function initEventListeners() {
   // ---- Teacher Dashboard Buttons ----
 
   // Create button → setup screen (teacher dashboard)
-  document.getElementById("create-btn-teacher")?.addEventListener("click", () => {
+  on("create-btn-teacher", "click", () => {
     if (!state.accountUser?.name) { alert("Account name not found"); return; }
     state.myName = state.accountUser.name;
     abandonDraftSession(resetConversationFeed);
@@ -234,16 +241,16 @@ export function initEventListeners() {
   });
 
   // Show/hide join section (teacher dashboard)
-  document.getElementById("join-toggle-btn-teacher")?.addEventListener("click", () => {
+  on("join-toggle-btn-teacher", "click", () => {
     const section = document.getElementById("join-section-teacher");
-    section.style.display = section.style.display === "none" ? "block" : "none";
+    if (section) section.style.display = section.style.display === "none" ? "block" : "none";
   });
 
   // Join existing session (teacher dashboard)
-  document.getElementById("join-btn-teacher")?.addEventListener("click", () => {
+  on("join-btn-teacher", "click", () => {
     if (!state.accountUser?.name) { alert("Account name not found"); return; }
     state.myName = state.accountUser.name;
-    const code = document.getElementById("join-code-input-teacher").value.trim().toLowerCase();
+    const code = document.getElementById("join-code-input-teacher")?.value.trim().toLowerCase();
     if (!code) { alert("Enter a session code"); return; }
     send({ type: "join_session", sessionId: code, name: state.myName, age: getAge(), authToken: state.authToken });
   });
@@ -251,10 +258,10 @@ export function initEventListeners() {
   // ---- Student Dashboard Buttons ----
 
   // Join existing session (student dashboard)
-  document.getElementById("join-btn-student")?.addEventListener("click", () => {
+  on("join-btn-student", "click", () => {
     if (!state.accountUser?.name) { alert("Account name not found"); return; }
     state.myName = state.accountUser.name;
-    const code = document.getElementById("join-code-input-student").value.trim().toLowerCase();
+    const code = document.getElementById("join-code-input-student")?.value.trim().toLowerCase();
     if (!code) { alert("Enter a session code"); return; }
     send({ type: "join_session", sessionId: code, name: state.myName, age: getAge(), authToken: state.authToken });
   });
@@ -263,24 +270,24 @@ export function initEventListeners() {
   // (Parent linking is managed by teachers/admins — no client-side link button)
 
   // Enter video room (warmup mode)
-  document.getElementById("enter-video-btn").addEventListener("click", () => {
+  on("enter-video-btn", "click", () => {
     send({ type: "enter_video" });
   });
 
   // Start discussion (from within the video room)
-  document.getElementById("start-discussion-btn").addEventListener("click", () => {
+  on("start-discussion-btn", "click", () => {
     send({ type: "start_discussion" });
   });
 
   // End discussion
-  document.getElementById("video-end-btn").addEventListener("click", () => {
+  on("video-end-btn", "click", () => {
     if (confirm("End the discussion for everyone?")) {
       send({ type: "end_discussion" });
     }
   });
 
   // Chat text input (fallback when STT isn't available)
-  document.getElementById("chat-form").addEventListener("submit", (e) => {
+  on("chat-form", "submit", (e) => {
     e.preventDefault();
     const input = document.getElementById("chat-input");
     const text = input.value.trim();

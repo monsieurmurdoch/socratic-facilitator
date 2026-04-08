@@ -95,6 +95,8 @@ function playAudioBuffer(arrayBuffer) {
 
 // ---- Initialization ----
 
+try {
+
 // Load auth state first
 loadAuthState();
 
@@ -136,3 +138,12 @@ onMessage(handleServerMessage);
 
 // Export for audio handling (used in WebSocket binary message handling)
 window.playAudioBuffer = playAudioBuffer;
+
+} catch (error) {
+  console.error("[Init] Fatal initialization error:", error);
+  // Show error on page so it's visible
+  const errDiv = document.createElement("div");
+  errDiv.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:#fee;color:#c33;padding:16px;font-family:monospace;font-size:14px;z-index:99999;white-space:pre-wrap;";
+  errDiv.textContent = "[Init Error] " + error.message + "\n" + error.stack;
+  document.body.appendChild(errDiv);
+}
