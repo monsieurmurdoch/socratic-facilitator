@@ -1527,6 +1527,14 @@ body {
   animation: fadeIn 0.4s ease;
 }
 
+/* Side-by-side columns for auth + guest panel */
+.welcome-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
 .welcome-header h1 {
   font-family: 'Source Serif 4', serif;
   font-size: 2.2rem;
@@ -1847,6 +1855,10 @@ body {
 @media (max-width: 600px) {
   .welcome-header h1 {
     font-size: 1.8rem;
+  }
+
+  .welcome-columns {
+    grid-template-columns: 1fr;
   }
 
   .user-header {

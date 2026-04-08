@@ -30,8 +30,11 @@
       </div>
     </div>
 
-    <!-- Auth card (shown when user clicks sign-in or create account) -->
-    <div id="auth-card" class="auth-card" style="display:none;">
+    <!-- Auth card + Guest panel side by side -->
+    <div class="welcome-columns">
+
+    <!-- Auth card (always visible when signed out) -->
+    <div id="auth-card" class="auth-card">
       <div class="auth-tabs">
         <button class="auth-tab active" data-tab="signin">Sign In</button>
         <button class="auth-tab" data-tab="signup">Create Account</button>
@@ -107,10 +110,9 @@
         </div>
         <button id="join-btn" class="btn btn-secondary">Join Session</button>
       </div>
-      <p id="sign-in-link" class="sign-in-prompt">
-        Want to save your history? <a href="#" id="show-auth-btn">Sign in</a> or <a href="#" id="show-signup-btn">create an account</a>.
-      </p>
     </div>
+
+    </div><!-- end .welcome-columns -->
 
     <!-- Teacher Dashboard -->
     <div id="dashboard-teacher" class="dashboard-container" style="display:none;">

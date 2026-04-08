@@ -62,21 +62,24 @@ export function renderAuthState() {
     demoLoginCopy.textContent = `Use ${state.demoTeacherConfig.name} (${state.demoTeacherConfig.email}) for quick teacher access.`;
   }
 
+  // Toggle the side-by-side columns wrapper
+  const welcomeColumns = document.querySelector(".welcome-columns");
+
   if (!state.accountUser) {
-    // NOT signed in
+    // NOT signed in — show auth card + guest panel side by side
     if (unsignedHeader) unsignedHeader.style.display = "";
     if (signedInHeader) signedInHeader.style.display = "none";
+    if (welcomeColumns) welcomeColumns.style.display = "";
+    if (authCard) authCard.style.display = "";
     if (guestPanel) guestPanel.style.display = "";
-    if (authCard) authCard.style.display = "none";
     if (dashboardTeacher) dashboardTeacher.style.display = "none";
     if (dashboardStudent) dashboardStudent.style.display = "none";
     if (dashboardParent) dashboardParent.style.display = "none";
   } else {
-    // Signed in
+    // Signed in — hide columns, show dashboard
     if (unsignedHeader) unsignedHeader.style.display = "none";
     if (signedInHeader) signedInHeader.style.display = "";
-    if (guestPanel) guestPanel.style.display = "none";
-    if (authCard) authCard.style.display = "none";
+    if (welcomeColumns) welcomeColumns.style.display = "none";
 
     // Set header content
     if (accountName) accountName.textContent = state.accountUser.name;
@@ -473,18 +476,7 @@ export function handleLogout() {
 // ---- Auth Card Display ----
 
 export function showAuthCard(tab = 'signin') {
-  const authCard = document.getElementById("auth-card");
-  if (!authCard) return;
-
-  authCard.style.display = "";
-
-  // Hide guest panel and sign-in link when showing auth card
-  const guestPanel = document.getElementById("guest-panel");
-  const signInLink = document.getElementById("sign-in-link");
-  if (guestPanel) guestPanel.style.display = "none";
-  if (signInLink) signInLink.style.display = "none";
-
-  // Switch to the requested tab (click the tab button, not the content div)
+  // Auth card is always visible now — just switch the tab
   const targetBtn = document.querySelector(`.auth-tab[data-tab="${tab}"]`);
   if (targetBtn) {
     targetBtn.click();
