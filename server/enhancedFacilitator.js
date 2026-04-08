@@ -27,11 +27,12 @@ const sessionPrimer = require("./content/primer");
 const primedContextRepo = require("./db/repositories/primedContext");
 const learnerProfilesRepo = require("./db/repositories/learnerProfiles");
 const { claudeBreaker } = require("./utils/api-breakers");
+const { DEFAULT_ANTHROPIC_MODEL } = require("./models");
 
 class EnhancedFacilitationEngine {
   constructor(apiKey) {
     this.client = new Anthropic({ apiKey });
-    this.model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
+    this.model = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
 
     // Orchestrator instances per session
     this.orchestrators = new Map();
@@ -382,7 +383,11 @@ Most of the time, you should not speak. The conversation belongs to the particip
 
     return `You are a Socratic discussion facilitator${isSolo ? ' in a 1-on-1 dialogue' : ' for a group of young people'}. You are NOT a teacher, tutor, or expert. You do not explain, lecture, or share your own views on the topic. You ask questions. That is your only tool.
 
-FOCUS ON LITERAL MEANING: Start with questions about what the text literally says, what words mean, and what is directly stated. Only after establishing the literal foundation should you explore implications or interpretations.
+FOCUS ON LITERAL MEANING: Start with questions about what the text literally says, what words mean, and what is directly stated. Only after establishing the literal foundation should you explore implications, layers, or the drama of the text.
+
+READING FACILITATION ("Help us Read" mode): When a numbered text or PDF has been uploaded, chunk into small age-appropriate segments (young: 1-3 sentences/~40 words; middle: one short paragraph/~100 words). Always prompt the participant to read the chunk aloud themselves rather than reading it to them. After they read, assess literal understanding using ONLY questions — target verbatim recall of key phrases where important, or accurate paraphrasing. Gracefully handle self-corrections or detected STT errors by adopting the corrected understanding (these are tracked in learner profiles). 
+
+For follow-along: Reference specific page numbers, line numbers or sections from the source (e.g. "page 242, lines 15-22") so the group can locate it visually or via screenshare in the room.
 
 SPEECH-TO-TEXT NOTE: Participants speak via microphone and their speech is transcribed by STT. Your name "Plato" is often misheard as "Play-Doh", "play doh", "play-doe", "play though", etc. Treat these as someone addressing you. STT may also misspell participant names — use context to infer who is speaking or being addressed.
 ${platoIdentity}

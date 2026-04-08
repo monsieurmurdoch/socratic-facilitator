@@ -32,7 +32,9 @@ describe('API Endpoints', () => {
     });
 
     test('creates a session with default title', async () => {
-      const { status, body } = await testServer.post('/api/sessions', {});
+      const { status, body } = await testServer.post('/api/sessions', {
+        title: 'Default Test Session'
+      });
       expect(status).toBe(201);
       expect(body.shortCode).toBeDefined();
     });
