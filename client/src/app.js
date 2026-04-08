@@ -28,6 +28,8 @@
   let currentScreen = "welcome";
   const STT_FLUSH_MS_WARMUP = 1200;
   const STT_FLUSH_MS_DISCUSSION = 800;
+  let wsReconnectDelay = 1000; // exponential backoff starting at 1s
+  const WS_RECONNECT_MAX = 30000; // cap at 30s
 
   // ---- State Persistence ----
   const STORAGE_KEY = "socratic_state";
@@ -186,6 +188,7 @@
 
     ws.onopen = () => {
       console.log("[WS] Socket open (handshake complete)");
+      wsReconnectDelay = 1000; // reset backoff on successful connect
 
       // Try to restore saved session
       const saved = loadState();
@@ -221,8 +224,9 @@
       handleServerMessage(msg);
     };
     ws.onclose = (event) => {
-      console.log("[WS] Disconnected. Code:", event.code, "Reason:", event.reason, "— reconnecting in 2s...");
-      setTimeout(connect, 2000);
+      console.log("[WS] Disconnected. Code:", event.code, "Reason:", event.reason, "— reconnecting in", wsReconnectDelay + "ms...");
+      setTimeout(connect, wsReconnectDelay);
+      wsReconnectDelay = Math.min(wsReconnectDelay * 2, WS_RECONNECT_MAX);
     };
     ws.onerror = (event) => {
       console.error("[WS] Error:", event);
@@ -1086,6 +1090,8 @@
     return 25; // Default age — age input removed from UI
   }
 
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
   async function handleRegister() {
     const name = document.getElementById("auth-name-input").value.trim();
     const email = document.getElementById("auth-email-input").value.trim();
@@ -1096,6 +1102,9 @@
       alert("Enter your name, email, and password to create an account.");
       return;
     }
+    if (name.length > 100) { alert("Name is too long (max 100 characters)."); return; }
+    if (!EMAIL_RE.test(email)) { alert("Enter a valid email address."); return; }
+    if (password.length < 8) { alert("Password must be at least 8 characters."); return; }
 
     try {
       const result = await apiPost("/api/auth/register", { name, email, password, role });
@@ -1117,6 +1126,7 @@
       alert("Enter your email and password to sign in.");
       return;
     }
+    if (!EMAIL_RE.test(email)) { alert("Enter a valid email address."); return; }
 
     try {
       const result = await apiPost("/api/auth/login", { email, password });
@@ -1244,13 +1254,12 @@
   });
 
   // Show/hide join section (guest + teacher)
-  document.getElementById("join-toggle-btn")?.addEventListener("click", () => {
-    const section = document.getElementById("join-section");
-    if (section) section.style.display = section.style.display === "none" ? "flex" : "none";
-  });
-  document.getElementById("join-toggle-btn-teacher")?.addEventListener("click", () => {
-    const section = document.getElementById("join-section-teacher");
-    if (section) section.style.display = section.style.display === "none" ? "flex" : "none";
+  ["join-toggle-btn", "join-toggle-btn-teacher"].forEach((btnId) => {
+    const sectionId = btnId === "join-toggle-btn" ? "join-section" : "join-section-teacher";
+    document.getElementById(btnId)?.addEventListener("click", () => {
+      const section = document.getElementById(sectionId);
+      if (section) section.style.display = section.style.display === "none" ? "flex" : "none";
+    });
   });
 
   // Create button → setup screen (guest panel)
@@ -1391,31 +1400,17 @@
   });
 
   // Join existing session (guest)
-  document.getElementById("join-btn")?.addEventListener("click", () => {
-    myName = document.getElementById("name-input").value.trim();
-    const code = document.getElementById("join-code-input").value.trim().toLowerCase();
-    if (!myName) { alert("Enter your name"); return; }
+  function handleJoinSession(nameSource, codeInputId) {
+    myName = nameSource === "input" ? document.getElementById("name-input").value.trim() : (accountUser?.name || "");
+    const code = document.getElementById(codeInputId)?.value?.trim().toLowerCase();
+    if (!myName) { alert(nameSource === "input" ? "Enter your name" : "Sign in first"); return; }
     if (!code) { alert("Enter a session code"); return; }
     send({ type: "join_session", sessionId: code, name: myName, age: getAge(), authToken });
-  });
+  }
 
-  // Join existing session (teacher dashboard)
-  document.getElementById("join-btn-teacher")?.addEventListener("click", () => {
-    myName = accountUser?.name || "";
-    const code = document.getElementById("join-code-input-teacher")?.value?.trim().toLowerCase();
-    if (!myName) { alert("Sign in first"); return; }
-    if (!code) { alert("Enter a session code"); return; }
-    send({ type: "join_session", sessionId: code, name: myName, age: getAge(), authToken });
-  });
-
-  // Join existing session (student dashboard)
-  document.getElementById("join-btn-student")?.addEventListener("click", () => {
-    myName = accountUser?.name || "";
-    const code = document.getElementById("join-code-input-student")?.value?.trim().toLowerCase();
-    if (!myName) { alert("Sign in first"); return; }
-    if (!code) { alert("Enter a session code"); return; }
-    send({ type: "join_session", sessionId: code, name: myName, age: getAge(), authToken });
-  });
+  document.getElementById("join-btn")?.addEventListener("click", () => handleJoinSession("input", "join-code-input"));
+  document.getElementById("join-btn-teacher")?.addEventListener("click", () => handleJoinSession("account", "join-code-input-teacher"));
+  document.getElementById("join-btn-student")?.addEventListener("click", () => handleJoinSession("account", "join-code-input-student"));
 
   // Enter video room (warmup mode)
   document.getElementById("enter-video-btn").addEventListener("click", () => {
@@ -1828,9 +1823,9 @@
               <tr>
                 <td>
                   <span class="participant-name">${escapeHtml(p.name)}</span>
-                  ${p.age ? `<br><small style="color: var(--text-muted);">Age: ${p.age}</small>` : ''}
+                  ${p.age ? `<br><small style="color: var(--text-muted);">Age: ${escapeHtml(String(p.age))}</small>` : ''}
                 </td>
-                <td><span class="participant-role">${p.role}</span></td>
+                <td><span class="participant-role">${escapeHtml(p.role)}</span></td>
                 <td>${p.messageCount}</td>
                 <td>${formatDuration(p.speakingSeconds)}</td>
                 <td>${p.contributionScore.toFixed(2)}</td>
@@ -1852,7 +1847,7 @@
         <h3>Session Details</h3>
         <div style="background: var(--surface-alt); padding: 16px; border-radius: 10px; font-size: 0.9rem;">
           <strong>Title:</strong> ${escapeHtml(session.title)}<br>
-          <strong>Status:</strong> ${session.status}<br>
+          <strong>Status:</strong> ${escapeHtml(session.status)}<br>
           <strong>Started:</strong> ${formatDateTime(session.createdAt)}<br>
           ${session.endedAt ? `<strong>Ended:</strong> ${formatDateTime(session.endedAt)}` : ''}
         </div>
