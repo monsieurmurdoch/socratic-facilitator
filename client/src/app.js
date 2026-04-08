@@ -77,17 +77,6 @@
     clearLocalSpeechDraft();
   }
 
-  // Security: Escape HTML to prevent XSS from user names/messages/materials
-  function escapeHtml(unsafe) {
-    if (!unsafe) return '';
-    return unsafe
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
   function resetConversationFeed() {
     const container = document.getElementById("conversation-feed");
     if (container) container.innerHTML = "";
@@ -285,21 +274,23 @@
   }
 
   function renderAuthState() {
-    const signedOut = document.getElementById("auth-signed-out");
-    const signedIn = document.getElementById("auth-signed-in");
-    const classCreation = document.getElementById("class-creation");
-    const classesLocked = document.getElementById("classes-locked");
-    const accountName = document.getElementById("account-name");
-    const accountEmail = document.getElementById("account-email");
+    const unsignedHeader = document.getElementById("unsigned-header");
+    const signedInHeader = document.getElementById("signed-in-header");
+    const authCard = document.getElementById("auth-card");
+    const guestPanel = document.getElementById("guest-panel");
+    const dashboardTeacher = document.getElementById("dashboard-teacher");
+    const dashboardStudent = document.getElementById("dashboard-student");
+    const dashboardParent = document.getElementById("dashboard-parent");
+    const accountNameEl = document.getElementById("account-name");
+    const accountRoleBadge = document.getElementById("account-role-badge");
+    const avatarInitial = document.getElementById("user-avatar-initial");
+    const signInLink = document.getElementById("sign-in-link");
     const classHelp = document.getElementById("session-class-help");
     const demoLoginSection = document.getElementById("demo-login-section");
     const demoLoginCopy = document.getElementById("demo-login-copy");
-    const classesCard = document.getElementById("classes-card");
-    const sessionsCard = document.getElementById("recent-sessions-card");
-    const workspacePanel = document.querySelector(".workspace-panel");
 
+    // Demo teacher button visibility
     if (demoLoginSection) {
-      // Show demo button unless: user is signed in, or server explicitly said disabled
       const demoDisabled = demoTeacherConfig && !demoTeacherConfig.enabled;
       demoLoginSection.style.display = !accountUser && !demoDisabled ? "block" : "none";
     }
@@ -307,45 +298,52 @@
       demoLoginCopy.textContent = `Use ${demoTeacherConfig.name} (${demoTeacherConfig.email}) for quick teacher access.`;
     }
 
-    const signInLink = document.getElementById("sign-in-link");
-
     if (accountUser) {
-      // Show entire sidebar when signed in
-      if (workspacePanel) workspacePanel.style.display = "";
+      // Signed in — show header bar, hide guest panel, show role dashboard
+      if (unsignedHeader) unsignedHeader.style.display = "none";
+      if (signedInHeader) signedInHeader.style.display = "";
+      if (authCard) authCard.style.display = "none";
+      if (guestPanel) guestPanel.style.display = "none";
       if (signInLink) signInLink.style.display = "none";
-      signedOut.style.display = "none";
-      signedIn.style.display = "block";
-      if (classesCard) classesCard.style.display = "";
-      if (sessionsCard) sessionsCard.style.display = "";
-      classCreation.style.display = canManageClasses() ? "block" : "none";
-      classesLocked.style.display = canManageClasses() ? "none" : "block";
-      accountName.textContent = accountUser.name;
-      accountEmail.textContent = `${accountUser.email}${accountUser.role ? ` · ${accountUser.role}` : ""}`;
-      if (!document.getElementById("name-input").value.trim()) {
-        document.getElementById("name-input").value = getDisplayNameFromAccount();
+
+      // Set user info in header
+      if (accountNameEl) accountNameEl.textContent = accountUser.name;
+      if (accountRoleBadge) accountRoleBadge.textContent = accountUser.role || "";
+      if (avatarInitial) avatarInitial.textContent = (accountUser.name || "?")[0].toUpperCase();
+
+      // Show role-appropriate dashboard
+      const role = accountUser.role || "Teacher";
+      if (dashboardTeacher) dashboardTeacher.style.display = role === "Teacher" || role === "Admin" || role === "SuperAdmin" ? "" : "none";
+      if (dashboardStudent) dashboardStudent.style.display = role === "Student" ? "" : "none";
+      if (dashboardParent) dashboardParent.style.display = role === "Parent" ? "" : "none";
+
+      // Pre-fill name for session
+      const nameInput = document.getElementById("name-input-teacher");
+      if (nameInput && !nameInput.value.trim()) {
+        nameInput.value = getDisplayNameFromAccount();
       }
+
       if (classHelp) {
         classHelp.textContent = canManageClasses()
           ? "Choose a class to keep this session in your saved workspace."
           : "Your account can join sessions and keep history, but class management is limited.";
       }
     } else {
-      // Hide sidebar unless user manually clicked "Sign in"
-      if (!authPanelManuallyOpened) {
-        if (workspacePanel) workspacePanel.style.display = "none";
-        if (signInLink) signInLink.style.display = "";
-        signedOut.style.display = "none";
-      } else {
-        // Panel is open — keep it visible, just update the auth card contents
-        if (workspacePanel) workspacePanel.style.display = "";
-        if (signInLink) signInLink.style.display = "none";
-        signedOut.style.display = "block";
+      // Not signed in — show unsigned header + guest panel
+      if (unsignedHeader) unsignedHeader.style.display = "";
+      if (signedInHeader) signedInHeader.style.display = "none";
+      if (guestPanel) guestPanel.style.display = "";
+      if (signInLink) signInLink.style.display = "";
+
+      // Hide all dashboards
+      if (dashboardTeacher) dashboardTeacher.style.display = "none";
+      if (dashboardStudent) dashboardStudent.style.display = "none";
+      if (dashboardParent) dashboardParent.style.display = "none";
+
+      // Auth card only shows if user clicked sign in
+      if (authCard && !authPanelManuallyOpened) {
+        authCard.style.display = "none";
       }
-      signedIn.style.display = "none";
-      if (classesCard) classesCard.style.display = "none";
-      if (sessionsCard) sessionsCard.style.display = "none";
-      classCreation.style.display = "none";
-      classesLocked.style.display = "none";
     }
   }
 
@@ -1186,7 +1184,8 @@
     renderAuthState();
     renderClasses();
     renderSessionHistory();
-    document.getElementById("session-class-select").value = "";
+    const classSelect = document.getElementById("session-class-select");
+    if (classSelect) classSelect.value = "";
   }
 
   // ---- Event Listeners ----
@@ -1197,42 +1196,75 @@
   document.getElementById("create-class-btn").addEventListener("click", handleCreateClass);
   document.getElementById("logout-btn").addEventListener("click", handleLogout);
 
-  // "Sign in" link on welcome screen — reveals only the auth card (not classes/sessions)
+  // "Sign in" link — show auth card with Sign In tab active
   document.getElementById("show-auth-btn")?.addEventListener("click", (e) => {
     e.preventDefault();
     authPanelManuallyOpened = true;
-    const panel = document.querySelector(".workspace-panel");
-    const signedOut = document.getElementById("auth-signed-out");
-    if (panel) panel.style.display = "";
-    if (signedOut) signedOut.style.display = "block";
-    // Keep classes and sessions hidden — those require being signed in
-    const classesCard = document.getElementById("classes-card");
-    const sessionsCard = document.getElementById("recent-sessions-card");
-    if (classesCard) classesCard.style.display = "none";
-    if (sessionsCard) sessionsCard.style.display = "none";
-    // Show demo teacher button if enabled
-    const demoSection = document.getElementById("demo-login-section");
-    const demoDisabled = demoTeacherConfig && !demoTeacherConfig.enabled;
-    if (demoSection && !demoDisabled) {
-      demoSection.style.display = "block";
-    }
+    const authCard = document.getElementById("auth-card");
+    if (authCard) authCard.style.display = "";
+    switchAuthTab("signin");
     document.getElementById("sign-in-link").style.display = "none";
   });
 
-  // Show/hide join section
-  document.getElementById("join-toggle-btn").addEventListener("click", () => {
-    const section = document.getElementById("join-section");
-    section.style.display = section.style.display === "none" ? "flex" : "none";
+  // "Create account" link — show auth card with Sign Up tab active
+  document.getElementById("show-signup-btn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    authPanelManuallyOpened = true;
+    const authCard = document.getElementById("auth-card");
+    if (authCard) authCard.style.display = "";
+    switchAuthTab("signup");
+    document.getElementById("sign-in-link").style.display = "none";
   });
 
-  // Create button → setup screen
-  document.getElementById("create-btn").addEventListener("click", () => {
+  // Auth tab switching
+  document.querySelectorAll(".auth-tab").forEach(tab => {
+    tab.addEventListener("click", () => switchAuthTab(tab.dataset.tab));
+  });
+
+  function switchAuthTab(tabName) {
+    document.querySelectorAll(".auth-tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tabName));
+    document.querySelectorAll(".auth-tab-content").forEach(c => c.classList.remove("active"));
+    const target = document.getElementById(`auth-tab-${tabName}`);
+    if (target) target.classList.add("active");
+  }
+
+  // Role chip selector in signup
+  document.querySelectorAll(".role-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll(".role-chip").forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+      document.getElementById("auth-role-select").value = chip.dataset.role;
+      // Show/hide role-specific fields
+      const role = chip.dataset.role;
+      const studentFields = document.getElementById("signup-student-fields");
+      const parentFields = document.getElementById("signup-parent-fields");
+      if (studentFields) studentFields.style.display = role === "Student" ? "" : "none";
+      if (parentFields) parentFields.style.display = role === "Parent" ? "" : "none";
+    });
+  });
+
+  // Show/hide join section (guest + teacher)
+  document.getElementById("join-toggle-btn")?.addEventListener("click", () => {
+    const section = document.getElementById("join-section");
+    if (section) section.style.display = section.style.display === "none" ? "flex" : "none";
+  });
+  document.getElementById("join-toggle-btn-teacher")?.addEventListener("click", () => {
+    const section = document.getElementById("join-section-teacher");
+    if (section) section.style.display = section.style.display === "none" ? "flex" : "none";
+  });
+
+  // Create button → setup screen (guest panel)
+  document.getElementById("create-btn")?.addEventListener("click", () => {
     myName = document.getElementById("name-input").value.trim();
     if (!myName) { alert("Enter your name"); return; }
-    if (accountUser && !canManageClasses()) {
-      alert("Only teachers and admins can create sessions right now.");
-      return;
-    }
+    abandonDraftSession();
+    showScreen("setup");
+  });
+
+  // Create button → setup screen (teacher dashboard)
+  document.getElementById("create-btn-teacher")?.addEventListener("click", () => {
+    myName = accountUser?.name || document.getElementById("name-input-teacher")?.value?.trim() || "";
+    if (!myName) { alert("Enter your name"); return; }
     abandonDraftSession();
     showScreen("setup");
   });
@@ -1358,11 +1390,29 @@
     });
   });
 
-  // Join existing session
-  document.getElementById("join-btn").addEventListener("click", () => {
+  // Join existing session (guest)
+  document.getElementById("join-btn")?.addEventListener("click", () => {
     myName = document.getElementById("name-input").value.trim();
     const code = document.getElementById("join-code-input").value.trim().toLowerCase();
     if (!myName) { alert("Enter your name"); return; }
+    if (!code) { alert("Enter a session code"); return; }
+    send({ type: "join_session", sessionId: code, name: myName, age: getAge(), authToken });
+  });
+
+  // Join existing session (teacher dashboard)
+  document.getElementById("join-btn-teacher")?.addEventListener("click", () => {
+    myName = accountUser?.name || "";
+    const code = document.getElementById("join-code-input-teacher")?.value?.trim().toLowerCase();
+    if (!myName) { alert("Sign in first"); return; }
+    if (!code) { alert("Enter a session code"); return; }
+    send({ type: "join_session", sessionId: code, name: myName, age: getAge(), authToken });
+  });
+
+  // Join existing session (student dashboard)
+  document.getElementById("join-btn-student")?.addEventListener("click", () => {
+    myName = accountUser?.name || "";
+    const code = document.getElementById("join-code-input-student")?.value?.trim().toLowerCase();
+    if (!myName) { alert("Sign in first"); return; }
     if (!code) { alert("Enter a session code"); return; }
     send({ type: "join_session", sessionId: code, name: myName, age: getAge(), authToken });
   });
@@ -1637,13 +1687,11 @@
     const backdrop = document.getElementById('session-analytics-backdrop');
     const closeBtn = document.getElementById('analytics-close');
 
-    // Close modal when clicking backdrop or close button
-    backdrop.addEventListener('click', hideAnalyticsModal);
-    closeBtn.addEventListener('click', hideAnalyticsModal);
+    if (backdrop) backdrop.addEventListener('click', hideAnalyticsModal);
+    if (closeBtn) closeBtn.addEventListener('click', hideAnalyticsModal);
 
-    // Close on escape key
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && modal.classList.contains('active')) {
+      if (e.key === 'Escape' && modal && modal.classList.contains('active')) {
         hideAnalyticsModal();
       }
     });
