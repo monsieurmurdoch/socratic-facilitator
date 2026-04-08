@@ -19,7 +19,6 @@
   let savedClasses = [];
   let sessionHistory = [];
   let demoTeacherConfig = null; // null until server responds
-  let authPanelManuallyOpened = false; // tracks if user clicked "Sign in"
   const MAX_MATERIALS = 5;
   let sttBatchBuffer = '';
   let sttBatchTimer = null;
@@ -288,7 +287,6 @@
     const accountNameEl = document.getElementById("account-name");
     const accountRoleBadge = document.getElementById("account-role-badge");
     const avatarInitial = document.getElementById("user-avatar-initial");
-    const signInLink = document.getElementById("sign-in-link");
     const classHelp = document.getElementById("session-class-help");
     const demoLoginSection = document.getElementById("demo-login-section");
     const demoLoginCopy = document.getElementById("demo-login-copy");
@@ -308,7 +306,6 @@
       if (signedInHeader) signedInHeader.style.display = "";
       if (authCard) authCard.style.display = "none";
       if (guestPanel) guestPanel.style.display = "none";
-      if (signInLink) signInLink.style.display = "none";
 
       // Set user info in header
       if (accountNameEl) accountNameEl.textContent = accountUser.name;
@@ -337,17 +334,14 @@
       if (unsignedHeader) unsignedHeader.style.display = "";
       if (signedInHeader) signedInHeader.style.display = "none";
       if (guestPanel) guestPanel.style.display = "";
-      if (signInLink) signInLink.style.display = "";
 
       // Hide all dashboards
       if (dashboardTeacher) dashboardTeacher.style.display = "none";
       if (dashboardStudent) dashboardStudent.style.display = "none";
       if (dashboardParent) dashboardParent.style.display = "none";
 
-      // Auth card only shows if user clicked sign in
-      if (authCard && !authPanelManuallyOpened) {
-        authCard.style.display = "none";
-      }
+      // Auth card always visible when signed out (side-by-side with guest panel)
+      if (authCard) authCard.style.display = "";
     }
   }
 
@@ -1190,7 +1184,6 @@
 
   function handleLogout() {
     clearAuthState();
-    authPanelManuallyOpened = false;
     renderAuthState();
     renderClasses();
     renderSessionHistory();
@@ -1205,26 +1198,6 @@
   document.getElementById("demo-login-btn")?.addEventListener("click", handleDemoTeacherLogin);
   document.getElementById("create-class-btn").addEventListener("click", handleCreateClass);
   document.getElementById("logout-btn").addEventListener("click", handleLogout);
-
-  // "Sign in" link — show auth card with Sign In tab active
-  document.getElementById("show-auth-btn")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    authPanelManuallyOpened = true;
-    const authCard = document.getElementById("auth-card");
-    if (authCard) authCard.style.display = "";
-    switchAuthTab("signin");
-    document.getElementById("sign-in-link").style.display = "none";
-  });
-
-  // "Create account" link — show auth card with Sign Up tab active
-  document.getElementById("show-signup-btn")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    authPanelManuallyOpened = true;
-    const authCard = document.getElementById("auth-card");
-    if (authCard) authCard.style.display = "";
-    switchAuthTab("signup");
-    document.getElementById("sign-in-link").style.display = "none";
-  });
 
   // Auth tab switching
   document.querySelectorAll(".auth-tab").forEach(tab => {
