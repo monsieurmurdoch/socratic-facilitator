@@ -396,6 +396,7 @@ body {
   gap: 32px;
   overflow-y: auto;
   max-height: 100vh;
+  max-width: 960px;
 }
 
 #setup-screen h2 {
