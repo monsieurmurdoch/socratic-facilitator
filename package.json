@@ -12,12 +12,15 @@
     "jitsi:stop": "cd .local/jitsi/docker-jitsi-meet && docker compose down",
     "jitsi:logs": "cd .local/jitsi/docker-jitsi-meet && docker compose logs -f",
     "setup": "bash ./jitsi/setup.sh && npm install",
-    "local": "bash ./start-local.sh"
+    "local": "bash ./start-local.sh",
+    "test": "jest --runInBand --forceExit",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
+    "express-rate-limit": "^8.3.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
     "node-fetch": "^2.7.0",
@@ -28,5 +31,8 @@
     "redis": "^5.11.0",
     "uuid": "^10.0.0",
     "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "jest": "^30.3.0"
   }
 }

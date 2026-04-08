@@ -1440,3 +1440,456 @@ body {
     padding: 8px 12px;
   }
 }
+
+/* Transcript Viewer Modal */
+.transcript-modal-content {
+  max-width: 700px;
+  max-height: 85vh;
+}
+
+.transcript-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.transcript-msg {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.transcript-facilitator {
+  background: var(--surface-alt, #f0f4f8);
+  border-left: 3px solid var(--facilitator, #6366f1);
+}
+
+.transcript-participant {
+  background: var(--surface, #fff);
+  border-left: 3px solid var(--accent, #3b82f6);
+}
+
+.transcript-msg-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #666);
+  margin-bottom: 6px;
+}
+
+.transcript-sender {
+  font-weight: 600;
+  color: var(--text, #111);
+}
+
+.transcript-move {
+  background: var(--facilitator, #6366f1);
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.transcript-time {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--text-muted, #999);
+}
+
+.transcript-msg-text {
+  color: var(--text, #111);
+}
+
+/* Session item actions row */
+.session-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* ---- Role-Aware Auth Layout ---- */
+
+/* Welcome Header (shown when signed out) */
+.welcome-header {
+  text-align: center;
+  margin-bottom: 32px;
+  animation: fadeIn 0.4s ease;
+}
+
+.welcome-header h1 {
+  font-family: 'Source Serif 4', serif;
+  font-size: 2.2rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+  margin-bottom: 12px;
+}
+
+.welcome-header p {
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1.6;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+/* User Header Bar (shown when signed in) */
+.user-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  margin-bottom: 32px;
+  animation: fadeIn 0.4s ease;
+}
+
+.user-header h1 {
+  font-family: 'Source Serif 4', serif;
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.user-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.user-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.user-header-name {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.user-header-role {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+}
+
+.btn-logout {
+  padding: 8px 16px;
+  background: none;
+  color: var(--text-secondary);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-logout:hover {
+  background: var(--surface-alt);
+  color: var(--text);
+  border-color: var(--text-secondary);
+}
+
+/* Auth Card */
+.auth-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  padding: 32px 28px;
+  max-width: 420px;
+  margin: 0 auto;
+  box-shadow: 0 20px 60px var(--shadow);
+  animation: fadeIn 0.4s ease;
+}
+
+/* Auth Tabs */
+.auth-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  border-bottom: 1.5px solid var(--border);
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: -1.5px;
+}
+
+.auth-tab:hover {
+  color: var(--text);
+  background: var(--surface-alt);
+  border-radius: 8px 8px 0 0;
+}
+
+.auth-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Auth Tab Content */
+.auth-tab-content {
+  display: none;
+}
+
+.auth-tab-content.active {
+  display: block;
+  animation: fadeIn 0.3s ease;
+}
+
+/* Role Selector */
+.role-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.role-chip {
+  flex: 1;
+  padding: 10px 16px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.role-chip:hover {
+  background: var(--surface-alt);
+  color: var(--text);
+  border-color: var(--text-secondary);
+}
+
+.role-chip.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+/* Dashboard Card (Guest Panel & Role Dashboards) */
+.dashboard-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 20px 60px var(--shadow);
+  animation: fadeIn 0.4s ease;
+}
+
+.dashboard-card h2 {
+  font-family: 'Source Serif 4', serif;
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 8px 0;
+}
+
+.dashboard-card p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.dashboard-card .form-group {
+  max-width: 100%;
+}
+
+/* Dashboard Container */
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  animation: fadeIn 0.4s ease;
+}
+
+/* Dashboard Section */
+.dashboard-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dashboard-section h3 {
+  font-family: 'Source Serif 4', serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+/* Signup Role Fields */
+.signup-role-fields {
+  display: none;
+  margin-top: 16px;
+  animation: fadeIn 0.3s ease;
+}
+
+.signup-role-fields.active {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Sign In Prompt */
+.signin-prompt {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.signin-prompt p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+
+.btn-signin-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+}
+
+.btn-signin-link:hover {
+  text-decoration: underline;
+}
+
+/* Auth Form in Card */
+.auth-card .form-group {
+  margin-bottom: 16px;
+}
+
+.auth-card .btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.auth-card .btn-row {
+  margin-top: 16px;
+}
+
+/* Error Messages */
+.auth-error {
+  background: #fee;
+  border: 1px solid #fcc;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  color: #c33;
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+  animation: fadeIn 0.3s ease;
+}
+
+.auth-success {
+  background: var(--facilitator-light);
+  border: 1px solid rgba(61, 107, 94, 0.3);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  color: var(--facilitator);
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+  animation: fadeIn 0.3s ease;
+}
+
+/* Responsive Styles */
+@media (max-width: 600px) {
+  .welcome-header h1 {
+    font-size: 1.8rem;
+  }
+
+  .user-header {
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .user-header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .user-header-name {
+    display: none;
+  }
+
+  .auth-card {
+    padding: 24px 20px;
+    border-radius: 14px;
+  }
+
+  .role-selector {
+    flex-direction: column;
+  }
+
+  .dashboard-card {
+    padding: 20px;
+  }
+
+  .signin-prompt {
+    margin-top: 16px;
+    padding-top: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .auth-tabs {
+    gap: 4px;
+  }
+
+  .auth-tab {
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+
+  .role-chip {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+}

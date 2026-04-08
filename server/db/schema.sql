@@ -413,6 +413,30 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DE
 CREATE INDEX IF NOT EXISTS idx_model_eval_runs_key ON model_eval_runs(eval_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_maintenance_runs_job ON maintenance_runs(job_name, started_at DESC);
 
+-- Learner profiles table for longitudinal tracking
+CREATE TABLE IF NOT EXISTS learner_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  total_sessions INTEGER DEFAULT 0,
+  total_messages INTEGER DEFAULT 0,
+  total_speaking_seconds REAL DEFAULT 0,
+  avg_specificity REAL DEFAULT 0,
+  avg_profoundness REAL DEFAULT 0,
+  avg_coherence REAL DEFAULT 0,
+  avg_contribution_score REAL DEFAULT 0,
+  estimated_level VARCHAR(20) DEFAULT 'unknown',
+  topics_discussed JSONB DEFAULT '[]',
+  strengths JSONB DEFAULT '[]',
+  growth_areas JSONB DEFAULT '[]',
+  session_summaries JSONB DEFAULT '[]',
+  stt_corrections JSONB DEFAULT '[]',
+  UNIQUE(user_id)
+);
+
+-- Index for learner profiles
+CREATE INDEX IF NOT EXISTS idx_learner_profiles_user ON learner_profiles(user_id, updated_at DESC);
+
 -- Robust fixes for schema warnings and missing columns (user_id, is_anchor, etc.)
 -- This ensures the DB is always consistent even if the $ splitter fails on functions
 ALTER TABLE IF EXISTS session_memberships ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;

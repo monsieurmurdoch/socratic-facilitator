@@ -10,105 +10,133 @@
 
   <!-- WELCOME SCREEN -->
   <div id="welcome-screen" class="screen active">
-    <div class="welcome-shell">
-      <div class="welcome-main">
-        <h1>Socratic Facilitator</h1>
-        <p>Upload materials. Start a discussion. Plato does the rest.</p>
 
-        <div class="form-group">
-          <label for="name-input">Your Name In Session</label>
-          <input type="text" id="name-input" placeholder="Enter your name" autocomplete="off">
+    <!-- Signed-out header -->
+    <div id="unsigned-header" class="welcome-header">
+      <h1>Socratic Facilitator</h1>
+      <p>Upload materials. Start a discussion. Plato does the rest.</p>
+    </div>
+
+    <!-- Signed-in header bar (hidden until logged in) -->
+    <div id="signed-in-header" class="user-header" style="display:none;">
+      <h1>Socratic Facilitator</h1>
+      <div class="user-header-right">
+        <div class="user-avatar" id="user-avatar-initial">T</div>
+        <div class="user-header-info">
+          <span class="user-header-name" id="account-name"></span>
+          <span class="user-header-role" id="account-role-badge"></span>
         </div>
+        <button id="logout-btn" class="btn btn-secondary btn-small">Log Out</button>
+      </div>
+    </div>
 
-        <div class="divider"></div>
-
-        <div class="btn-row">
-          <button id="create-btn" class="btn btn-primary">Create Room</button>
-          <button id="join-toggle-btn" class="btn btn-secondary">Join Existing</button>
-        </div>
-
-        <div id="join-section" style="display: none;">
-          <div class="form-group">
-            <label for="join-code-input">Session Code</label>
-            <input type="text" id="join-code-input" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
-          </div>
-          <button id="join-btn" class="btn btn-secondary">Join Session</button>
-        </div>
-
-        <p id="sign-in-link" class="sign-in-prompt" style="margin-top: 24px; text-align: center; font-size: 0.9rem; color: var(--text-secondary);">
-          Teacher? <a href="#" id="show-auth-btn" style="color: var(--accent); text-decoration: underline; cursor: pointer;">Sign in</a> to save classes and session history.
-        </p>
+    <!-- Auth card (shown when user clicks sign-in or create account) -->
+    <div id="auth-card" class="auth-card" style="display:none;">
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="signin">Sign In</button>
+        <button class="auth-tab" data-tab="signup">Create Account</button>
       </div>
 
-      <aside class="workspace-panel" style="display:none">
-        <div id="auth-signed-out" class="workspace-card">
-          <div class="workspace-header">
-            <h3>Teacher Account</h3>
-            <span class="workspace-kicker">Save classes and history</span>
-          </div>
+      <!-- Sign In Tab -->
+      <div id="auth-tab-signin" class="auth-tab-content active">
+        <div class="form-group">
+          <label for="login-email-input">Email</label>
+          <input type="email" id="login-email-input" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="login-password-input">Password</label>
+          <input type="password" id="login-password-input" placeholder="Your password" autocomplete="current-password">
+        </div>
+        <button id="login-btn" class="btn btn-primary" style="width:100%;">Sign In</button>
+        <div id="demo-login-section" class="auth-demo">
+          <p id="demo-login-copy" class="workspace-meta">Use the demo teacher account for quick testing.</p>
+          <button id="demo-login-btn" class="btn btn-secondary" style="width:100%;">Use Demo Teacher</button>
+        </div>
+      </div>
 
-          <div class="auth-grid">
-            <div class="auth-section">
-              <h4>Create Account</h4>
-              <div class="form-group auth-form-group">
-                <label for="auth-name-input">Name</label>
-                <input type="text" id="auth-name-input" placeholder="Ada Lovelace" autocomplete="name">
-              </div>
-              <div class="form-group auth-form-group">
-                <label for="auth-email-input">Email</label>
-                <input type="email" id="auth-email-input" placeholder="teacher@example.com" autocomplete="email">
-              </div>
-              <div class="form-group auth-form-group">
-                <label for="auth-password-input">Password</label>
-                <input type="password" id="auth-password-input" placeholder="At least 8 characters" autocomplete="new-password">
-              </div>
-              <div class="form-group auth-form-group">
-                <label for="auth-role-select">Role</label>
-                <select id="auth-role-select">
-                  <option value="Teacher">Teacher</option>
-                  <option value="Student">Student</option>
-                  <option value="Parent">Parent</option>
-                </select>
-              </div>
-              <button id="register-btn" class="btn btn-primary auth-btn">Create Account</button>
-            </div>
-
-            <div class="auth-section">
-              <h4>Sign In</h4>
-              <div class="form-group auth-form-group">
-                <label for="login-email-input">Email</label>
-                <input type="email" id="login-email-input" placeholder="teacher@example.com" autocomplete="email">
-              </div>
-              <div class="form-group auth-form-group">
-                <label for="login-password-input">Password</label>
-                <input type="password" id="login-password-input" placeholder="Your password" autocomplete="current-password">
-              </div>
-              <button id="login-btn" class="btn btn-secondary auth-btn">Sign In</button>
-              <div id="demo-login-section" class="auth-demo">
-                <p id="demo-login-copy" class="workspace-meta">Use the demo teacher account for quick testing.</p>
-                <button id="demo-login-btn" class="btn btn-primary auth-btn">Use Demo Teacher</button>
-              </div>
-            </div>
+      <!-- Create Account Tab -->
+      <div id="auth-tab-signup" class="auth-tab-content">
+        <div class="role-selector">
+          <button class="role-chip active" data-role="Teacher">I'm a Teacher</button>
+          <button class="role-chip" data-role="Student">I'm a Student</button>
+          <button class="role-chip" data-role="Parent">I'm a Parent</button>
+        </div>
+        <input type="hidden" id="auth-role-select" value="Teacher">
+        <div class="form-group">
+          <label for="auth-name-input">Name</label>
+          <input type="text" id="auth-name-input" placeholder="Your name" autocomplete="name">
+        </div>
+        <div class="form-group">
+          <label for="auth-email-input">Email</label>
+          <input type="email" id="auth-email-input" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="auth-password-input">Password</label>
+          <input type="password" id="auth-password-input" placeholder="At least 8 characters" autocomplete="new-password">
+        </div>
+        <div id="signup-student-fields" class="signup-role-fields" style="display:none;">
+          <div class="form-group">
+            <label for="auth-age-input">Your Age (optional)</label>
+            <input type="number" id="auth-age-input" placeholder="e.g. 14" min="5" max="100">
           </div>
         </div>
-
-        <div id="auth-signed-in" class="workspace-card" style="display:none;">
-          <div class="workspace-header">
-            <div>
-              <h3 id="account-name">Teacher</h3>
-              <p id="account-email" class="workspace-meta"></p>
-            </div>
-            <button id="logout-btn" class="btn btn-secondary btn-small">Log Out</button>
+        <div id="signup-parent-fields" class="signup-role-fields" style="display:none;">
+          <div class="form-group">
+            <label for="auth-child-input">Link to your child (optional)</label>
+            <input type="text" id="auth-child-input" placeholder="Child's email or session code">
           </div>
-          <p class="workspace-meta">Classes and prior sessions you create while signed in will live here.</p>
         </div>
+        <button id="register-btn" class="btn btn-primary" style="width:100%;">Create Account</button>
+      </div>
+    </div>
 
-        <div class="workspace-card" id="classes-card">
+    <!-- Unauthenticated guest panel -->
+    <div id="guest-panel" class="dashboard-card">
+      <div class="form-group">
+        <label for="name-input">Your Name In Session</label>
+        <input type="text" id="name-input" placeholder="Enter your name" autocomplete="off">
+      </div>
+      <div class="btn-row">
+        <button id="create-btn" class="btn btn-primary">Create Room</button>
+        <button id="join-toggle-btn" class="btn btn-secondary">Join Existing</button>
+      </div>
+      <div id="join-section" style="display: none;">
+        <div class="form-group">
+          <label for="join-code-input">Session Code</label>
+          <input type="text" id="join-code-input" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
+        </div>
+        <button id="join-btn" class="btn btn-secondary">Join Session</button>
+      </div>
+      <p id="sign-in-link" class="sign-in-prompt">
+        Want to save your history? <a href="#" id="show-auth-btn">Sign in</a> or <a href="#" id="show-signup-btn">create an account</a>.
+      </p>
+    </div>
+
+    <!-- Teacher Dashboard -->
+    <div id="dashboard-teacher" class="dashboard-container" style="display:none;">
+      <div class="form-group">
+        <label for="name-input">Your Name In Session</label>
+        <input type="text" id="name-input-teacher" placeholder="Enter your name" autocomplete="off" style="display:none;">
+      </div>
+      <div class="btn-row">
+        <button id="create-btn-teacher" class="btn btn-primary">Create Room</button>
+        <button id="join-toggle-btn-teacher" class="btn btn-secondary">Join Existing</button>
+      </div>
+      <div id="join-section-teacher" style="display: none;">
+        <div class="form-group">
+          <label for="join-code-input-teacher">Session Code</label>
+          <input type="text" id="join-code-input-teacher" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
+        </div>
+        <button id="join-btn-teacher" class="btn btn-secondary">Join Session</button>
+      </div>
+
+      <div class="dashboard-section">
+        <div class="workspace-card">
           <div class="workspace-header">
             <h3>Saved Classes</h3>
             <span class="workspace-kicker">Reuse groups and keep context</span>
           </div>
-          <div id="class-creation" style="display:none;">
+          <div id="class-creation">
             <div class="form-group auth-form-group">
               <label for="new-class-name">Class Name</label>
               <input type="text" id="new-class-name" placeholder="9th Grade Humanities - Period 2">
@@ -123,12 +151,13 @@
             </div>
             <button id="create-class-btn" class="btn btn-primary auth-btn">Create Class</button>
           </div>
-          <p id="classes-locked" class="workspace-meta">Sign in to create and reuse classes.</p>
           <div id="classes-list" class="workspace-list">
             <p class="empty-state">No classes yet.</p>
           </div>
         </div>
+      </div>
 
+      <div class="dashboard-section">
         <div class="workspace-card" id="recent-sessions-card">
           <div class="workspace-header">
             <h3>Recent Sessions</h3>
@@ -138,11 +167,64 @@
             <span class="workspace-kicker">Quick history for follow-up</span>
           </div>
           <div id="session-history-list" class="workspace-list">
-            <p class="empty-state">Sign in to see session history.</p>
+            <p class="empty-state">No sessions yet.</p>
           </div>
         </div>
-      </aside>
+      </div>
     </div>
+
+    <!-- Student Dashboard -->
+    <div id="dashboard-student" class="dashboard-container" style="display:none;">
+      <div class="dashboard-card">
+        <h3>Join a Session</h3>
+        <p class="workspace-meta">Enter the code your teacher gave you.</p>
+        <div class="form-group">
+          <label for="join-code-input-student">Session Code</label>
+          <input type="text" id="join-code-input-student" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
+        </div>
+        <button id="join-btn-student" class="btn btn-primary" style="width:100%;">Join Session</button>
+      </div>
+
+      <div class="dashboard-section">
+        <div class="workspace-card">
+          <div class="workspace-header">
+            <h3>My Sessions</h3>
+            <span class="workspace-kicker">Discussions you've joined</span>
+          </div>
+          <div id="student-session-history-list" class="workspace-list">
+            <p class="empty-state">No sessions yet.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Parent Dashboard -->
+    <div id="dashboard-parent" class="dashboard-container" style="display:none;">
+      <div class="dashboard-section">
+        <div class="workspace-card">
+          <div class="workspace-header">
+            <h3>Linked Students</h3>
+            <span class="workspace-kicker">Managed by your child's teacher or school admin</span>
+          </div>
+          <div id="linked-children-list" class="workspace-list">
+            <p class="empty-state">No linked students yet. Ask your child's teacher to link your account.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-section">
+        <div class="workspace-card">
+          <div class="workspace-header">
+            <h3>Session History</h3>
+            <span class="workspace-kicker">Your children's discussions</span>
+          </div>
+          <div id="parent-session-history-list" class="workspace-list">
+            <p class="empty-state">No sessions yet.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- SETUP SCREEN (materials + optional title) -->
@@ -290,6 +372,23 @@
      </div>
    </div>
 
-  <script src="/src/app.js?v=6"></script>
+   <!-- Transcript Viewer Modal (hidden until explicitly opened) -->
+   <div id="transcript-modal" class="modal" style="display:none">
+     <div class="modal-backdrop" id="transcript-backdrop"></div>
+     <div class="modal-content transcript-modal-content">
+       <div class="modal-header">
+         <h2 id="transcript-title">Session Transcript</h2>
+         <button class="modal-close" id="transcript-close">&times;</button>
+       </div>
+       <div class="modal-body" id="transcript-body">
+         <div class="analytics-loading">
+           <div class="spinner"></div>
+           <p>Loading transcript...</p>
+         </div>
+       </div>
+     </div>
+   </div>
+
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>

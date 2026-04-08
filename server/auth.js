@@ -1,7 +1,10 @@
 const crypto = require('crypto');
+const { promisify } = require('util');
 const jwt = require('jsonwebtoken');
 const usersRepo = require('./db/repositories/users');
 const authSessionsRepo = require('./db/repositories/authSessions');
+
+const scryptAsync = promisify(crypto.scrypt);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-socratic-secret-change-me';
 const AUTH_TOKEN_TTL = process.env.AUTH_TOKEN_TTL || '30d';
@@ -22,28 +25,20 @@ function normalizeRole(role, fallback = 'Teacher') {
   return match || fallback;
 }
 
-function hashPassword(password) {
-  return new Promise((resolve, reject) => {
-    const salt = crypto.randomBytes(16).toString('hex');
-    crypto.scrypt(password, salt, HASH_KEYLEN, (err, derivedKey) => {
-      if (err) return reject(err);
-      resolve(`${salt}:${derivedKey.toString('hex')}`);
-    });
-  });
+async function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derivedKey = await scryptAsync(password, salt, HASH_KEYLEN);
+  return `${salt}:${derivedKey.toString('hex')}`;
 }
 
-function verifyPassword(password, storedHash) {
-  return new Promise((resolve, reject) => {
-    const [salt, key] = String(storedHash || '').split(':');
-    if (!salt || !key) return resolve(false);
+async function verifyPassword(password, storedHash) {
+  const [salt, key] = String(storedHash || '').split(':');
+  if (!salt || !key) return false;
 
-    crypto.scrypt(password, salt, HASH_KEYLEN, (err, derivedKey) => {
-      if (err) return reject(err);
-      const expected = Buffer.from(key, 'hex');
-      if (expected.length !== derivedKey.length) return resolve(false);
-      resolve(crypto.timingSafeEqual(expected, derivedKey));
-    });
-  });
+  const derivedKey = await scryptAsync(password, salt, HASH_KEYLEN);
+  const expected = Buffer.from(key, 'hex');
+  if (expected.length !== derivedKey.length) return false;
+  return crypto.timingSafeEqual(expected, derivedKey);
 }
 
 function parseTtlMs(ttl = AUTH_TOKEN_TTL) {

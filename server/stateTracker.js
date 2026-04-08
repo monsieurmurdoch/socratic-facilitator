@@ -81,6 +81,119 @@ class SessionStateTracker {
     }
   }
 
+  /**
+   * Load full message history from database and reconstruct in-memory state.
+   * Used when reconnecting to a session whose in-memory state has been lost.
+   */
+  async loadFullHistory() {
+    await this.loadFromDatabase();
+
+    try {
+      const dbMessages = await messagesRepo.getBySession(this.sessionId, { limit: 5000, order: 'ASC' });
+
+      this.messages = [];
+      this.aiMessages = [];
+      this.turns = [];
+      this.totalMessageCount = 0;
+      this.aiMessageCount = 0;
+      this.lastAIMessageIndex = -1;
+
+      for (const msg of dbMessages) {
+        const timestamp = msg.created_at ? new Date(msg.created_at).getTime() : Date.now();
+
+        if (msg.sender_type === 'facilitator') {
+          const message = {
+            index: this.totalMessageCount,
+            participantId: '__facilitator__',
+            participantName: 'Facilitator',
+            text: msg.content,
+            move: msg.move_type,
+            targetParticipantId: msg.target_participant_id || null,
+            timestamp
+          };
+          this.messages.push(message);
+          this.aiMessages.push(message);
+          this.aiMessageCount++;
+          this.lastAIMessageIndex = message.index;
+
+          this.turns.push({
+            turnIndex: this.turnCount,
+            participantId: '__facilitator__',
+            participantName: 'Facilitator',
+            utterances: [msg.content],
+            text: msg.content,
+            startTimestamp: timestamp,
+            endTimestamp: timestamp,
+            firstMessageIndex: message.index,
+            lastMessageIndex: message.index,
+            move: msg.move_type
+          });
+          this.turnCount++;
+        } else if (msg.sender_type === 'participant') {
+          // Find the participant by DB ID
+          let participantId = msg.participant_id;
+          let participantName = msg.participant_name || msg.sender_name || 'Unknown';
+          let participant = this.participants.get(participantId);
+
+          // If not found by DB ID, try matching by name
+          if (!participant) {
+            for (const [id, p] of this.participants) {
+              if (p.name === participantName) {
+                participantId = id;
+                participant = p;
+                break;
+              }
+            }
+          }
+
+          const message = {
+            index: this.totalMessageCount,
+            participantId,
+            participantName,
+            text: msg.content,
+            timestamp
+          };
+          this.messages.push(message);
+
+          if (participant) {
+            participant.messageCount++;
+            participant.lastSpokeAt = timestamp;
+            participant.lastSpokeMessageIndex = message.index;
+          }
+
+          // Reconstruct turns
+          const lastTurn = this.turns[this.turns.length - 1];
+          if (lastTurn && lastTurn.participantId === participantId) {
+            lastTurn.utterances.push(msg.content);
+            lastTurn.text = lastTurn.utterances.join(' ');
+            lastTurn.endTimestamp = timestamp;
+            lastTurn.lastMessageIndex = message.index;
+          } else {
+            this.turns.push({
+              turnIndex: this.turnCount,
+              participantId,
+              participantName,
+              utterances: [msg.content],
+              text: msg.content,
+              startTimestamp: timestamp,
+              endTimestamp: timestamp,
+              firstMessageIndex: message.index,
+              lastMessageIndex: message.index
+            });
+            this.turnCount++;
+          }
+        }
+
+        this.totalMessageCount++;
+        this.lastActivityAt = timestamp;
+      }
+
+      console.log(`[StateTracker] Full history loaded for ${this.sessionId}: ${this.totalMessageCount} messages, ${this.turns.length} turns`);
+    } catch (error) {
+      console.error('[StateTracker] Error loading full history:', error);
+    }
+  }
+
   async addParticipant(id, name, age, opts = {}) {
     const participant = new ParticipantState(id, name, age);
     // Attach auth metadata if user is logged in

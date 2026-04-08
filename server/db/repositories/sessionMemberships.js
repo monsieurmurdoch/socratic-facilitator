@@ -59,9 +59,21 @@ async function listBySession(sessionId) {
   return result.rows;
 }
 
+async function getByUserId(userId) {
+  const result = await db.query(
+    `SELECT *
+     FROM session_memberships
+     WHERE user_id = $1
+     ORDER BY joined_at DESC`,
+    [userId]
+  );
+  return result.rows;
+}
+
 module.exports = {
   recordJoin,
   recordLeave,
   recordMessage,
-  listBySession
+  listBySession,
+  getByUserId
 };

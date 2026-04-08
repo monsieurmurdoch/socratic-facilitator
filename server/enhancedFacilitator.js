@@ -25,6 +25,8 @@ const {
 } = require("./platoIdentity");
 const sessionPrimer = require("./content/primer");
 const primedContextRepo = require("./db/repositories/primedContext");
+const learnerProfilesRepo = require("./db/repositories/learnerProfiles");
+const { claudeBreaker } = require("./utils/api-breakers");
 
 class EnhancedFacilitationEngine {
   constructor(apiKey) {
@@ -180,6 +182,49 @@ class EnhancedFacilitationEngine {
       // No primed context — that's fine, not all sessions have materials
     }
 
+    // Fetch participant history from learner profiles (if available)
+    let participantHistory = null;
+    try {
+      const participants = Array.from(stateTracker.participants.values());
+      const historyPromises = participants.map(async (p) => {
+        if (!p.userId) return null;
+
+        try {
+          const memoryContext = await learnerProfilesRepo.getMemoryContext(p.userId, 3);
+          if (!memoryContext || memoryContext.length === 0) return null;
+
+          const profile = await learnerProfilesRepo.findByUser(p.userId);
+          const topics = Array.isArray(profile?.topics_discussed)
+            ? profile.topics_discussed
+            : JSON.parse(profile?.topics_discussed || '[]');
+
+          const strengths = Array.isArray(profile?.strengths)
+            ? profile.strengths
+            : JSON.parse(profile?.strengths || '[]');
+
+          const growthAreas = Array.isArray(profile?.growth_areas)
+            ? profile.growth_areas
+            : JSON.parse(profile?.growth_areas || '[]');
+
+          return {
+            name: p.name,
+            sessionCount: memoryContext.length,
+            topics: topics.slice(0, 3), // Last 3 topics
+            strengths: strengths.slice(0, 2), // Top 2 strengths
+            growthAreas: growthAreas.slice(0, 2) // Top 2 growth areas
+          };
+        } catch (err) {
+          console.warn(`[EnhancedFacilitator] Error fetching profile for user ${p.userId}:`, err.message);
+          return null;
+        }
+      });
+
+      const histories = await Promise.all(historyPromises);
+      participantHistory = histories.filter(Boolean);
+    } catch (e) {
+      console.warn('[EnhancedFacilitator] Error fetching participant histories:', e.message);
+    }
+
     const systemPrompt = this._buildSystemPrompt(
       stateTracker.topic,
       ageCalibration,
@@ -187,7 +232,8 @@ class EnhancedFacilitationEngine {
       llmContext,
       ageProfile,
       participantCount,
-      primedSnippet
+      primedSnippet,
+      participantHistory
     );
 
     const userMessage = this._buildUserMessage(
@@ -199,17 +245,19 @@ class EnhancedFacilitationEngine {
     );
 
     try {
-      const response = await Promise.race([
-        this.client.messages.create({
-          model: this.model,
-          max_tokens: 200,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userMessage }]
-        }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Message generation timeout')), 8000)
-        )
-      ]);
+      const response = await claudeBreaker.execute(() =>
+        Promise.race([
+          this.client.messages.create({
+            model: this.model,
+            max_tokens: 200,
+            system: systemPrompt,
+            messages: [{ role: "user", content: userMessage }]
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Message generation timeout')), 8000)
+          )
+        ])
+      );
 
       const text = response.content[0].text.trim();
       const jsonStr = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
@@ -287,10 +335,24 @@ class EnhancedFacilitationEngine {
   /**
    * Build the system prompt.
    */
-  _buildSystemPrompt(topic, ageCalibration, interventionType, llmContext, ageProfile = 'middle', participantCount = 2, primedSnippet = null) {
+  _buildSystemPrompt(topic, ageCalibration, interventionType, llmContext, ageProfile = 'middle', participantCount = 2, primedSnippet = null, participantHistory = null) {
     const isSolo = participantCount <= 1;
     const interventionGuidance = this._getInterventionGuidance(interventionType, llmContext);
     const platoIdentity = getPlatoSystemPromptAddition(ageProfile);
+
+    // Build participant history section if available
+    let participantHistorySection = '';
+    if (participantHistory && participantHistory.length > 0) {
+      participantHistorySection = '\nPARTICIPANT HISTORY:\n';
+      for (const p of participantHistory) {
+        const topicsStr = p.topics.length > 0 ? p.topics.slice(0, 3).join(', ') : 'various topics';
+        const strengthsStr = p.strengths.length > 0 ? p.strengths.slice(0, 2).join(', ') : 'emerging strengths';
+        const growthStr = p.growthAreas.length > 0 ? p.growthAreas.slice(0, 2).join(', ') : 'areas to explore';
+
+        participantHistorySection += `- ${p.name}: Previously participated in ${p.sessionCount} discussions about ${topicsStr}. Strengths: ${strengthsStr}. Areas for growth: ${growthStr}.\n`;
+      }
+      participantHistorySection += '\n';
+    }
 
     const roleDescription = isSolo
       ? `YOUR ROLE:
@@ -328,6 +390,7 @@ ${roleDescription}
 
 ${silenceGuidance}
 
+${participantHistorySection}
 CURRENT CONVERSATION STATE:
 Phase: ${llmContext.phase}
 Messages so far: ${llmContext.messageCount}
@@ -517,11 +580,13 @@ ${safeMaterials ? `<source_materials>${safeMaterials}</source_materials>` : ''}
 Respond with ONLY the opening message text, nothing else.`;
 
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 300,
-        messages: [{ role: "user", content: prompt }]
-      });
+      const response = await claudeBreaker.execute(() =>
+        this.client.messages.create({
+          model: this.model,
+          max_tokens: 300,
+          messages: [{ role: "user", content: prompt }]
+        })
+      );
       return response.content[0].text.trim();
     } catch (error) {
       console.error("Error generating opening:", error.message);
@@ -561,11 +626,13 @@ ${safeHistory}
 Respond with ONLY the closing message text.`;
 
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 400,
-        messages: [{ role: "user", content: prompt }]
-      });
+      const response = await claudeBreaker.execute(() =>
+        this.client.messages.create({
+          model: this.model,
+          max_tokens: 400,
+          messages: [{ role: "user", content: prompt }]
+        })
+      );
       return response.content[0].text.trim();
     } catch (error) {
       console.error("Error generating closing:", error.message);
@@ -607,17 +674,19 @@ Respond with ONLY the closing message text.`;
     }));
 
     try {
-      const response = await Promise.race([
-        this.client.messages.create({
-          model: this.model,
-          max_tokens: 120,
-          system: this._buildWarmupPrompt(allParticipantNames, ageCalibration, topic, isGroup),
-          messages
-        }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Warmup chat timeout')), 6000)
-        )
-      ]);
+      const response = await claudeBreaker.execute(() =>
+        Promise.race([
+          this.client.messages.create({
+            model: this.model,
+            max_tokens: 120,
+            system: this._buildWarmupPrompt(allParticipantNames, ageCalibration, topic, isGroup),
+            messages
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Warmup chat timeout')), 6000)
+          )
+        ])
+      );
 
       const reply = response.content[0].text.trim();
 

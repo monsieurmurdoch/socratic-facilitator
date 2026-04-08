@@ -14,6 +14,7 @@ const {
   requireAuth
 } = require('../auth');
 const { logAudit, getRequestIp } = require('../audit');
+const { authLimiter } = require('../middleware/rate-limit');
 
 router.use(express.json({ limit: '1mb' }));
 
@@ -79,7 +80,7 @@ router.get('/demo-teacher', (_req, res) => {
   res.json(getDemoTeacherConfig());
 });
 
-router.post('/demo-teacher/login', async (req, res) => {
+router.post('/demo-teacher/login', authLimiter, async (req, res) => {
   try {
     if (!isDemoTeacherEnabled()) {
       return res.status(403).json({ error: 'Demo teacher login is not enabled' });
@@ -121,7 +122,7 @@ router.post('/demo-teacher/login', async (req, res) => {
   }
 });
 
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   try {
     const name = String(req.body.name || '').trim();
     const email = normalizeEmail(req.body.email || '');
@@ -167,7 +168,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const email = normalizeEmail(req.body.email || '');
     const password = String(req.body.password || '');

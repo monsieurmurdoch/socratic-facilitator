@@ -16,6 +16,7 @@ const contentExtractor = require('../content/extractor');
 const sessionPrimer = require('../content/primer');
 const { DISCUSSION_TOPICS } = require('../config');
 const { requireAuth } = require('../auth');
+const { apiLimiter } = require('../middleware/rate-limit');
 
 // Enable JSON body parsing
 router.use(express.json({ limit: '10mb' }));
@@ -25,7 +26,7 @@ router.use(express.urlencoded({ extended: true }));
  * Create a new session
  * POST /api/sessions
  */
-router.post('/', async (req, res) => {
+router.post('/', apiLimiter, async (req, res) => {
   try {
     const { title, openingQuestion, conversationGoal, topicId, classId = null, previousSessionShortCode = null } = req.body;
 
