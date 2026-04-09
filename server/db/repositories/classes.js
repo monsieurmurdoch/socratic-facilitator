@@ -19,7 +19,7 @@ async function listByOwner(ownerUserId) {
      LEFT JOIN sessions s ON s.class_id = c.id
      WHERE c.owner_user_id = $1
      GROUP BY c.id
-     ORDER BY c.created_at DESC`,
+     ORDER BY c.sort_order NULLS LAST, c.created_at DESC`,
     [ownerUserId]
   );
   return result.rows;
@@ -82,11 +82,22 @@ async function update(classId, fields) {
   return result.rows[0] || null;
 }
 
+async function reorder(ownerUserId, orderedIds) {
+  // Only update classes owned by this user
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.query(
+      `UPDATE classes SET sort_order = $1 WHERE id = $2 AND owner_user_id = $3`,
+      [i, orderedIds[i], ownerUserId]
+    );
+  }
+}
+
 module.exports = {
   create,
   listByOwner,
   listByUser,
   findOwnedByUser,
   findById,
-  update
+  update,
+  reorder
 };

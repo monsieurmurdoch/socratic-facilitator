@@ -370,28 +370,6 @@
     });
   }
 
-  function getClassOrder() {
-    try { return JSON.parse(localStorage.getItem('classOrder') || '[]'); } catch { return []; }
-  }
-
-  function saveClassOrder(orderedIds) {
-    localStorage.setItem('classOrder', JSON.stringify(orderedIds));
-  }
-
-  function applyClassOrder(classes) {
-    const order = getClassOrder();
-    if (order.length === 0) return classes;
-    const indexed = new Map(classes.map(c => [c.id, c]));
-    const ordered = [];
-    for (const id of order) {
-      const cls = indexed.get(id);
-      if (cls) { ordered.push(cls); indexed.delete(id); }
-    }
-    // Append any classes not in the saved order (new ones)
-    for (const cls of indexed.values()) ordered.push(cls);
-    return ordered;
-  }
-
   function renderClasses() {
     const list = document.getElementById("classes-list");
     const select = document.getElementById("session-class-select");
@@ -409,8 +387,8 @@
       return;
     }
 
-    // Apply persisted drag-and-drop order
-    const orderedClasses = applyClassOrder(savedClasses);
+    // Server returns classes in sort_order already
+    const orderedClasses = savedClasses;
 
     if (orderedClasses.length === 0) {
       list.innerHTML = '<p class="empty-state">No classes yet. Create your first one here.</p>';
@@ -532,8 +510,15 @@
           const toIdx = ids.indexOf(classId);
           const insertIdx = e.clientY < rect.top + rect.height / 2 ? toIdx : toIdx + 1;
           ids.splice(insertIdx, 0, draggedId);
-          saveClassOrder(ids);
+          // Reorder locally for instant feedback, then persist to server
+          const draggedCls = savedClasses.find(c => c.id === draggedId);
+          savedClasses.splice(savedClasses.indexOf(draggedCls), 1);
+          savedClasses.splice(insertIdx, 0, draggedCls);
           renderClasses();
+          apiPatch('/api/classes/reorder', { order: ids }).catch(err => {
+            console.warn('[Classes] Reorder failed:', err.message);
+            refreshWorkspace(); // revert on failure
+          });
         });
       });
     }

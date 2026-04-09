@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS classes (
   name VARCHAR(160) NOT NULL,
   description TEXT,
   age_range VARCHAR(60),
+  sort_order INT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -440,6 +441,7 @@ CREATE INDEX IF NOT EXISTS idx_learner_profiles_user ON learner_profiles(user_id
 -- Robust fixes for schema warnings and missing columns (user_id, is_anchor, etc.)
 -- This ensures the DB is always consistent even if the $ splitter fails on functions
 ALTER TABLE IF EXISTS session_memberships ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE IF EXISTS classes ADD COLUMN IF NOT EXISTS sort_order INT;
 ALTER TABLE IF EXISTS message_analytics ADD COLUMN IF NOT EXISTS is_anchor BOOLEAN DEFAULT false;
 ALTER TABLE IF EXISTS message_analytics ADD COLUMN IF NOT EXISTS referenced_anchor BOOLEAN DEFAULT false;
 ALTER TABLE IF EXISTS message_analytics ADD COLUMN IF NOT EXISTS responded_to_peer BOOLEAN DEFAULT false;

@@ -65,6 +65,20 @@ router.post('/', requireAnyRole(['Teacher', 'Admin', 'SuperAdmin']), async (req,
   }
 });
 
+router.patch('/reorder', requireAnyRole(['Teacher', 'Admin', 'SuperAdmin']), async (req, res) => {
+  try {
+    const orderedIds = req.body.order;
+    if (!Array.isArray(orderedIds) || orderedIds.some(id => typeof id !== 'string')) {
+      return res.status(400).json({ error: 'order must be an array of class IDs' });
+    }
+    await classesRepo.reorder(req.user.id, orderedIds);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Reorder classes error:', error);
+    res.status(500).json({ error: 'Failed to reorder classes' });
+  }
+});
+
 router.patch('/:id', requireAnyRole(['Teacher', 'Admin', 'SuperAdmin']), async (req, res) => {
   try {
     const cls = await classesRepo.findById(req.params.id);
