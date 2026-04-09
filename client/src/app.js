@@ -806,6 +806,24 @@
         isHost = true;
         break;
 
+      case "session_ended_readonly": {
+        // Tried to join an ended session — show read-only transcript
+        const overlay = document.getElementById("readonly-overlay");
+        const feed = document.getElementById("readonly-feed");
+        const titleEl = document.getElementById("readonly-title");
+        if (overlay && feed) {
+          titleEl.textContent = msg.title || "Past Discussion";
+          feed.innerHTML = msg.messages.map(m => {
+            const isPlato = m.senderType === 'ai';
+            const name = isPlato ? 'Plato' : (m.senderName || 'Participant');
+            const cls = isPlato ? 'facilitator_message' : 'participant_message';
+            return `<div class="${cls}"><strong>${escapeHtml(name)}</strong>: ${escapeHtml(m.content)}</div>`;
+          }).join("");
+          overlay.style.display = "flex";
+        }
+        break;
+      }
+
       case "session_joined": {
         const isRejoin = currentSessionId === msg.sessionId && myId === msg.yourId;
         currentSessionId = msg.sessionId;
@@ -953,7 +971,15 @@
     try {
       // Upload each material
       for (const m of materials) {
-        if (m.type === "file") {
+        if (m.fromClass && m.extractedText) {
+          // Pre-loaded from a previous session — send as text
+          await apiPost(`/api/sessions/${currentSessionId}/materials`, {
+            type: m.type === 'url' ? 'url' : 'txt',
+            url: m.url || null,
+            text: m.extractedText,
+            filename: m.name
+          });
+        } else if (m.type === "file") {
           const formData = new FormData();
           formData.append("file", m.file);
           await fetch(`/api/sessions/${currentSessionId}/materials`, {
@@ -1001,9 +1027,10 @@
       const div = document.createElement("div");
       div.className = "material-item";
       const icon = m.type === "url" ? "&#128279;" : "&#128196;";
+      const badge = m.fromClass ? ' <span class="material-badge">from class</span>' : '';
       div.innerHTML = `
         <span class="material-icon">${icon}</span>
-        <span class="material-name">${escapeHtml(m.name)}</span>
+        <span class="material-name">${escapeHtml(m.name)}${badge}</span>
         <button class="material-remove" data-index="${i}">&times;</button>
       `;
       container.appendChild(div);
@@ -1017,6 +1044,28 @@
     } else {
       uploadArea.style.opacity = "1";
       uploadArea.style.pointerEvents = "auto";
+    }
+  }
+
+  async function loadClassMaterials(classId) {
+    if (!classId || !authToken) {
+      return;
+    }
+    try {
+      const result = await apiGet(`/api/classes/${classId}/materials`);
+      if (result.materials && result.materials.length > 0) {
+        // Replace current materials with class's saved materials
+        materials = result.materials.map(m => ({
+          type: m.type === 'url' ? 'url' : 'file',
+          name: m.filename || m.url || 'Material',
+          url: m.url,
+          extractedText: m.extractedText,
+          fromClass: true
+        }));
+        renderMaterials();
+      }
+    } catch (err) {
+      console.warn('[Materials] Could not load class materials:', err.message);
     }
   }
 
@@ -1402,7 +1451,10 @@
     // Auto-select the highlighted class in the setup dropdown
     if (selectedClassId) {
       const classSelect = document.getElementById("session-class-select");
-      if (classSelect) classSelect.value = selectedClassId;
+      if (classSelect) {
+        classSelect.value = selectedClassId;
+        loadClassMaterials(selectedClassId);
+      }
     }
   });
 
@@ -1410,6 +1462,18 @@
   document.getElementById("back-to-welcome-btn")?.addEventListener("click", () => {
     abandonDraftSession();
     showScreen("welcome");
+  });
+
+  // Class dropdown change → load saved materials from that class
+  document.getElementById("session-class-select")?.addEventListener("change", (e) => {
+    const classId = e.target.value;
+    if (classId) {
+      loadClassMaterials(classId);
+    } else {
+      // Cleared class → clear pre-loaded materials
+      materials = materials.filter(m => !m.fromClass);
+      renderMaterials();
+    }
   });
 
   // File upload

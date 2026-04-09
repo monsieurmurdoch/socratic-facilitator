@@ -3,6 +3,8 @@ const router = express.Router();
 const classesRepo = require('../db/repositories/classes');
 const classMembershipsRepo = require('../db/repositories/classMemberships');
 const usersRepo = require('../db/repositories/users');
+const materialsRepo = require('../db/repositories/materials');
+const sessionsRepo = require('../db/repositories/sessions');
 const { USER_ROLES, requireAuth, requireAnyRole } = require('../auth');
 
 router.use(express.json({ limit: '1mb' }));
@@ -76,6 +78,51 @@ router.patch('/reorder', requireAnyRole(['Teacher', 'Admin', 'SuperAdmin']), asy
   } catch (error) {
     console.error('Reorder classes error:', error);
     res.status(500).json({ error: 'Failed to reorder classes' });
+  }
+});
+
+/**
+ * GET /api/classes/:id/materials
+ * Returns materials from the class's most recent session
+ * so teachers can reuse uploaded content across sessions.
+ */
+router.get('/:id/materials', async (req, res) => {
+  try {
+    const cls = await classesRepo.findById(req.params.id);
+    if (!cls) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+    const isOwner = cls.owner_user_id === req.user.id;
+    const isElevated = ['Admin', 'SuperAdmin'].includes(req.user.role);
+    if (!isOwner && !isElevated) {
+      const membership = await classMembershipsRepo.findByClassAndUser(cls.id, req.user.id);
+      if (!membership) return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Find the most recent session for this class that has materials
+    const latestSession = await sessionsRepo.findLatestWithMaterials(cls.id);
+    if (!latestSession) {
+      return res.json({ materials: [] });
+    }
+
+    const materials = await materialsRepo.getBySession(latestSession.id);
+    res.json({
+      materials: materials.map(m => ({
+        id: m.id,
+        filename: m.filename,
+        type: m.original_type,
+        url: m.url,
+        extractedText: m.extracted_text
+      })),
+      sourceSession: {
+        shortCode: latestSession.short_code,
+        title: latestSession.title,
+        createdAt: latestSession.created_at
+      }
+    });
+  } catch (error) {
+    console.error('Get class materials error:', error);
+    res.status(500).json({ error: 'Failed to load class materials' });
   }
 });
 

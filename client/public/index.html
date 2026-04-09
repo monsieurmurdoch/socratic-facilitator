@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Socratic Facilitator</title>
-  <link rel="stylesheet" href="/src/style.css?v=14">
+  <link rel="stylesheet" href="/src/style.css?v=15">
 </head>
 <body>
 
@@ -290,7 +290,8 @@
     <h2>Waiting Room</h2>
 
     <div class="session-code" id="session-code">------</div>
-    <p style="color: var(--text-secondary); font-size: 0.85rem;">Share this code so others can join</p>
+    <p style="color: var(--text-secondary); font-size: 0.85rem;">Share this code so others can join this discussion.</p>
+    <p style="color: var(--text-muted); font-size: 0.78rem;">Each code is for one live session. It can't be reused once the discussion ends.</p>
 
     <div id="lobby-topic-section" class="passage-preview" style="display:none;">
       <h3 id="lobby-topic">Topic</h3>
@@ -395,6 +396,16 @@
        </div>
      </div>
    </div>
+
+  <!-- Read-only transcript overlay for ended sessions -->
+  <div id="readonly-overlay" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center;">
+    <div class="readonly-card">
+      <h2 id="readonly-title">Past Discussion</h2>
+      <p class="readonly-subtitle">This session has ended. Below is the transcript.</p>
+      <div id="readonly-feed" class="readonly-feed"></div>
+      <button class="btn btn-primary" onclick="document.getElementById('readonly-overlay').style.display='none';">Close</button>
+    </div>
+  </div>
 
   <script src="/src/app.js?v=7"></script>
 </body>

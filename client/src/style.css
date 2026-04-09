@@ -669,6 +669,65 @@ body {
   color: #A0522D;
 }
 
+.material-badge {
+  font-size: 0.7rem;
+  background: rgba(139, 94, 60, 0.1);
+  color: var(--accent);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  font-weight: 500;
+}
+
+/* Read-only transcript overlay */
+.readonly-card {
+  background: var(--surface);
+  border-radius: 18px;
+  padding: 32px;
+  max-width: 700px;
+  width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 20px 60px var(--shadow);
+}
+
+.readonly-subtitle {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.readonly-feed {
+  overflow-y: auto;
+  max-height: 50vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.readonly-feed .facilitator_message,
+.readonly-feed .participant_message {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.readonly-feed .facilitator_message {
+  background: rgba(139, 94, 60, 0.08);
+  border-left: 3px solid var(--accent);
+}
+
+.readonly-feed .participant_message {
+  background: var(--surface);
+}
+
 /* Setup Actions */
 
 .setup-actions {

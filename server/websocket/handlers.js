@@ -192,6 +192,27 @@ async function handleJoinSession(ws, msg, ctx) {
       const dbSession = await ctx.deps.sessionsRepo.findByShortCode(sessionId);
       console.log(`[join_session] DB lookup result:`, dbSession ? `found (id=${dbSession.id})` : 'not found');
       if (dbSession) {
+        // If session has ended, send the transcript as read-only instead of live join
+        if (dbSession.status === 'ended') {
+          console.log(`[join_session] Session ${sessionId} has ended — sending read-only transcript`);
+          const messagesRepo = require("../db/repositories/messages");
+          const msgs = await messagesRepo.getBySession(dbSession.id, { limit: 500 });
+          ws.send(JSON.stringify({
+            type: "session_ended_readonly",
+            sessionId,
+            title: dbSession.title,
+            messages: msgs.map(m => ({
+              senderType: m.sender_type,
+              senderName: m.sender_name || m.participant_name,
+              content: m.content,
+              moveType: m.move_type,
+              targetName: m.target_participant_name,
+              createdAt: m.created_at
+            }))
+          }));
+          return;
+        }
+
         const SessionStateTracker = require("../stateTracker").SessionStateTracker;
         const stateTracker = new SessionStateTracker(dbSession.id, dbSession);
         await stateTracker.loadFromDatabase();

@@ -208,7 +208,7 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    const { type, url } = req.body;
+    const { type, url, text, filename: bodyFilename } = req.body;
     let extractedText = '';
     let filename = null;
     let storagePath = null;
@@ -220,6 +220,11 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
       originalType = contentExtractor.getFileType(filename, req.file.mimetype);
       const extracted = await contentExtractor.extract(req.file.buffer, originalType);
       extractedText = extracted.text || '';
+    } else if (text) {
+      // Pre-extracted text (e.g. carried over from a previous session's materials)
+      filename = bodyFilename || 'class-material.txt';
+      originalType = type || 'txt';
+      extractedText = text;
     } else if (url) {
       originalType = 'url';
       filename = url.substring(0, 255);

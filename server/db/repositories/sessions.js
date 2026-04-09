@@ -300,5 +300,22 @@ module.exports = {
   getDetailedAnalytics,
   userInClass,
   userWasParticipant,
-  generateShortCode
+  generateShortCode,
+  findLatestWithMaterials
 };
+
+/**
+ * Find the most recent session for a class that has uploaded materials.
+ * Used to pre-populate materials when creating a new session under the same class.
+ */
+async function findLatestWithMaterials(classId) {
+  const result = await db.query(`
+    SELECT s.* FROM sessions s
+    JOIN source_materials sm ON sm.session_id = s.id
+    WHERE s.class_id = $1
+    GROUP BY s.id
+    ORDER BY s.created_at DESC
+    LIMIT 1
+  `, [classId]);
+  return result.rows[0] || null;
+}
