@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Socratic Facilitator</title>
-  <link rel="stylesheet" href="/src/style.css?v=12">
+  <link rel="stylesheet" href="/src/style.css?v=13">
 </head>
 <body>
 
@@ -132,12 +132,15 @@
       <input type="text" id="name-input-teacher" placeholder="Enter your name" autocomplete="off" style="display:none;">
 
       <div class="dashboard-section">
-        <div class="workspace-card">
+        <div class="workspace-card" id="saved-classes-card">
           <div class="workspace-header">
             <h3>Saved Classes</h3>
+            <button id="classes-toggle" class="workspace-toggle" aria-label="Toggle classes">
+              <span class="toggle-icon">▼</span>
+            </button>
             <span class="workspace-kicker">Reuse groups and keep context</span>
           </div>
-          <div id="class-creation">
+          <div id="class-creation" class="classes-collapsible">
             <div class="form-group auth-form-group">
               <label for="new-class-name">Class Name</label>
               <input type="text" id="new-class-name" placeholder="9th Grade Humanities - Period 2">

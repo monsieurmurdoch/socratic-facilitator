@@ -370,6 +370,28 @@
     });
   }
 
+  function getClassOrder() {
+    try { return JSON.parse(localStorage.getItem('classOrder') || '[]'); } catch { return []; }
+  }
+
+  function saveClassOrder(orderedIds) {
+    localStorage.setItem('classOrder', JSON.stringify(orderedIds));
+  }
+
+  function applyClassOrder(classes) {
+    const order = getClassOrder();
+    if (order.length === 0) return classes;
+    const indexed = new Map(classes.map(c => [c.id, c]));
+    const ordered = [];
+    for (const id of order) {
+      const cls = indexed.get(id);
+      if (cls) { ordered.push(cls); indexed.delete(id); }
+    }
+    // Append any classes not in the saved order (new ones)
+    for (const cls of indexed.values()) ordered.push(cls);
+    return ordered;
+  }
+
   function renderClasses() {
     const list = document.getElementById("classes-list");
     const select = document.getElementById("session-class-select");
@@ -387,10 +409,13 @@
       return;
     }
 
-    if (savedClasses.length === 0) {
+    // Apply persisted drag-and-drop order
+    const orderedClasses = applyClassOrder(savedClasses);
+
+    if (orderedClasses.length === 0) {
       list.innerHTML = '<p class="empty-state">No classes yet. Create your first one here.</p>';
     } else {
-      list.innerHTML = savedClasses.map(cls => {
+      list.innerHTML = orderedClasses.map(cls => {
         const isSelected = cls.id === selectedClassId;
         const isEditing = cls.id === editingClassId;
         if (isEditing) {
@@ -406,7 +431,8 @@
             </div>`;
         }
         return `
-          <div class="workspace-item class-item${isSelected ? ' class-item-selected' : ''}" data-class-id="${escapeHtml(cls.id)}">
+          <div class="workspace-item class-item${isSelected ? ' class-item-selected' : ''}" data-class-id="${escapeHtml(cls.id)}" draggable="true">
+            <span class="class-drag-handle" title="Drag to reorder">&#9776;</span>
             <div class="class-item-main">
               <strong>${escapeHtml(cls.name)}</strong>
               <div class="workspace-item-meta">${escapeHtml(cls.description || "No notes yet.")}</div>
@@ -416,7 +442,7 @@
           </div>`;
       }).join("");
 
-      // Bind click handlers
+      // Bind click, edit, drag handlers
       list.querySelectorAll('.class-item').forEach(item => {
         const classId = item.dataset.classId;
 
@@ -472,10 +498,48 @@
             renderClasses();
           });
         }
+
+        // Drag and drop
+        item.addEventListener('dragstart', (e) => {
+          item.classList.add('class-item-dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', classId);
+        });
+        item.addEventListener('dragend', () => {
+          item.classList.remove('class-item-dragging');
+          list.querySelectorAll('.class-item').forEach(el => el.classList.remove('class-item-drop-above', 'class-item-drop-below'));
+        });
+        item.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          const rect = item.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          list.querySelectorAll('.class-item').forEach(el => el.classList.remove('class-item-drop-above', 'class-item-drop-below'));
+          item.classList.add(e.clientY < midY ? 'class-item-drop-above' : 'class-item-drop-below');
+        });
+        item.addEventListener('dragleave', () => {
+          item.classList.remove('class-item-drop-above', 'class-item-drop-below');
+        });
+        item.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const draggedId = e.dataTransfer.getData('text/plain');
+          if (draggedId === classId) return;
+          const ids = orderedClasses.map(c => c.id);
+          const fromIdx = ids.indexOf(draggedId);
+          if (fromIdx === -1) return;
+          ids.splice(fromIdx, 1);
+          const rect = item.getBoundingClientRect();
+          const toIdx = ids.indexOf(classId);
+          const insertIdx = e.clientY < rect.top + rect.height / 2 ? toIdx : toIdx + 1;
+          ids.splice(insertIdx, 0, draggedId);
+          saveClassOrder(ids);
+          renderClasses();
+        });
       });
     }
 
-    savedClasses.forEach(cls => {
+    // Populate dropdown in display order
+    orderedClasses.forEach(cls => {
       const option = document.createElement("option");
       option.value = cls.id;
       option.textContent = cls.name;
@@ -1728,25 +1792,31 @@
   initAnalyticsModal();
 
   function initCollapsibleSections() {
-    const toggleBtn = document.getElementById('session-history-toggle');
-    const card = document.getElementById('recent-sessions-card');
-
-    if (!toggleBtn || !card) return;
-
-    // Load collapsed state from localStorage
-    const isCollapsed = localStorage.getItem('sessionHistoryCollapsed') === 'true';
-    if (isCollapsed) {
-      card.classList.add('collapsed');
+    // Recent Sessions toggle
+    const sessionToggle = document.getElementById('session-history-toggle');
+    const sessionCard = document.getElementById('recent-sessions-card');
+    if (sessionToggle && sessionCard) {
+      if (localStorage.getItem('sessionHistoryCollapsed') === 'true') {
+        sessionCard.classList.add('collapsed');
+      }
+      sessionToggle.addEventListener('click', () => {
+        const now = sessionCard.classList.toggle('collapsed');
+        localStorage.setItem('sessionHistoryCollapsed', now);
+      });
     }
 
-    // Handle toggle click - horizontal arrow when collapsed, vertical when expanded
-    toggleBtn.addEventListener('click', () => {
-      const currentlyCollapsed = card.classList.contains('collapsed');
-      card.classList.toggle('collapsed');
-
-      // Save state to localStorage
-      localStorage.setItem('sessionHistoryCollapsed', !currentlyCollapsed);
-    });
+    // Saved Classes toggle
+    const classesToggle = document.getElementById('classes-toggle');
+    const classesCard = document.getElementById('saved-classes-card');
+    if (classesToggle && classesCard) {
+      if (localStorage.getItem('classesCollapsed') === 'true') {
+        classesCard.classList.add('collapsed');
+      }
+      classesToggle.addEventListener('click', () => {
+        const now = classesCard.classList.toggle('collapsed');
+        localStorage.setItem('classesCollapsed', now);
+      });
+    }
   }
 
   function initAnalyticsModal() {

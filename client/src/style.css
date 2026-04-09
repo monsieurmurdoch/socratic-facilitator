@@ -173,6 +173,10 @@ body {
   display: none;
 }
 
+.workspace-card.collapsed .classes-collapsible {
+  display: none;
+}
+
 .workspace-card.collapsed .toggle-icon {
   transform: rotate(-90deg);
 }
@@ -301,6 +305,41 @@ body {
 .class-edit-actions {
   display: flex;
   gap: 8px;
+}
+
+/* Drag handle */
+.class-drag-handle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: grab;
+  padding: 2px 4px;
+  flex-shrink: 0;
+  user-select: none;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+
+.class-drag-handle:hover {
+  opacity: 1;
+  color: var(--text-secondary);
+}
+
+.class-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Dragging state */
+.class-item-dragging {
+  opacity: 0.4;
+}
+
+/* Drop indicators */
+.class-item-drop-above {
+  border-top: 3px solid var(--accent) !important;
+}
+
+.class-item-drop-below {
+  border-bottom: 3px solid var(--accent) !important;
 }
 
 .workspace-item strong {
