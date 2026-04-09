@@ -750,11 +750,18 @@
   function showShareInfo(sessionId) {
     document.getElementById("session-code").textContent = sessionId;
 
-    // Show dashboard link for host
+    // Show dashboard link for host (lobby)
     const dashLink = document.getElementById("dashboard-link");
     if (dashLink && isHost) {
       dashLink.href = `/dashboard?session=${sessionId}`;
       dashLink.style.display = "";
+    }
+
+    // Show dashboard button for logged-in teachers (video sidebar)
+    const videoDashBtn = document.getElementById("video-dashboard-btn");
+    if (videoDashBtn && (isHost || accountUser?.role === 'Teacher' || accountUser?.role === 'Admin' || accountUser?.role === 'SuperAdmin')) {
+      videoDashBtn.href = `/dashboard?session=${sessionId}`;
+      videoDashBtn.style.display = "";
     }
 
     // Update URL without reload

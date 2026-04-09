@@ -1154,6 +1154,34 @@ body {
   background: rgba(160, 82, 45, 0.08);
 }
 
+.btn-dashboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 16px;
+  background: #2a7d4f;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.btn-dashboard:hover {
+  background: #236b42;
+}
+
+.dash-icon {
+  font-size: 0.75rem;
+  letter-spacing: 1px;
+}
+
 /* Sidebar scrollbar */
 
 .sidebar-transcript::-webkit-scrollbar {
