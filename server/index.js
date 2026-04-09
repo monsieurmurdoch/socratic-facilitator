@@ -47,6 +47,9 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+// Trust Railway's reverse proxy so rate-limiting sees real client IPs
+app.set('trust proxy', 1);
+
 // Serve static frontend
 app.use(express.static(path.join(__dirname, "../client/public")));
 app.use("/src", express.static(path.join(__dirname, "../client/src")));

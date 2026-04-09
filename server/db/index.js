@@ -81,12 +81,35 @@ async function initializeSchema() {
 
     const schema = fs.readFileSync(schemaPath, 'utf8');
 
-    // Split schema into individual statements and execute each
-    // pg.query() can only execute one statement at a time
-    const statements = schema
-      .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
+    // Split schema into individual statements and execute each.
+    // pg.query() can only execute one statement at a time.
+    // Must respect PostgreSQL dollar-quoting ($$ ... $$) and string literals
+    // so that semicolons inside DO $$ ... END $$ blocks aren't treated as delimiters.
+    const statements = [];
+    let current = '';
+    let inDollarQuote = false;
+
+    for (let i = 0; i < schema.length; i++) {
+      if (schema[i] === '$' && schema[i + 1] === '$') {
+        inDollarQuote = !inDollarQuote;
+        current += '$$';
+        i++; // skip second $
+        continue;
+      }
+
+      if (!inDollarQuote && schema[i] === ';') {
+        const trimmed = current.trim();
+        if (trimmed) statements.push(trimmed);
+        current = '';
+        continue;
+      }
+
+      current += schema[i];
+    }
+
+    // Catch any trailing statement without a semicolon
+    const lastTrimmed = current.trim();
+    if (lastTrimmed) statements.push(lastTrimmed);
 
     let successCount = 0;
     let skipCount = 0;

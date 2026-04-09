@@ -1756,6 +1756,27 @@ body {
   animation: fadeIn 0.4s ease;
 }
 
+/* Sticky session action bar in teacher dashboard */
+.session-action-bar {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 20px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 4px 20px var(--shadow);
+}
+
+.session-action-bar .btn-row {
+  justify-content: center;
+}
+
+.session-action-bar .form-group {
+  max-width: 100%;
+  margin-top: 12px;
+}
+
 /* Dashboard Section */
 .dashboard-section {
   display: flex;

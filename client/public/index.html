@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Socratic Facilitator</title>
-  <link rel="stylesheet" href="/src/style.css?v=10">
+  <link rel="stylesheet" href="/src/style.css?v=11">
 </head>
 <body>
 
@@ -116,21 +116,20 @@
 
     <!-- Teacher Dashboard -->
     <div id="dashboard-teacher" class="dashboard-container" style="display:none;">
-      <div class="form-group">
-        <label for="name-input">Your Name In Session</label>
-        <input type="text" id="name-input-teacher" placeholder="Enter your name" autocomplete="off" style="display:none;">
-      </div>
-      <div class="btn-row">
-        <button id="create-btn-teacher" class="btn btn-primary">Create Room</button>
-        <button id="join-toggle-btn-teacher" class="btn btn-secondary">Join Existing</button>
-      </div>
-      <div id="join-section-teacher" style="display: none;">
-        <div class="form-group">
-          <label for="join-code-input-teacher">Session Code</label>
-          <input type="text" id="join-code-input-teacher" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
+      <div class="session-action-bar">
+        <div class="btn-row">
+          <button id="create-btn-teacher" class="btn btn-primary">Create Room</button>
+          <button id="join-toggle-btn-teacher" class="btn btn-secondary">Join Existing</button>
         </div>
-        <button id="join-btn-teacher" class="btn btn-secondary">Join Session</button>
+        <div id="join-section-teacher" style="display: none;">
+          <div class="form-group">
+            <label for="join-code-input-teacher">Session Code</label>
+            <input type="text" id="join-code-input-teacher" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
+          </div>
+          <button id="join-btn-teacher" class="btn btn-secondary">Join Session</button>
+        </div>
       </div>
+      <input type="text" id="name-input-teacher" placeholder="Enter your name" autocomplete="off" style="display:none;">
 
       <div class="dashboard-section">
         <div class="workspace-card">
