@@ -3,6 +3,7 @@
  * Individual handler functions for each WebSocket message type
  */
 
+const WebSocket = require("ws");
 const { DISCUSSION_TOPICS } = require("../config");
 const { authenticateToken } = require("../auth");
 const { v4: uuidv4 } = require("uuid");
