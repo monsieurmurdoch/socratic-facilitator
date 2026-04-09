@@ -18,6 +18,8 @@
   let accountUser = null;
   let savedClasses = [];
   let sessionHistory = [];
+  let selectedClassId = null;
+  let editingClassId = null;
   let demoTeacherConfig = null; // null until server responds
   const MAX_MATERIALS = 5;
   let sttBatchBuffer = '';
@@ -276,6 +278,19 @@
     return json;
   }
 
+  async function apiPatch(endpoint, data) {
+    const res = await fetch(endpoint, {
+      method: "PATCH",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(data)
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || `Server error ${res.status}`);
+    }
+    return json;
+  }
+
   function renderAuthState() {
     const unsignedHeader = document.getElementById("unsigned-header");
     const signedInHeader = document.getElementById("signed-in-header");
@@ -375,13 +390,89 @@
     if (savedClasses.length === 0) {
       list.innerHTML = '<p class="empty-state">No classes yet. Create your first one here.</p>';
     } else {
-      list.innerHTML = savedClasses.map(cls => `
-        <div class="workspace-item class-item" data-class-id="${escapeHtml(cls.id)}">
-          <strong>${escapeHtml(cls.name)}</strong>
-          <div class="workspace-item-meta">${escapeHtml(cls.description || "No notes yet.")}</div>
-          <span class="workspace-item-tag">${cls.sessionCount} saved session${cls.sessionCount === 1 ? "" : "s"}${cls.ageRange ? ` · Ages ${escapeHtml(cls.ageRange)}` : ""}</span>
-        </div>
-      `).join("");
+      list.innerHTML = savedClasses.map(cls => {
+        const isSelected = cls.id === selectedClassId;
+        const isEditing = cls.id === editingClassId;
+        if (isEditing) {
+          return `
+            <div class="workspace-item class-item class-item-selected class-item-editing" data-class-id="${escapeHtml(cls.id)}">
+              <input type="text" class="class-edit-name" value="${escapeHtml(cls.name)}" placeholder="Class name">
+              <input type="text" class="class-edit-age" value="${escapeHtml(cls.ageRange || '')}" placeholder="Age range (e.g. 14-15)">
+              <textarea class="class-edit-desc" placeholder="Notes">${escapeHtml(cls.description || '')}</textarea>
+              <div class="class-edit-actions">
+                <button class="btn btn-small btn-primary class-save-btn">Save</button>
+                <button class="btn btn-small btn-secondary class-cancel-btn">Cancel</button>
+              </div>
+            </div>`;
+        }
+        return `
+          <div class="workspace-item class-item${isSelected ? ' class-item-selected' : ''}" data-class-id="${escapeHtml(cls.id)}">
+            <div class="class-item-main">
+              <strong>${escapeHtml(cls.name)}</strong>
+              <div class="workspace-item-meta">${escapeHtml(cls.description || "No notes yet.")}</div>
+              <span class="workspace-item-tag">${cls.sessionCount} saved session${cls.sessionCount === 1 ? "" : "s"}${cls.ageRange ? ` · Ages ${escapeHtml(cls.ageRange)}` : ""}</span>
+            </div>
+            <button class="class-edit-btn" title="Edit class">&#9998;</button>
+          </div>`;
+      }).join("");
+
+      // Bind click handlers
+      list.querySelectorAll('.class-item').forEach(item => {
+        const classId = item.dataset.classId;
+
+        // Select on click (main area only)
+        const main = item.querySelector('.class-item-main');
+        if (main) {
+          main.addEventListener('click', () => {
+            selectedClassId = selectedClassId === classId ? null : classId;
+            renderClasses();
+          });
+          main.style.cursor = 'pointer';
+        }
+
+        // Edit button
+        const editBtn = item.querySelector('.class-edit-btn');
+        if (editBtn) {
+          editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            editingClassId = classId;
+            renderClasses();
+          });
+        }
+
+        // Save button (in edit mode)
+        const saveBtn = item.querySelector('.class-save-btn');
+        if (saveBtn) {
+          saveBtn.addEventListener('click', async () => {
+            const name = item.querySelector('.class-edit-name').value.trim();
+            const ageRange = item.querySelector('.class-edit-age').value.trim() || null;
+            const description = item.querySelector('.class-edit-desc').value.trim() || null;
+            if (!name) { alert("Class name cannot be empty"); return; }
+            saveBtn.disabled = true;
+            saveBtn.textContent = "Saving...";
+            try {
+              const updated = await apiPatch(`/api/classes/${classId}`, { name, ageRange, description });
+              const idx = savedClasses.findIndex(c => c.id === classId);
+              if (idx !== -1) savedClasses[idx] = { ...savedClasses[idx], ...updated };
+              editingClassId = null;
+              renderClasses();
+            } catch (err) {
+              alert("Failed to save: " + err.message);
+              saveBtn.disabled = false;
+              saveBtn.textContent = "Save";
+            }
+          });
+        }
+
+        // Cancel button (in edit mode)
+        const cancelBtn = item.querySelector('.class-cancel-btn');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', () => {
+            editingClassId = null;
+            renderClasses();
+          });
+        }
+      });
     }
 
     savedClasses.forEach(cls => {
@@ -391,7 +482,10 @@
       select.appendChild(option);
     });
 
-    if (savedClasses.some(cls => cls.id === previousValue)) {
+    // Preserve previous selection or use selectedClassId
+    if (selectedClassId && savedClasses.some(cls => cls.id === selectedClassId)) {
+      select.value = selectedClassId;
+    } else if (savedClasses.some(cls => cls.id === previousValue)) {
       select.value = previousValue;
     }
   }
@@ -1249,6 +1343,11 @@
     if (!myName) { alert("Enter your name"); return; }
     abandonDraftSession();
     showScreen("setup");
+    // Auto-select the highlighted class in the setup dropdown
+    if (selectedClassId) {
+      const classSelect = document.getElementById("session-class-select");
+      if (classSelect) classSelect.value = selectedClassId;
+    }
   });
 
   // Back from setup

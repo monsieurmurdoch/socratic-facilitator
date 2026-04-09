@@ -65,6 +65,39 @@ router.post('/', requireAnyRole(['Teacher', 'Admin', 'SuperAdmin']), async (req,
   }
 });
 
+router.patch('/:id', requireAnyRole(['Teacher', 'Admin', 'SuperAdmin']), async (req, res) => {
+  try {
+    const cls = await classesRepo.findById(req.params.id);
+    if (!cls) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+    if (cls.owner_user_id !== req.user.id && !['Admin', 'SuperAdmin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const name = req.body.name !== undefined ? String(req.body.name).trim() : undefined;
+    const description = req.body.description !== undefined ? String(req.body.description).trim() || null : undefined;
+    const ageRange = req.body.ageRange !== undefined ? String(req.body.ageRange).trim() || null : undefined;
+
+    if (name !== undefined && !name) {
+      return res.status(400).json({ error: 'Class name cannot be empty' });
+    }
+
+    const updated = await classesRepo.update(req.params.id, { name, description, ageRange });
+    res.json({
+      id: updated.id,
+      name: updated.name,
+      description: updated.description,
+      ageRange: updated.age_range,
+      sessionCount: parseInt(cls.session_count || '0', 10),
+      createdAt: updated.created_at
+    });
+  } catch (error) {
+    console.error('Update class error:', error);
+    res.status(500).json({ error: 'Failed to update class' });
+  }
+});
+
 router.get('/:id/members', requireAuth, async (req, res) => {
   try {
     const cls = await classesRepo.findById(req.params.id);

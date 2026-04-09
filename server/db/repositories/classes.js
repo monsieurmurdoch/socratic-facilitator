@@ -62,10 +62,31 @@ async function findById(classId) {
   return result.rows[0] || null;
 }
 
+async function update(classId, fields) {
+  const sets = [];
+  const values = [];
+  let i = 1;
+  for (const [key, col] of [['name', 'name'], ['description', 'description'], ['ageRange', 'age_range']]) {
+    if (fields[key] !== undefined) {
+      sets.push(`${col} = $${i}`);
+      values.push(fields[key]);
+      i++;
+    }
+  }
+  if (sets.length === 0) return findById(classId);
+  values.push(classId);
+  const result = await db.query(
+    `UPDATE classes SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`,
+    values
+  );
+  return result.rows[0] || null;
+}
+
 module.exports = {
   create,
   listByOwner,
   listByUser,
   findOwnedByUser,
-  findById
+  findById,
+  update
 };

@@ -214,6 +214,95 @@ body {
   padding: 14px 16px;
 }
 
+/* Selected class item */
+.workspace-item.class-item-selected {
+  border-color: var(--accent);
+  background: rgba(139, 94, 60, 0.06);
+}
+
+.workspace-item.class-item-selected strong {
+  color: var(--accent);
+}
+
+/* Class item layout */
+.class-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.class-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Edit button */
+.class-edit-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.class-edit-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(139, 94, 60, 0.06);
+}
+
+/* Inline edit mode */
+.class-item-editing {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.class-edit-name,
+.class-edit-age {
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.95rem;
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+}
+
+.class-edit-name:focus,
+.class-edit-age:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.class-edit-desc {
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+}
+
+.class-edit-desc:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.class-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .workspace-item strong {
   display: block;
   font-size: 0.95rem;
