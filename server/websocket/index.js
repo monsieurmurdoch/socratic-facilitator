@@ -77,6 +77,10 @@ function setupWebSocket(wss, deps) {
         const handler = HANDLERS[msg.type];
         if (handler) {
           await handler(ws, msg, ctx);
+          // Sync mutations back to closure variables so next message sees them
+          clientId = ctx.clientId;
+          currentSessionShortCode = ctx.currentSessionShortCode;
+          deepgramWs = ctx.deepgramWs;
         } else {
           console.warn(`[WS] Unknown message type: ${msg.type}`);
         }
