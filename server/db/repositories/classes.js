@@ -1,28 +1,90 @@
 const db = require('../index');
 
+function normalizeCode(code = '') {
+  return String(code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 function generateRoomCode() {
-  const chars = 'abcdefghijkmnpqrstuvwxyz23456789';
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 4; i += 1) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return code;
+  return `RM-${code}`;
+}
+
+async function codeExistsAnywhere(code) {
+  const normalized = normalizeCode(code);
+  let classResult = { rowCount: 0 };
+  try {
+    classResult = await db.query(
+      `SELECT id
+       FROM classes
+       WHERE room_code IS NOT NULL
+         AND LOWER(REGEXP_REPLACE(room_code, '[^a-z0-9]', '', 'g')) = $1
+       LIMIT 1`,
+      [normalized]
+    );
+  } catch (error) {
+    if (error?.code !== '42703') throw error;
+  }
+
+  const sessionResult = await db.query(
+    `SELECT id
+     FROM sessions
+     WHERE LOWER(REGEXP_REPLACE(short_code, '[^a-z0-9]', '', 'g')) = $1
+     LIMIT 1`,
+    [normalized]
+  );
+
+  return classResult.rowCount > 0 || sessionResult.rowCount > 0;
 }
 
 async function reserveRoomCode() {
   let attempts = 0;
   while (attempts < 20) {
-    const code = generateRoomCode();
-    const existing = await db.query(
-      'SELECT id FROM classes WHERE room_code = $1',
-      [code]
-    );
-    if (existing.rowCount === 0) {
-      return code;
+    const baseCode = generateRoomCode();
+    if (!(await codeExistsAnywhere(baseCode))) {
+      return baseCode;
     }
+
+    for (let suffix = 2; suffix <= 9; suffix += 1) {
+      const candidate = `${baseCode}${suffix}`;
+      if (!(await codeExistsAnywhere(candidate))) {
+        return candidate;
+      }
+    }
+
     attempts += 1;
   }
   throw new Error('Failed to generate unique room code');
+}
+
+async function persistRoomCode(classId, roomCode) {
+  try {
+    const result = await db.query(
+      `UPDATE classes
+       SET room_code = $2, updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [classId, roomCode]
+    );
+    return result.rows[0] || null;
+  } catch (error) {
+    if (error?.code === '42703') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function ensureRoomCode(row) {
+  if (!row || row.room_code) return row;
+  const roomCode = await reserveRoomCode();
+  const updated = await persistRoomCode(row.id, roomCode);
+  return updated
+    ? { ...row, ...updated, room_code: updated.room_code || roomCode }
+    : { ...row, room_code: roomCode };
 }
 
 async function create({ ownerUserId, name, description = null, ageRange = null }) {
@@ -60,7 +122,7 @@ async function listByOwner(ownerUserId) {
      ORDER BY c.sort_order NULLS LAST, c.created_at DESC`,
     [ownerUserId]
   );
-  return result.rows;
+  return Promise.all(result.rows.map(ensureRoomCode));
 }
 
 async function listByUser(userId) {
@@ -78,7 +140,7 @@ async function listByUser(userId) {
      ORDER BY c.created_at DESC`,
     [userId]
   );
-  return result.rows;
+  return Promise.all(result.rows.map(ensureRoomCode));
 }
 
 async function findOwnedByUser(classId, ownerUserId) {
@@ -98,7 +160,7 @@ async function findById(classId) {
      WHERE id = $1`,
     [classId]
   );
-  return result.rows[0] || null;
+  return ensureRoomCode(result.rows[0] || null);
 }
 
 async function findByRoomCode(roomCode) {
@@ -106,10 +168,11 @@ async function findByRoomCode(roomCode) {
     const result = await db.query(
       `SELECT *
        FROM classes
-       WHERE LOWER(room_code) = LOWER($1)`,
-      [roomCode]
+       WHERE room_code IS NOT NULL
+         AND LOWER(REGEXP_REPLACE(room_code, '[^a-z0-9]', '', 'g')) = $1`,
+      [normalizeCode(roomCode)]
     );
-    return result.rows[0] || null;
+    return ensureRoomCode(result.rows[0] || null);
   } catch (error) {
     if (error?.code === '42703') {
       return null;

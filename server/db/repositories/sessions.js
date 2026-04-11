@@ -89,7 +89,10 @@ async function findById(id) {
  * Find session by short code
  */
 async function findByShortCode(shortCode) {
-  const result = await db.query('SELECT * FROM sessions WHERE short_code = $1', [shortCode]);
+  const result = await db.query(
+    'SELECT * FROM sessions WHERE LOWER(short_code) = LOWER($1)',
+    [shortCode]
+  );
   return result.rows[0] || null;
 }
 

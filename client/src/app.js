@@ -438,7 +438,10 @@
             <div class="class-item-main">
               <strong>${escapeHtml(cls.name)}</strong>
               <div class="workspace-item-meta">${escapeHtml(cls.description || "No notes yet.")}</div>
-              <span class="workspace-item-tag">Room ${escapeHtml(cls.roomCode || "pending")} · ${cls.sessionCount} session${cls.sessionCount === 1 ? "" : "s"}${cls.ageRange ? ` · Ages ${escapeHtml(cls.ageRange)}` : ""}</span>
+              <div class="class-item-tags">
+                <span class="workspace-item-tag code-badge code-badge-room">${escapeHtml(cls.roomCode || "pending")}</span>
+                <span class="workspace-item-tag">${cls.sessionCount} session${cls.sessionCount === 1 ? "" : "s"}${cls.ageRange ? ` · Ages ${escapeHtml(cls.ageRange)}` : ""}</span>
+              </div>
             </div>
             <button class="class-edit-btn" title="Edit class">&#9998;</button>
           </div>`;
@@ -605,7 +608,7 @@
                 ${selectedClass ? escapeHtml(session.title) : escapeHtml(session.className || "Quick Session")} · ${formatDateTime(session.createdAt)}
               </div>
             </div>
-            <span class="workspace-item-tag">${escapeHtml(session.status)}</span>
+            <span class="workspace-item-tag timeline-status-tag">${escapeHtml(session.status)}</span>
           </div>
           <div class="workspace-item-meta timeline-stats">
             ${session.participantCount} participants · ${session.messageCount} messages · You spoke about ${Math.round(Number(session.viewerSpeakingSeconds || 0))}s · contribution ${Number(session.viewerContributionScore || 0).toFixed(2)}
@@ -618,7 +621,7 @@
           ` : ""}
           <div class="timeline-actions">
             <button class="btn btn-secondary btn-small timeline-open-btn" data-shortcode="${escapeAttribute(session.shortCode)}">Open Analytics</button>
-            <span class="workspace-item-tag">Live code ${escapeHtml(session.shortCode)}</span>
+            <span class="workspace-item-tag code-badge code-badge-session">${escapeHtml(session.shortCode)}</span>
           </div>
         </div>
       </div>
@@ -676,6 +679,7 @@
         <button id="start-class-session-btn" class="btn btn-primary">Start Session In This Room</button>
         ${liveSession ? `<button id="join-live-session-btn" class="btn btn-secondary">Join Live Session</button>` : ""}
       </div>
+      <p class="room-code-note">Room codes stay the same for the class. Live session codes change each time you start a new session.</p>
     `;
 
     document.getElementById("copy-room-code-btn")?.addEventListener("click", () => {

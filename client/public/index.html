@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Socratic Facilitator</title>
-  <link rel="stylesheet" href="/src/style.css?v=15">
+  <link rel="stylesheet" href="/src/style.css?v=17">
 </head>
 <body>
 
@@ -106,8 +106,9 @@
       <div id="join-section" style="display: none;">
         <div class="form-group">
           <label for="join-code-input">Room Or Session Code</label>
-          <input type="text" id="join-code-input" placeholder="e.g. m34h2 or abc123" maxlength="8" autocomplete="off">
+          <input type="text" id="join-code-input" placeholder="e.g. RM-4K7P or abc123" maxlength="10" autocomplete="off">
         </div>
+        <p class="join-code-helper">Room codes start with <strong>RM-</strong>. Live session codes are six lowercase characters.</p>
         <button id="join-btn" class="btn btn-secondary">Join</button>
       </div>
     </div>
@@ -124,8 +125,9 @@
         <div id="join-section-teacher" style="display: none;">
           <div class="form-group">
             <label for="join-code-input-teacher">Room Or Session Code</label>
-            <input type="text" id="join-code-input-teacher" placeholder="e.g. m34h2 or abc123" maxlength="8" autocomplete="off">
+            <input type="text" id="join-code-input-teacher" placeholder="e.g. RM-4K7P or abc123" maxlength="10" autocomplete="off">
           </div>
+          <p class="join-code-helper">Room code for the class, or the live code for a single meeting.</p>
           <button id="join-btn-teacher" class="btn btn-secondary">Join</button>
         </div>
       </div>
@@ -202,8 +204,9 @@
         <p class="workspace-meta">Enter the room code or the live session code your teacher gave you.</p>
         <div class="form-group">
           <label for="join-code-input-student">Room Or Session Code</label>
-          <input type="text" id="join-code-input-student" placeholder="e.g. m34h2 or abc123" maxlength="8" autocomplete="off">
+          <input type="text" id="join-code-input-student" placeholder="e.g. RM-4K7P or abc123" maxlength="10" autocomplete="off">
         </div>
+        <p class="join-code-helper">You can paste either the class room code or today’s live session code.</p>
         <button id="join-btn-student" class="btn btn-primary" style="width:100%;">Join</button>
       </div>
 
