@@ -132,11 +132,14 @@ async function deleteSession(id) {
   await db.query('DELETE FROM sessions WHERE id = $1', [id]);
 }
 
-async function listHistoryByUser(userId, limit = 20) {
+async function listHistoryByUser(userId, limit = 20, { classId = null, q = '' } = {}) {
+  const search = String(q || '').trim();
+  const searchPattern = search ? `%${search}%` : null;
   const result = await db.query(
     `SELECT
       s.id,
       s.short_code,
+      s.class_id,
       s.title,
       s.status,
       s.created_at,
@@ -145,6 +148,22 @@ async function listHistoryByUser(userId, limit = 20) {
       COALESCE(sm.message_count, 0) AS viewer_message_count,
       COALESCE(sm.estimated_speaking_seconds, 0) AS viewer_speaking_seconds,
       COALESCE(sm.contribution_score, 0) AS viewer_contribution_score,
+      (
+        SELECT p2.name
+        FROM participants p2
+        WHERE p2.session_id = s.id
+          AND ($4::text IS NOT NULL AND p2.name ILIKE $4)
+        ORDER BY p2.joined_at ASC
+        LIMIT 1
+      ) AS matched_participant,
+      (
+        SELECT LEFT(m2.content, 220)
+        FROM messages m2
+        WHERE m2.session_id = s.id
+          AND ($4::text IS NOT NULL AND m2.content ILIKE $4)
+        ORDER BY m2.created_at DESC
+        LIMIT 1
+      ) AS search_excerpt,
       COUNT(DISTINCT p.id) AS participant_count,
       COUNT(DISTINCT m.id) AS message_count
      FROM sessions s
@@ -154,15 +173,50 @@ async function listHistoryByUser(userId, limit = 20) {
      LEFT JOIN session_memberships sm ON sm.session_id = s.id AND sm.user_id = $1
      LEFT JOIN participants p ON p.session_id = s.id
      LEFT JOIN messages m ON m.session_id = s.id
-     WHERE s.owner_user_id = $1
+     WHERE (s.owner_user_id = $1
         OR cm.user_id = $1
-        OR sm.user_id = $1
+        OR sm.user_id = $1)
+       AND ($3::uuid IS NULL OR s.class_id = $3)
+       AND (
+         $4::text IS NULL
+         OR s.title ILIKE $4
+         OR EXISTS (
+           SELECT 1 FROM participants p3
+           WHERE p3.session_id = s.id
+             AND p3.name ILIKE $4
+         )
+         OR EXISTS (
+           SELECT 1 FROM messages m3
+           WHERE m3.session_id = s.id
+             AND m3.content ILIKE $4
+         )
+       )
      GROUP BY s.id, c.name, sm.role_snapshot, cm.role, owner.role, sm.message_count, sm.estimated_speaking_seconds, sm.contribution_score
      ORDER BY s.created_at DESC
      LIMIT $2`,
-    [userId, limit]
+    [userId, limit, classId, searchPattern]
   );
   return result.rows;
+}
+
+async function findLatestLiveByClassId(classId) {
+  try {
+    const result = await db.query(
+      `SELECT *
+       FROM sessions
+       WHERE class_id = $1
+         AND status IN ('waiting', 'active')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [classId]
+    );
+    return result.rows[0] || null;
+  } catch (error) {
+    if (error?.code === '42703') {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -297,6 +351,7 @@ module.exports = {
   getActiveSessions,
   deleteSession,
   listHistoryByUser,
+  findLatestLiveByClassId,
   getDetailedAnalytics,
   userInClass,
   userWasParticipant,

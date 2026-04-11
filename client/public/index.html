@@ -100,15 +100,15 @@
         <input type="text" id="name-input" placeholder="Enter your name" autocomplete="off">
       </div>
       <div class="btn-row">
-        <button id="create-btn" class="btn btn-primary">Create Room</button>
-        <button id="join-toggle-btn" class="btn btn-secondary">Join Existing</button>
+        <button id="create-btn" class="btn btn-primary">Quick Session</button>
+        <button id="join-toggle-btn" class="btn btn-secondary">Join By Code</button>
       </div>
       <div id="join-section" style="display: none;">
         <div class="form-group">
-          <label for="join-code-input">Session Code</label>
-          <input type="text" id="join-code-input" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
+          <label for="join-code-input">Room Or Session Code</label>
+          <input type="text" id="join-code-input" placeholder="e.g. m34h2 or abc123" maxlength="8" autocomplete="off">
         </div>
-        <button id="join-btn" class="btn btn-secondary">Join Session</button>
+        <button id="join-btn" class="btn btn-secondary">Join</button>
       </div>
     </div>
 
@@ -118,15 +118,15 @@
     <div id="dashboard-teacher" class="dashboard-container" style="display:none;">
       <div class="session-action-bar">
         <div class="btn-row">
-          <button id="create-btn-teacher" class="btn btn-primary">Create Room</button>
-          <button id="join-toggle-btn-teacher" class="btn btn-secondary">Join Existing</button>
+          <button id="create-btn-teacher" class="btn btn-primary">Quick Session</button>
+          <button id="join-toggle-btn-teacher" class="btn btn-secondary">Join By Code</button>
         </div>
         <div id="join-section-teacher" style="display: none;">
           <div class="form-group">
-            <label for="join-code-input-teacher">Session Code</label>
-            <input type="text" id="join-code-input-teacher" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
+            <label for="join-code-input-teacher">Room Or Session Code</label>
+            <input type="text" id="join-code-input-teacher" placeholder="e.g. m34h2 or abc123" maxlength="8" autocomplete="off">
           </div>
-          <button id="join-btn-teacher" class="btn btn-secondary">Join Session</button>
+          <button id="join-btn-teacher" class="btn btn-secondary">Join</button>
         </div>
       </div>
       <input type="text" id="name-input-teacher" placeholder="Enter your name" autocomplete="off" style="display:none;">
@@ -162,13 +162,31 @@
       </div>
 
       <div class="dashboard-section">
+        <div class="workspace-card room-memory-card" id="class-room-card">
+          <div class="workspace-header">
+            <h3>Class Room</h3>
+            <span class="workspace-kicker">One stable home for every class</span>
+          </div>
+          <div id="class-room-summary" class="room-summary empty-state">
+            Choose a class to see its room code, live session status, and timeline.
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-section">
         <div class="workspace-card" id="recent-sessions-card">
           <div class="workspace-header">
-            <h3>Recent Sessions</h3>
+            <div>
+              <h3>Session Timeline</h3>
+              <p id="session-history-context" class="workspace-meta">Select a class to see its classroom memory.</p>
+            </div>
             <button id="session-history-toggle" class="workspace-toggle" aria-label="Toggle session history">
               <span class="toggle-icon">▼</span>
             </button>
-            <span class="workspace-kicker">Quick history for follow-up</span>
+            <span class="workspace-kicker">Search by student or phrase</span>
+          </div>
+          <div class="timeline-search-row">
+            <input type="text" id="session-history-search" placeholder="Search for a student name or phrase from discussion">
           </div>
           <div id="session-history-list" class="workspace-list">
             <p class="empty-state">No sessions yet.</p>
@@ -180,13 +198,13 @@
     <!-- Student Dashboard -->
     <div id="dashboard-student" class="dashboard-container" style="display:none;">
       <div class="dashboard-card">
-        <h3>Join a Session</h3>
-        <p class="workspace-meta">Enter the code your teacher gave you.</p>
+        <h3>Join A Class Room</h3>
+        <p class="workspace-meta">Enter the room code or the live session code your teacher gave you.</p>
         <div class="form-group">
-          <label for="join-code-input-student">Session Code</label>
-          <input type="text" id="join-code-input-student" placeholder="e.g. abc123" maxlength="8" autocomplete="off">
+          <label for="join-code-input-student">Room Or Session Code</label>
+          <input type="text" id="join-code-input-student" placeholder="e.g. m34h2 or abc123" maxlength="8" autocomplete="off">
         </div>
-        <button id="join-btn-student" class="btn btn-primary" style="width:100%;">Join Session</button>
+        <button id="join-btn-student" class="btn btn-primary" style="width:100%;">Join</button>
       </div>
 
       <div class="dashboard-section">
@@ -233,8 +251,8 @@
 
   <!-- SETUP SCREEN (materials + optional title) -->
   <div id="setup-screen" class="screen">
-    <h2>What should we discuss?</h2>
-    <p class="setup-subtitle">Upload files or paste links for Plato to read before the discussion. Or just set a topic and go.</p>
+    <h2>Start A Session</h2>
+    <p class="setup-subtitle">Open a new session inside a class room, or start a one-off quick session. Upload files or paste links for Plato to read before the discussion.</p>
 
     <div class="setup-section">
       <div class="form-group" style="max-width: 100%;">
@@ -248,12 +266,12 @@
       </div>
 
       <div class="form-group" style="max-width: 100%;">
-        <label for="session-class-select">Save To Class</label>
+        <label for="session-class-select">Class Room</label>
         <select id="session-class-select">
-          <option value="">Not linked to a class</option>
+          <option value="">Quick Session (not tied to a class room)</option>
         </select>
       </div>
-      <p id="session-class-help" class="helper-text">Sign in to organize sessions by class and keep a history.</p>
+      <p id="session-class-help" class="helper-text">Choose a class room to reuse the same code and build a clear timeline across meetings.</p>
     </div>
 
     <div class="setup-section">
@@ -290,8 +308,8 @@
     <h2>Waiting Room</h2>
 
     <div class="session-code" id="session-code">------</div>
-    <p style="color: var(--text-secondary); font-size: 0.85rem;">Share this code so others can join this discussion.</p>
-    <p style="color: var(--text-muted); font-size: 0.78rem;">Each code is for one live session. It can't be reused once the discussion ends.</p>
+    <p style="color: var(--text-secondary); font-size: 0.85rem;">Share this live session code so others can join this discussion now.</p>
+    <p style="color: var(--text-muted); font-size: 0.78rem;">Class rooms keep a stable room code. This code is just for today’s live session.</p>
 
     <div id="lobby-topic-section" class="passage-preview" style="display:none;">
       <h3 id="lobby-topic">Topic</h3>

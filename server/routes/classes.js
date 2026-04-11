@@ -20,8 +20,10 @@ router.get('/', async (req, res) => {
       name: c.name,
       description: c.description,
       ageRange: c.age_range,
+      roomCode: c.room_code,
       membershipRole: c.membership_role || req.user.role,
       sessionCount: parseInt(c.session_count, 10) || 0,
+      latestSessionAt: c.latest_session_at,
       createdAt: c.created_at
     })));
   } catch (error) {
@@ -57,6 +59,7 @@ router.post('/', requireAnyRole(['Teacher', 'Admin', 'SuperAdmin']), async (req,
       name: created.name,
       description: created.description,
       ageRange: created.age_range,
+      roomCode: created.room_code,
       membershipRole: req.user.role,
       sessionCount: 0,
       createdAt: created.created_at
@@ -64,6 +67,62 @@ router.post('/', requireAnyRole(['Teacher', 'Admin', 'SuperAdmin']), async (req,
   } catch (error) {
     console.error('Create class error:', error);
     res.status(500).json({ error: 'Failed to create class' });
+  }
+});
+
+router.get('/:id/timeline', async (req, res) => {
+  try {
+    const cls = await classesRepo.findById(req.params.id);
+    if (!cls) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    const isOwner = cls.owner_user_id === req.user.id;
+    const isElevated = ['Admin', 'SuperAdmin'].includes(req.user.role);
+    if (!isOwner && !isElevated) {
+      const membership = await classMembershipsRepo.findByClassAndUser(cls.id, req.user.id);
+      if (!membership) return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const q = String(req.query.q || '').trim();
+    const timeline = await sessionsRepo.listHistoryByUser(req.user.id, 80, { classId: cls.id, q });
+    const latestLiveSession = await sessionsRepo.findLatestLiveByClassId(cls.id);
+
+    res.json({
+      class: {
+        id: cls.id,
+        name: cls.name,
+        description: cls.description,
+        ageRange: cls.age_range,
+        roomCode: cls.room_code
+      },
+      latestLiveSession: latestLiveSession ? {
+        shortCode: latestLiveSession.short_code,
+        title: latestLiveSession.title,
+        status: latestLiveSession.status,
+        createdAt: latestLiveSession.created_at
+      } : null,
+      timeline: timeline.map((session, index) => ({
+        ordinal: timeline.length - index,
+        id: session.id,
+        shortCode: session.short_code,
+        title: session.title,
+        status: session.status,
+        className: session.class_name,
+        viewerRole: session.viewer_role,
+        participantCount: Number(session.participant_count || 0),
+        messageCount: Number(session.message_count || 0),
+        viewerMessageCount: Number(session.viewer_message_count || 0),
+        viewerSpeakingSeconds: Number(session.viewer_speaking_seconds || 0),
+        viewerContributionScore: Number(session.viewer_contribution_score || 0),
+        createdAt: session.created_at,
+        searchExcerpt: session.search_excerpt || null,
+        matchedParticipant: session.matched_participant || null
+      }))
+    });
+  } catch (error) {
+    console.error('Class timeline error:', error);
+    res.status(500).json({ error: 'Failed to load class timeline' });
   }
 });
 

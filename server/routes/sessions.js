@@ -85,24 +85,70 @@ router.post('/', apiLimiter, async (req, res) => {
 
 router.get('/history', requireAuth, async (req, res) => {
   try {
-    const history = await sessionsRepo.listHistoryByUser(req.user.id, 30);
+    const q = String(req.query.q || '').trim();
+    const classId = req.query.classId ? String(req.query.classId).trim() : null;
+    const history = await sessionsRepo.listHistoryByUser(req.user.id, 80, { q, classId });
     res.json(history.map(session => ({
       id: session.id,
       shortCode: session.short_code,
       title: session.title,
       status: session.status,
       className: session.class_name,
+      classId: session.class_id || null,
       viewerRole: session.viewer_role,
       participantCount: Number(session.participant_count || 0),
       messageCount: Number(session.message_count || 0),
       viewerMessageCount: Number(session.viewer_message_count || 0),
       viewerSpeakingSeconds: Number(session.viewer_speaking_seconds || 0),
       viewerContributionScore: Number(session.viewer_contribution_score || 0),
+      matchedParticipant: session.matched_participant || null,
+      searchExcerpt: session.search_excerpt || null,
       createdAt: session.created_at
     })));
   } catch (error) {
     console.error('Session history error:', error);
     res.status(500).json({ error: 'Failed to load session history' });
+  }
+});
+
+router.get('/resolve/:code', async (req, res) => {
+  try {
+    const code = String(req.params.code || '').trim().toLowerCase();
+    if (!code) {
+      return res.status(400).json({ error: 'Code is required' });
+    }
+
+    const session = await sessionsRepo.findByShortCode(code);
+    if (session) {
+      return res.json({
+        type: 'session',
+        code,
+        sessionShortCode: session.short_code,
+        title: session.title,
+        status: session.status
+      });
+    }
+
+    const cls = await classesRepo.findByRoomCode(code);
+    if (!cls) {
+      return res.status(404).json({ error: 'No room or session found for that code' });
+    }
+
+    const liveSession = await sessionsRepo.findLatestLiveByClassId(cls.id);
+    return res.json({
+      type: 'room',
+      code,
+      roomCode: cls.room_code,
+      classId: cls.id,
+      className: cls.name,
+      hasLiveSession: !!liveSession,
+      sessionShortCode: liveSession?.short_code || null,
+      sessionStatus: liveSession?.status || null,
+      sessionTitle: liveSession?.title || null
+    });
+  } catch (error) {
+    console.error('Resolve session code error:', error);
+    res.status(500).json({ error: 'Failed to resolve code' });
   }
 });
 

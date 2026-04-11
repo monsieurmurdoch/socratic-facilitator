@@ -1,20 +1,58 @@
 const db = require('../index');
 
+function generateRoomCode() {
+  const chars = 'abcdefghijkmnpqrstuvwxyz23456789';
+  let code = '';
+  for (let i = 0; i < 5; i += 1) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+async function reserveRoomCode() {
+  let attempts = 0;
+  while (attempts < 20) {
+    const code = generateRoomCode();
+    const existing = await db.query(
+      'SELECT id FROM classes WHERE room_code = $1',
+      [code]
+    );
+    if (existing.rowCount === 0) {
+      return code;
+    }
+    attempts += 1;
+  }
+  throw new Error('Failed to generate unique room code');
+}
+
 async function create({ ownerUserId, name, description = null, ageRange = null }) {
-  const result = await db.query(
-    `INSERT INTO classes (owner_user_id, name, description, age_range)
-     VALUES ($1, $2, $3, $4)
-     RETURNING *`,
-    [ownerUserId, name, description, ageRange]
-  );
-  return result.rows[0];
+  const roomCode = await reserveRoomCode();
+  try {
+    const result = await db.query(
+      `INSERT INTO classes (owner_user_id, name, description, age_range, room_code)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [ownerUserId, name, description, ageRange, roomCode]
+    );
+    return result.rows[0];
+  } catch (error) {
+    if (error?.code !== '42703') throw error;
+    const legacyResult = await db.query(
+      `INSERT INTO classes (owner_user_id, name, description, age_range)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [ownerUserId, name, description, ageRange]
+    );
+    return { ...legacyResult.rows[0], room_code: roomCode };
+  }
 }
 
 async function listByOwner(ownerUserId) {
   const result = await db.query(
     `SELECT
       c.*,
-      COUNT(s.id) AS session_count
+      COUNT(s.id) AS session_count,
+      MAX(s.created_at) AS latest_session_at
      FROM classes c
      LEFT JOIN sessions s ON s.class_id = c.id
      WHERE c.owner_user_id = $1
@@ -30,7 +68,8 @@ async function listByUser(userId) {
     `SELECT
       c.*,
       COALESCE(cm.role, 'Teacher') AS membership_role,
-      COUNT(DISTINCT s.id) AS session_count
+      COUNT(DISTINCT s.id) AS session_count,
+      MAX(s.created_at) AS latest_session_at
      FROM classes c
      JOIN class_memberships cm ON cm.class_id = c.id
      LEFT JOIN sessions s ON s.class_id = c.id
@@ -60,6 +99,23 @@ async function findById(classId) {
     [classId]
   );
   return result.rows[0] || null;
+}
+
+async function findByRoomCode(roomCode) {
+  try {
+    const result = await db.query(
+      `SELECT *
+       FROM classes
+       WHERE LOWER(room_code) = LOWER($1)`,
+      [roomCode]
+    );
+    return result.rows[0] || null;
+  } catch (error) {
+    if (error?.code === '42703') {
+      return null;
+    }
+    throw error;
+  }
 }
 
 async function update(classId, fields) {
@@ -98,6 +154,7 @@ module.exports = {
   listByUser,
   findOwnedByUser,
   findById,
+  findByRoomCode,
   update,
   reorder
 };

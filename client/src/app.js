@@ -18,6 +18,11 @@
   let accountUser = null;
   let savedClasses = [];
   let sessionHistory = [];
+  let classTimeline = [];
+  let selectedClassSummary = null;
+  let selectedClassLiveSession = null;
+  let sessionHistoryQuery = "";
+  let sessionSearchTimer = null;
   let selectedClassId = null;
   let editingClassId = null;
   let demoTeacherConfig = null; // null until server responds
@@ -124,6 +129,11 @@
     accountUser = null;
     savedClasses = [];
     sessionHistory = [];
+    classTimeline = [];
+    selectedClassSummary = null;
+    selectedClassLiveSession = null;
+    sessionHistoryQuery = "";
+    selectedClassId = null;
     localStorage.removeItem(AUTH_TOKEN_KEY);
     localStorage.removeItem(AUTH_USER_KEY);
   }
@@ -341,8 +351,8 @@
 
       if (classHelp) {
         classHelp.textContent = canManageClasses()
-          ? "Choose a class to keep this session in your saved workspace."
-          : "Your account can join sessions and keep history, but class management is limited.";
+          ? "Choose a class room to reuse one stable code and build a clear memory across sessions."
+          : "Your account can join sessions and keep history, but class room management is limited.";
       }
     } else {
       // Not signed in — show unsigned header + guest panel
@@ -357,6 +367,9 @@
 
       // Auth card always visible when signed out (side-by-side with guest panel)
       if (authCard) authCard.style.display = "";
+      if (classHelp) {
+        classHelp.textContent = "Sign in to create class rooms, reuse one stable code, and search across session memory.";
+      }
     }
   }
 
@@ -368,6 +381,14 @@
       hour: "numeric",
       minute: "2-digit"
     });
+  }
+
+  function getSelectedClass() {
+    return savedClasses.find(cls => cls.id === selectedClassId) || null;
+  }
+
+  function escapeAttribute(value) {
+    return escapeHtml(String(value || "")).replace(/"/g, "&quot;");
   }
 
   function renderClasses() {
@@ -387,11 +408,14 @@
       return;
     }
 
-    // Server returns classes in sort_order already
+    if (!selectedClassId && savedClasses.length > 0) {
+      selectedClassId = savedClasses[0].id;
+    }
+
     const orderedClasses = savedClasses;
 
     if (orderedClasses.length === 0) {
-      list.innerHTML = '<p class="empty-state">No classes yet. Create your first one here.</p>';
+      list.innerHTML = '<p class="empty-state">No classes yet. Create your first class room here.</p>';
     } else {
       list.innerHTML = orderedClasses.map(cls => {
         const isSelected = cls.id === selectedClassId;
@@ -414,7 +438,7 @@
             <div class="class-item-main">
               <strong>${escapeHtml(cls.name)}</strong>
               <div class="workspace-item-meta">${escapeHtml(cls.description || "No notes yet.")}</div>
-              <span class="workspace-item-tag">${cls.sessionCount} saved session${cls.sessionCount === 1 ? "" : "s"}${cls.ageRange ? ` · Ages ${escapeHtml(cls.ageRange)}` : ""}</span>
+              <span class="workspace-item-tag">Room ${escapeHtml(cls.roomCode || "pending")} · ${cls.sessionCount} session${cls.sessionCount === 1 ? "" : "s"}${cls.ageRange ? ` · Ages ${escapeHtml(cls.ageRange)}` : ""}</span>
             </div>
             <button class="class-edit-btn" title="Edit class">&#9998;</button>
           </div>`;
@@ -428,8 +452,9 @@
         const main = item.querySelector('.class-item-main');
         if (main) {
           main.addEventListener('click', () => {
-            selectedClassId = selectedClassId === classId ? null : classId;
+            selectedClassId = classId;
             renderClasses();
+            loadSelectedClassTimeline();
           });
           main.style.cursor = 'pointer';
         }
@@ -537,41 +562,181 @@
     } else if (savedClasses.some(cls => cls.id === previousValue)) {
       select.value = previousValue;
     }
+
+    renderClassRoomSummary();
   }
 
   function renderSessionHistory() {
     const list = document.getElementById("session-history-list");
+    const context = document.getElementById("session-history-context");
 
     if (!accountUser) {
       list.innerHTML = '<p class="empty-state">Sign in to see session history.</p>';
+      if (context) context.textContent = "Select a class to see its classroom memory.";
       return;
     }
 
-    if (sessionHistory.length === 0) {
-      list.innerHTML = '<p class="empty-state">No saved sessions yet. Your newly created rooms will show up here.</p>';
+    const selectedClass = getSelectedClass();
+    const source = selectedClass ? classTimeline : sessionHistory;
+    if (context) {
+      context.textContent = selectedClass
+        ? `Session trail for ${selectedClass.name}${sessionHistoryQuery ? ` · search: “${sessionHistoryQuery}”` : ""}`
+        : "Showing recent sessions across your classes.";
+    }
+
+    if (source.length === 0) {
+      list.innerHTML = selectedClass
+        ? '<p class="empty-state">No sessions yet in this class room. Start one and the trail will appear here.</p>'
+        : '<p class="empty-state">No saved sessions yet. Your newly created sessions will show up here.</p>';
       return;
     }
 
-    list.innerHTML = sessionHistory.map(session => `
-      <div class="workspace-item session-item" data-shortcode="${escapeHtml(session.shortCode)}">
-        <strong>${escapeHtml(session.title)}</strong>
-        <div class="workspace-item-meta">
-          ${escapeHtml(session.className || "Unassigned")} · ${escapeHtml(session.status)} · ${escapeHtml(session.viewerRole || "Member")}<br>
-          ${session.participantCount} participants · ${session.messageCount} messages · ${formatDateTime(session.createdAt)}<br>
-          You spoke about ${Math.round(Number(session.viewerSpeakingSeconds || 0))}s · contribution ${Number(session.viewerContributionScore || 0).toFixed(2)}
+    list.innerHTML = source.map((session, index) => `
+      <div class="workspace-item session-item timeline-card" data-shortcode="${escapeHtml(session.shortCode)}">
+        <div class="timeline-marker">
+          <span class="timeline-dot"></span>
+          <span class="timeline-stem${index === source.length - 1 ? ' timeline-stem-end' : ''}"></span>
         </div>
-        <span class="workspace-item-tag">Code ${escapeHtml(session.shortCode)}</span>
+        <div class="timeline-body">
+          <div class="timeline-header">
+            <div>
+              <strong>${selectedClass ? `Session ${String(session.ordinal || source.length - index).padStart(2, '0')}` : escapeHtml(session.title)}</strong>
+              <div class="workspace-item-meta timeline-subtitle">
+                ${selectedClass ? escapeHtml(session.title) : escapeHtml(session.className || "Quick Session")} · ${formatDateTime(session.createdAt)}
+              </div>
+            </div>
+            <span class="workspace-item-tag">${escapeHtml(session.status)}</span>
+          </div>
+          <div class="workspace-item-meta timeline-stats">
+            ${session.participantCount} participants · ${session.messageCount} messages · You spoke about ${Math.round(Number(session.viewerSpeakingSeconds || 0))}s · contribution ${Number(session.viewerContributionScore || 0).toFixed(2)}
+          </div>
+          ${(session.matchedParticipant || session.searchExcerpt) ? `
+            <div class="timeline-search-hit">
+              ${session.matchedParticipant ? `<span class="search-hit-pill">Matched student: ${escapeHtml(session.matchedParticipant)}</span>` : ""}
+              ${session.searchExcerpt ? `<p>“${escapeHtml(session.searchExcerpt)}${session.searchExcerpt.length >= 220 ? "…" : ""}”</p>` : ""}
+            </div>
+          ` : ""}
+          <div class="timeline-actions">
+            <button class="btn btn-secondary btn-small timeline-open-btn" data-shortcode="${escapeAttribute(session.shortCode)}">Open Analytics</button>
+            <span class="workspace-item-tag">Live code ${escapeHtml(session.shortCode)}</span>
+          </div>
+        </div>
       </div>
     `).join("");
 
-    // Add click handlers for session analytics
-    document.querySelectorAll('.session-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const shortCode = item.dataset.shortcode;
-        showSessionAnalytics(shortCode);
+    document.querySelectorAll('.timeline-open-btn').forEach(btn => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        showSessionAnalytics(btn.dataset.shortcode);
       });
-      item.style.cursor = 'pointer';
     });
+  }
+
+  function renderClassRoomSummary() {
+    const summary = document.getElementById("class-room-summary");
+    if (!summary) return;
+
+    const cls = selectedClassSummary || getSelectedClass();
+    if (!cls) {
+      summary.className = "room-summary empty-state";
+      summary.innerHTML = 'Choose a class to see its room code, live session status, and timeline.';
+      return;
+    }
+
+    const liveSession = selectedClassLiveSession;
+    summary.className = "room-summary";
+    summary.innerHTML = `
+      <div class="room-summary-hero">
+        <div>
+          <span class="room-summary-label">Class Room</span>
+          <h4>${escapeHtml(cls.name)}</h4>
+          <p>${escapeHtml(cls.description || "A persistent room for this class. Students can keep using the same code across meetings.")}</p>
+        </div>
+        <div class="room-code-card">
+          <span class="room-code-label">Stable room code</span>
+          <strong id="selected-room-code">${escapeHtml(cls.roomCode || "pending")}</strong>
+          <button id="copy-room-code-btn" class="btn btn-secondary btn-small">Copy Code</button>
+        </div>
+      </div>
+      <div class="room-summary-metrics">
+        <div class="room-stat">
+          <span class="room-stat-label">Sessions</span>
+          <strong>${cls.sessionCount || 0}</strong>
+        </div>
+        <div class="room-stat">
+          <span class="room-stat-label">Age Range</span>
+          <strong>${escapeHtml(cls.ageRange || "Flexible")}</strong>
+        </div>
+        <div class="room-stat">
+          <span class="room-stat-label">Live Status</span>
+          <strong>${liveSession ? `${liveSession.status} now` : "No session open"}</strong>
+        </div>
+      </div>
+      <div class="room-summary-actions">
+        <button id="start-class-session-btn" class="btn btn-primary">Start Session In This Room</button>
+        ${liveSession ? `<button id="join-live-session-btn" class="btn btn-secondary">Join Live Session</button>` : ""}
+      </div>
+    `;
+
+    document.getElementById("copy-room-code-btn")?.addEventListener("click", () => {
+      navigator.clipboard.writeText(cls.roomCode || "").then(() => {
+        const btn = document.getElementById("copy-room-code-btn");
+        if (!btn) return;
+        btn.textContent = "Copied";
+        setTimeout(() => { btn.textContent = "Copy Code"; }, 1200);
+      });
+    });
+
+    document.getElementById("start-class-session-btn")?.addEventListener("click", () => {
+      myName = accountUser?.name || "";
+      if (!myName) {
+        alert("Sign in first.");
+        return;
+      }
+      abandonDraftSession();
+      const titleInput = document.getElementById("session-title");
+      const select = document.getElementById("session-class-select");
+      if (titleInput && !titleInput.value.trim()) {
+        titleInput.value = `${cls.name} Discussion`;
+      }
+      showScreen("setup");
+      if (select) {
+        select.value = cls.id;
+        loadClassMaterials(cls.id);
+      }
+    });
+
+    document.getElementById("join-live-session-btn")?.addEventListener("click", () => {
+      if (!liveSession?.shortCode) return;
+      myName = accountUser?.name || "";
+      send({ type: "join_session", sessionId: liveSession.shortCode, name: myName, age: getAge(), authToken });
+    });
+  }
+
+  async function loadSelectedClassTimeline(query = sessionHistoryQuery) {
+    if (!authToken || !selectedClassId) {
+      classTimeline = [];
+      selectedClassSummary = getSelectedClass();
+      selectedClassLiveSession = null;
+      renderClassRoomSummary();
+      renderSessionHistory();
+      return;
+    }
+
+    const q = String(query || '').trim();
+    try {
+      const data = await apiGet(`/api/classes/${selectedClassId}/timeline${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+      selectedClassSummary = { ...(getSelectedClass() || {}), ...(data.class || {}) };
+      selectedClassLiveSession = data.latestLiveSession;
+      classTimeline = data.timeline || [];
+    } catch (error) {
+      console.warn("[Timeline] Failed to load selected class timeline:", error.message);
+      classTimeline = [];
+      selectedClassSummary = getSelectedClass();
+      selectedClassLiveSession = null;
+    }
+    renderClassRoomSummary();
+    renderSessionHistory();
   }
 
   async function refreshWorkspace() {
@@ -580,30 +745,43 @@
     if (!authToken) {
       savedClasses = [];
       sessionHistory = [];
+      classTimeline = [];
+      selectedClassSummary = null;
+      selectedClassLiveSession = null;
       renderClasses();
       renderSessionHistory();
+      renderClassRoomSummary();
       return;
     }
 
     try {
+      const historyPath = `/api/sessions/history${sessionHistoryQuery ? `?q=${encodeURIComponent(sessionHistoryQuery)}` : ''}`;
       const [me, classes, history] = await Promise.all([
         apiGet("/api/auth/me"),
         apiGet("/api/classes"),
-        apiGet("/api/sessions/history")
+        apiGet(historyPath)
       ]);
       accountUser = me.user;
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(accountUser));
       savedClasses = classes;
       sessionHistory = history;
+      if (selectedClassId && !savedClasses.some(cls => cls.id === selectedClassId)) {
+        selectedClassId = null;
+      }
+      if (!selectedClassId && savedClasses.length > 0) {
+        selectedClassId = savedClasses[0].id;
+      }
       renderAuthState();
       renderClasses();
       renderSessionHistory();
+      loadSelectedClassTimeline();
     } catch (error) {
       console.warn("[Auth] Workspace refresh failed:", error.message);
       clearAuthState();
       renderAuthState();
       renderClasses();
       renderSessionHistory();
+      renderClassRoomSummary();
     }
   }
 
@@ -1372,10 +1550,12 @@
     try {
       const created = await apiPost("/api/classes", { name, ageRange, description });
       savedClasses.unshift(created);
+      selectedClassId = created.id;
       document.getElementById("new-class-name").value = "";
       document.getElementById("new-class-age-range").value = "";
       document.getElementById("new-class-description").value = "";
       renderClasses();
+      loadSelectedClassTimeline();
     } catch (error) {
       alert(error.message);
     }
@@ -1386,6 +1566,7 @@
     renderAuthState();
     renderClasses();
     renderSessionHistory();
+    renderClassRoomSummary();
     const classSelect = document.getElementById("session-class-select");
     if (classSelect) classSelect.value = "";
   }
@@ -1397,6 +1578,17 @@
   document.getElementById("demo-login-btn")?.addEventListener("click", handleDemoTeacherLogin);
   document.getElementById("create-class-btn").addEventListener("click", handleCreateClass);
   document.getElementById("logout-btn").addEventListener("click", handleLogout);
+  document.getElementById("session-history-search")?.addEventListener("input", (event) => {
+    sessionHistoryQuery = event.target.value.trim();
+    clearTimeout(sessionSearchTimer);
+    sessionSearchTimer = setTimeout(() => {
+      if (selectedClassId) {
+        loadSelectedClassTimeline(sessionHistoryQuery);
+      } else {
+        refreshWorkspace();
+      }
+    }, 220);
+  });
 
   // Auth tab switching
   document.querySelectorAll(".auth-tab").forEach(tab => {
@@ -1592,12 +1784,23 @@
   });
 
   // Join existing session (guest)
-  function handleJoinSession(nameSource, codeInputId) {
+  async function handleJoinSession(nameSource, codeInputId) {
     myName = nameSource === "input" ? document.getElementById("name-input").value.trim() : (accountUser?.name || "");
     const code = document.getElementById(codeInputId)?.value?.trim().toLowerCase();
     if (!myName) { alert(nameSource === "input" ? "Enter your name" : "Sign in first"); return; }
     if (!code) { alert("Enter a session code"); return; }
-    send({ type: "join_session", sessionId: code, name: myName, age: getAge(), authToken });
+
+    try {
+      const resolved = await apiGet(`/api/sessions/resolve/${encodeURIComponent(code)}`);
+      if (resolved.type === "room" && !resolved.hasLiveSession) {
+        alert(`Room ${resolved.roomCode} belongs to ${resolved.className}, but there isn't a live session open right now.`);
+        return;
+      }
+      const joinCode = resolved.sessionShortCode || code;
+      send({ type: "join_session", sessionId: joinCode, name: myName, age: getAge(), authToken });
+    } catch (error) {
+      alert(error.message);
+    }
   }
 
   document.getElementById("join-btn")?.addEventListener("click", () => handleJoinSession("input", "join-code-input"));
