@@ -141,6 +141,8 @@ router.get('/resolve/:code', async (req, res) => {
       roomCode: cls.room_code,
       classId: cls.id,
       className: cls.name,
+      classDescription: cls.description || null,
+      ageRange: cls.age_range || null,
       hasLiveSession: !!liveSession,
       sessionShortCode: liveSession?.short_code || null,
       sessionStatus: liveSession?.status || null,

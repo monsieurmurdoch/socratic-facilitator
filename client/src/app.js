@@ -21,6 +21,7 @@
   let classTimeline = [];
   let selectedClassSummary = null;
   let selectedClassLiveSession = null;
+  let pendingRoomJoin = null;
   let sessionHistoryQuery = "";
   let sessionSearchTimer = null;
   let selectedClassId = null;
@@ -141,6 +142,7 @@
   // ---- DOM Elements ----
   const screens = {
     welcome: document.getElementById("welcome-screen"),
+    roomWait: document.getElementById("room-wait-screen"),
     setup: document.getElementById("setup-screen"),
     lobby: document.getElementById("lobby-screen"),
     video: document.getElementById("video-screen")
@@ -383,6 +385,66 @@
     });
   }
 
+  function normalizeJoinCode(raw) {
+    const cleaned = String(raw || "")
+      .replace(/\s+/g, "")
+      .replace(/[^a-zA-Z0-9-]/g, "");
+    if (!cleaned) return "";
+
+    const compact = cleaned.replace(/-/g, "");
+    if (/^rm/i.test(compact)) {
+      const suffix = compact.slice(2).toUpperCase().slice(0, 6);
+      return suffix ? `RM-${suffix}` : "RM-";
+    }
+
+    return compact.toLowerCase().slice(0, 10);
+  }
+
+  function applyJoinCodeFormatting(input) {
+    if (!input) return;
+    input.value = normalizeJoinCode(input.value);
+  }
+
+  function openSetupForClass(classId = null, options = {}) {
+    const { suggestedTitle = "" } = options;
+    abandonDraftSession();
+    resetSetupDraft();
+    showScreen("setup");
+
+    const select = document.getElementById("session-class-select");
+    const titleInput = document.getElementById("session-title");
+
+    if (titleInput && suggestedTitle && !titleInput.value.trim()) {
+      titleInput.value = suggestedTitle;
+    }
+
+    if (classId) {
+      selectedClassId = classId;
+      loadClassMaterials(classId);
+    } else {
+      materials = materials.filter(m => !m.fromClass);
+      renderMaterials();
+    }
+    renderClasses();
+    if (select) {
+      select.value = classId || "";
+    }
+    renderSetupContext();
+  }
+
+  function resetSetupDraft() {
+    const titleInput = document.getElementById("session-title");
+    const questionInput = document.getElementById("opening-question");
+    const preview = document.getElementById("primed-preview");
+    const themes = document.getElementById("primed-themes");
+    if (titleInput) titleInput.value = "";
+    if (questionInput) questionInput.value = "";
+    if (preview) preview.style.display = "none";
+    if (themes) themes.innerHTML = "";
+    materials = [];
+    renderMaterials();
+  }
+
   function getSelectedClass() {
     return savedClasses.find(cls => cls.id === selectedClassId) || null;
   }
@@ -567,6 +629,7 @@
     }
 
     renderClassRoomSummary();
+    renderSetupContext();
   }
 
   function renderSessionHistory() {
@@ -594,6 +657,31 @@
       return;
     }
 
+    function buildSessionSummary(session) {
+      const participantCount = Number(session.participantCount || 0);
+      const messageCount = Number(session.messageCount || 0);
+      const speakingSeconds = Math.round(Number(session.viewerSpeakingSeconds || 0));
+      const contribution = Number(session.viewerContributionScore || 0);
+
+      const sizeLabel = participantCount <= 2
+        ? "a focused exchange"
+        : participantCount <= 5
+          ? "a small-group discussion"
+          : "a full-room conversation";
+      const paceLabel = messageCount >= 40
+        ? "with a fast conversational pace"
+        : messageCount >= 18
+          ? "with steady participation"
+          : "with a quieter rhythm";
+      const contributionLabel = contribution >= 0.75
+        ? "You were one of the stronger voices."
+        : contribution >= 0.4
+          ? "You were meaningfully present throughout."
+          : "There is room to draw more of your voice in next time.";
+
+      return `${sizeLabel} ${paceLabel}. ${speakingSeconds ? `You spoke for about ${speakingSeconds}s.` : "Your speaking time was limited."} ${contributionLabel}`;
+    }
+
     list.innerHTML = source.map((session, index) => `
       <div class="workspace-item session-item timeline-card" data-shortcode="${escapeHtml(session.shortCode)}">
         <div class="timeline-marker">
@@ -613,6 +701,7 @@
           <div class="workspace-item-meta timeline-stats">
             ${session.participantCount} participants · ${session.messageCount} messages · You spoke about ${Math.round(Number(session.viewerSpeakingSeconds || 0))}s · contribution ${Number(session.viewerContributionScore || 0).toFixed(2)}
           </div>
+          <p class="timeline-summary">${escapeHtml(buildSessionSummary(session))}</p>
           ${(session.matchedParticipant || session.searchExcerpt) ? `
             <div class="timeline-search-hit">
               ${session.matchedParticipant ? `<span class="search-hit-pill">Matched student: ${escapeHtml(session.matchedParticipant)}</span>` : ""}
@@ -697,17 +786,7 @@
         alert("Sign in first.");
         return;
       }
-      abandonDraftSession();
-      const titleInput = document.getElementById("session-title");
-      const select = document.getElementById("session-class-select");
-      if (titleInput && !titleInput.value.trim()) {
-        titleInput.value = `${cls.name} Discussion`;
-      }
-      showScreen("setup");
-      if (select) {
-        select.value = cls.id;
-        loadClassMaterials(cls.id);
-      }
+      openSetupForClass(cls.id, { suggestedTitle: `${cls.name} Discussion` });
     });
 
     document.getElementById("join-live-session-btn")?.addEventListener("click", () => {
@@ -779,6 +858,7 @@
       renderClasses();
       renderSessionHistory();
       loadSelectedClassTimeline();
+      renderSetupContext();
     } catch (error) {
       console.warn("[Auth] Workspace refresh failed:", error.message);
       clearAuthState();
@@ -786,6 +866,7 @@
       renderClasses();
       renderSessionHistory();
       renderClassRoomSummary();
+      renderSetupContext();
     }
   }
 
@@ -1229,6 +1310,75 @@
     }
   }
 
+  function renderSetupContext() {
+    const titleEl = document.getElementById("setup-context-title");
+    const copyEl = document.getElementById("setup-context-copy");
+    const roomCodeEl = document.getElementById("setup-context-room-code");
+    const sessionCodeEl = document.getElementById("setup-context-session-code");
+    const noteEl = document.getElementById("setup-context-note");
+    if (!titleEl || !copyEl || !roomCodeEl || !sessionCodeEl || !noteEl) return;
+
+    const classSelect = document.getElementById("session-class-select");
+    const selectedId = classSelect ? classSelect.value : (selectedClassId || "");
+    const cls = savedClasses.find(item => item.id === selectedId) || null;
+
+    if (!cls) {
+      titleEl.textContent = "Quick Session";
+      copyEl.textContent = "This will create a one-off discussion with a fresh live code for today only.";
+      roomCodeEl.textContent = "Not used";
+      sessionCodeEl.textContent = "Generated when created";
+      noteEl.textContent = "Quick sessions are best for demos, tutoring, office hours, and spontaneous conversations.";
+      return;
+    }
+
+    titleEl.textContent = cls.name;
+    copyEl.textContent = "This session will live inside a persistent class room, so the same room code keeps working across the semester.";
+    roomCodeEl.textContent = cls.roomCode || "Pending";
+    sessionCodeEl.textContent = "Fresh code for today’s meeting";
+    noteEl.textContent = `Students can keep joining ${cls.roomCode || "this room"} every week. Each actual class meeting becomes a new session in the timeline.`;
+  }
+
+  function showRoomWaitScreen(room) {
+    pendingRoomJoin = room;
+    const titleEl = document.getElementById("room-wait-title");
+    const copyEl = document.getElementById("room-wait-copy");
+    const codeEl = document.getElementById("room-wait-code");
+    const noteEl = document.getElementById("room-wait-note");
+    const startBtn = document.getElementById("room-wait-start-btn");
+
+    if (titleEl) titleEl.textContent = `${room.className} Is Not Live Yet`;
+    if (copyEl) copyEl.textContent = "This class room is ready, but there is no active session open right now. Once a teacher starts today’s discussion, the same room code will let everyone in.";
+    if (codeEl) codeEl.textContent = room.roomCode || room.code || "";
+    if (noteEl) noteEl.textContent = room.classDescription
+      ? room.classDescription
+      : "Think of the room code as the classroom door. The teacher opens a fresh session inside it when class begins.";
+
+    const canStartHere = !!(
+      accountUser &&
+      canManageClasses() &&
+      savedClasses.some(cls => cls.id === room.classId)
+    );
+    if (startBtn) {
+      startBtn.style.display = canStartHere ? "" : "none";
+    }
+
+    showScreen("roomWait");
+  }
+
+  async function refreshPendingRoomJoin() {
+    if (!pendingRoomJoin?.roomCode) return;
+    try {
+      const resolved = await apiGet(`/api/sessions/resolve/${encodeURIComponent(pendingRoomJoin.roomCode)}`);
+      if (resolved.type === "room" && resolved.hasLiveSession && resolved.sessionShortCode) {
+        send({ type: "join_session", sessionId: resolved.sessionShortCode, name: myName, age: getAge(), authToken });
+        return;
+      }
+      showRoomWaitScreen(resolved);
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
   async function loadClassMaterials(classId) {
     if (!classId || !authToken) {
       return;
@@ -1594,6 +1744,13 @@
     }, 220);
   });
 
+  ["join-code-input", "join-code-input-teacher", "join-code-input-student"].forEach((id) => {
+    const input = document.getElementById(id);
+    if (!input) return;
+    input.addEventListener("input", () => applyJoinCodeFormatting(input));
+    input.addEventListener("blur", () => applyJoinCodeFormatting(input));
+  });
+
   // Auth tab switching
   document.querySelectorAll(".auth-tab").forEach(tab => {
     tab.addEventListener("click", () => switchAuthTab(tab.dataset.tab));
@@ -1634,30 +1791,52 @@
   document.getElementById("create-btn")?.addEventListener("click", () => {
     myName = document.getElementById("name-input").value.trim();
     if (!myName) { alert("Enter your name"); return; }
-    abandonDraftSession();
-    showScreen("setup");
+    openSetupForClass(null);
   });
 
   // Create button → setup screen (teacher dashboard)
   document.getElementById("create-btn-teacher")?.addEventListener("click", () => {
     myName = accountUser?.name || document.getElementById("name-input-teacher")?.value?.trim() || "";
     if (!myName) { alert("Enter your name"); return; }
-    abandonDraftSession();
-    showScreen("setup");
-    // Auto-select the highlighted class in the setup dropdown
-    if (selectedClassId) {
-      const classSelect = document.getElementById("session-class-select");
-      if (classSelect) {
-        classSelect.value = selectedClassId;
-        loadClassMaterials(selectedClassId);
-      }
-    }
+    openSetupForClass(selectedClassId);
   });
 
   // Back from setup
   document.getElementById("back-to-welcome-btn")?.addEventListener("click", () => {
     abandonDraftSession();
     showScreen("welcome");
+  });
+
+  document.getElementById("room-wait-back-btn")?.addEventListener("click", () => {
+    pendingRoomJoin = null;
+    showScreen("welcome");
+  });
+
+  document.getElementById("room-wait-copy-btn")?.addEventListener("click", () => {
+    const roomCode = pendingRoomJoin?.roomCode || "";
+    if (!roomCode) return;
+    navigator.clipboard.writeText(roomCode).then(() => {
+      const btn = document.getElementById("room-wait-copy-btn");
+      if (!btn) return;
+      btn.textContent = "Copied";
+      setTimeout(() => { btn.textContent = "Copy Code"; }, 1200);
+    });
+  });
+
+  document.getElementById("room-wait-refresh-btn")?.addEventListener("click", () => {
+    refreshPendingRoomJoin();
+  });
+
+  document.getElementById("room-wait-start-btn")?.addEventListener("click", () => {
+    if (!pendingRoomJoin?.classId) return;
+    myName = accountUser?.name || "";
+    if (!myName) {
+      alert("Sign in first.");
+      return;
+    }
+    openSetupForClass(pendingRoomJoin.classId, {
+      suggestedTitle: `${pendingRoomJoin.className} Discussion`
+    });
   });
 
   // Class dropdown change → load saved materials from that class
@@ -1670,6 +1849,7 @@
       materials = materials.filter(m => !m.fromClass);
       renderMaterials();
     }
+    renderSetupContext();
   });
 
   // File upload
@@ -1790,14 +1970,16 @@
   // Join existing session (guest)
   async function handleJoinSession(nameSource, codeInputId) {
     myName = nameSource === "input" ? document.getElementById("name-input").value.trim() : (accountUser?.name || "");
-    const code = document.getElementById(codeInputId)?.value?.trim().toLowerCase();
+    const input = document.getElementById(codeInputId);
+    applyJoinCodeFormatting(input);
+    const code = input?.value?.trim();
     if (!myName) { alert(nameSource === "input" ? "Enter your name" : "Sign in first"); return; }
-    if (!code) { alert("Enter a session code"); return; }
+    if (!code) { alert("Enter a room or session code"); return; }
 
     try {
       const resolved = await apiGet(`/api/sessions/resolve/${encodeURIComponent(code)}`);
       if (resolved.type === "room" && !resolved.hasLiveSession) {
-        alert(`Room ${resolved.roomCode} belongs to ${resolved.className}, but there isn't a live session open right now.`);
+        showRoomWaitScreen(resolved);
         return;
       }
       const joinCode = resolved.sessionShortCode || code;
@@ -2044,6 +2226,7 @@
   renderAuthState();
   renderClasses();
   renderSessionHistory();
+  renderSetupContext();
   loadDemoTeacherConfig();
   refreshWorkspace();
   connect();

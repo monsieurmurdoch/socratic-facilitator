@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Socratic Facilitator</title>
-  <link rel="stylesheet" href="/src/style.css?v=17">
+  <link rel="stylesheet" href="/src/style.css?v=18">
 </head>
 <body>
 
@@ -252,52 +252,107 @@
 
   </div>
 
+  <!-- ROOM WAITING SCREEN -->
+  <div id="room-wait-screen" class="screen">
+    <div class="room-wait-shell">
+      <div class="room-wait-card">
+        <span class="room-wait-kicker">Class Room</span>
+        <h2 id="room-wait-title">Waiting For Today’s Session</h2>
+        <p id="room-wait-copy" class="room-wait-copy">This room exists, but no live discussion is open yet.</p>
+
+        <div class="room-wait-code-card">
+          <span class="room-code-label">Stable room code</span>
+          <strong id="room-wait-code">RM-----</strong>
+          <button id="room-wait-copy-btn" class="btn btn-secondary btn-small">Copy Code</button>
+        </div>
+
+        <div class="room-wait-note" id="room-wait-note">
+          Students can keep using this room code every week. A teacher starts a fresh session inside the room when class begins.
+        </div>
+
+        <div class="room-wait-actions">
+          <button id="room-wait-refresh-btn" class="btn btn-primary">Check Again</button>
+          <button id="room-wait-start-btn" class="btn btn-secondary" style="display:none;">Start Session In This Room</button>
+          <button id="room-wait-back-btn" class="btn btn-secondary">Back</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- SETUP SCREEN (materials + optional title) -->
   <div id="setup-screen" class="screen">
-    <h2>Start A Session</h2>
-    <p class="setup-subtitle">Open a new session inside a class room, or start a one-off quick session. Upload files or paste links for Plato to read before the discussion.</p>
-
-    <div class="setup-section">
-      <div class="form-group" style="max-width: 100%;">
-        <label for="session-title">Discussion Title</label>
-        <input type="text" id="session-title" placeholder="e.g. The Trolley Problem, Chapter 3 of Hamlet...">
+    <div class="setup-topbar">
+      <div>
+        <span class="setup-kicker">Session Builder</span>
+        <h2>Start Today’s Discussion</h2>
+        <p class="setup-subtitle">Open a new session inside a class room, or start a one-off quick session. Upload files or paste links for Plato to read before the discussion.</p>
       </div>
-
-      <div class="form-group" style="max-width: 100%;">
-        <label for="opening-question">Opening Question (optional)</label>
-        <textarea id="opening-question" placeholder="What question should Plato open with?"></textarea>
-      </div>
-
-      <div class="form-group" style="max-width: 100%;">
-        <label for="session-class-select">Class Room</label>
-        <select id="session-class-select">
-          <option value="">Quick Session (not tied to a class room)</option>
-        </select>
-      </div>
-      <p id="session-class-help" class="helper-text">Choose a class room to reuse the same code and build a clear timeline across meetings.</p>
     </div>
 
-    <div class="setup-section">
-      <h3>Materials <span class="material-count" id="material-count">(0/5)</span></h3>
+    <div class="setup-layout">
+      <div class="setup-main">
+        <div class="setup-section setup-section-featured">
+          <div class="form-group" style="max-width: 100%;">
+            <label for="session-title">Discussion Title</label>
+            <input type="text" id="session-title" placeholder="e.g. The Trolley Problem, Chapter 3 of Hamlet...">
+          </div>
 
-      <div id="upload-area" class="upload-area">
-        <div class="upload-icon">+</div>
-        <p>Drop files here or click to upload</p>
-        <p class="upload-hint">PDF, TXT, DOCX — up to 5 files</p>
+          <div class="form-group" style="max-width: 100%;">
+            <label for="opening-question">Opening Question (optional)</label>
+            <textarea id="opening-question" placeholder="What question should Plato open with?"></textarea>
+          </div>
+
+          <div class="form-group" style="max-width: 100%;">
+            <label for="session-class-select">Class Room</label>
+            <select id="session-class-select">
+              <option value="">Quick Session (not tied to a class room)</option>
+            </select>
+          </div>
+          <p id="session-class-help" class="helper-text">Choose a class room to reuse the same code and build a clear timeline across meetings.</p>
+        </div>
+
+        <div class="setup-section">
+          <h3>Materials <span class="material-count" id="material-count">(0/5)</span></h3>
+
+          <div id="upload-area" class="upload-area">
+            <div class="upload-icon">+</div>
+            <p>Drop files here or click to upload</p>
+            <p class="upload-hint">PDF, TXT, DOCX — up to 5 files</p>
+          </div>
+          <input type="file" id="file-input" accept=".pdf,.txt,.docx,.doc" multiple hidden>
+
+          <div class="url-input-row">
+            <input type="text" id="url-input" placeholder="https://example.com/article">
+            <button id="add-url-btn" class="btn btn-small btn-secondary">Add Link</button>
+          </div>
+
+          <div id="materials-list" class="materials-list"></div>
+        </div>
+
+        <div id="primed-preview" class="primed-preview" style="display: none;">
+          <h4>Plato has prepared</h4>
+          <div id="primed-themes" class="primed-themes"></div>
+        </div>
       </div>
-      <input type="file" id="file-input" accept=".pdf,.txt,.docx,.doc" multiple hidden>
 
-      <div class="url-input-row">
-        <input type="text" id="url-input" placeholder="https://example.com/article">
-        <button id="add-url-btn" class="btn btn-small btn-secondary">Add Link</button>
-      </div>
-
-      <div id="materials-list" class="materials-list"></div>
-    </div>
-
-    <div id="primed-preview" class="primed-preview" style="display: none;">
-      <h4>Plato has prepared</h4>
-      <div id="primed-themes" class="primed-themes"></div>
+      <aside class="setup-sidebar">
+        <div id="setup-context-card" class="setup-context-card">
+          <span class="setup-context-kicker">Mode</span>
+          <h3 id="setup-context-title">Quick Session</h3>
+          <p id="setup-context-copy">This will create a one-off discussion with a fresh live code.</p>
+          <div class="setup-context-stack">
+            <div class="setup-context-row">
+              <span>Room code</span>
+              <strong id="setup-context-room-code">Generated when saved to a class</strong>
+            </div>
+            <div class="setup-context-row">
+              <span>Session code</span>
+              <strong id="setup-context-session-code">Created for today’s meeting</strong>
+            </div>
+          </div>
+          <p id="setup-context-note" class="setup-context-note">Quick sessions are great for demos, office hours, and spontaneous conversations.</p>
+        </div>
+      </aside>
     </div>
 
     <div class="setup-actions">
@@ -428,6 +483,6 @@
     </div>
   </div>
 
-  <script src="/src/app.js?v=7"></script>
+  <script src="/src/app.js?v=8"></script>
 </body>
 </html>
