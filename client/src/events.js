@@ -230,31 +230,6 @@ export function initEventListeners() {
     send({ type: "join_session", sessionId: code, name: state.myName, age: getAge(), authToken: state.authToken });
   });
 
-  // ---- Teacher Dashboard Buttons ----
-
-  // Create button → setup screen (teacher dashboard)
-  on("create-btn-teacher", "click", () => {
-    if (!state.accountUser?.name) { alert("Account name not found"); return; }
-    state.myName = state.accountUser.name;
-    abandonDraftSession(resetConversationFeed);
-    showScreen("setup");
-  });
-
-  // Show/hide join section (teacher dashboard)
-  on("join-toggle-btn-teacher", "click", () => {
-    const section = document.getElementById("join-section-teacher");
-    if (section) section.style.display = section.style.display === "none" ? "block" : "none";
-  });
-
-  // Join existing session (teacher dashboard)
-  on("join-btn-teacher", "click", () => {
-    if (!state.accountUser?.name) { alert("Account name not found"); return; }
-    state.myName = state.accountUser.name;
-    const code = document.getElementById("join-code-input-teacher")?.value.trim().toLowerCase();
-    if (!code) { alert("Enter a session code"); return; }
-    send({ type: "join_session", sessionId: code, name: state.myName, age: getAge(), authToken: state.authToken });
-  });
-
   // ---- Student Dashboard Buttons ----
 
   // Join existing session (student dashboard)

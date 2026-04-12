@@ -1807,13 +1807,10 @@
     });
   });
 
-  // Show/hide join section (guest + teacher)
-  ["join-toggle-btn", "join-toggle-btn-teacher"].forEach((btnId) => {
-    const sectionId = btnId === "join-toggle-btn" ? "join-section" : "join-section-teacher";
-    document.getElementById(btnId)?.addEventListener("click", () => {
-      const section = document.getElementById(sectionId);
-      if (section) section.style.display = section.style.display === "none" ? "flex" : "none";
-    });
+  // Show/hide join section (guest only — teacher uses class cards)
+  document.getElementById("join-toggle-btn")?.addEventListener("click", () => {
+    const section = document.getElementById("join-section");
+    if (section) section.style.display = section.style.display === "none" ? "flex" : "none";
   });
 
   // Create button → setup screen (guest panel)
@@ -1823,12 +1820,8 @@
     openSetupForClass(null);
   });
 
-  // Create button → setup screen (teacher dashboard)
-  document.getElementById("create-btn-teacher")?.addEventListener("click", () => {
-    myName = accountUser?.name || document.getElementById("name-input-teacher")?.value?.trim() || "";
-    if (!myName) { alert("Enter your name"); return; }
-    openSetupForClass(selectedClassId);
-  });
+  // Create button → setup screen (guest panel only)
+  // Teacher dashboard session launching is handled by class card "Go Live" buttons
 
   // Back from setup
   document.getElementById("back-to-welcome-btn")?.addEventListener("click", () => {
@@ -2036,7 +2029,6 @@
   }
 
   document.getElementById("join-btn")?.addEventListener("click", () => handleJoinSession("input", "join-code-input"));
-  document.getElementById("join-btn-teacher")?.addEventListener("click", () => handleJoinSession("account", "join-code-input-teacher"));
   document.getElementById("join-btn-student")?.addEventListener("click", () => handleJoinSession("account", "join-code-input-student"));
 
   // Enter video room (warmup mode)
