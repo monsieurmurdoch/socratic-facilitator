@@ -121,15 +121,40 @@ function setupWebSocket(wss, deps) {
           if (session.clients.length === 0) {
             // Grace period: keep session alive for 30s so reconnects don't lose state
             const shortCode = currentSessionShortCode;
+            const dbSessionId = session.dbSession?.id;
             console.log(`[${shortCode}] All clients disconnected — 30s grace period before cleanup`);
             if (session._cleanupTimer) clearTimeout(session._cleanupTimer);
-            session._cleanupTimer = setTimeout(() => {
+            session._cleanupTimer = setTimeout(async () => {
               const s = deps.sessionManager.get(shortCode);
               if (s && s.clients.length === 0) {
                 console.log(`[${shortCode}] Grace period expired — cleaning up session`);
+
+                // Mark session as ended in database
+                if (dbSessionId) {
+                  try {
+                    await deps.sessionsRepo.updateStatus(dbSessionId, 'ended');
+                    console.log(`[${shortCode}] Session marked as ended in database`);
+                  } catch (err) {
+                    console.warn(`[${shortCode}] Failed to mark session ended:`, err.message);
+                  }
+                }
+
+                // Clean up silence checker
                 const checker = deps.sessionManager.silenceCheckers.get(shortCode);
                 if (checker) clearInterval(checker);
                 deps.sessionManager.silenceCheckers.delete(shortCode);
+
+                // Clean up facilitation engine state
+                if (s.stateTracker?.sessionId) {
+                  try { deps.enhancedEngine.cleanupSession(s.stateTracker.sessionId); } catch (e) {}
+                }
+
+                // Stop Jitsi bot if running
+                if (s.jitsiBot && deps.jitsiLauncher) {
+                  try { deps.jitsiLauncher.stopJitsiBot(s.jitsiBot); } catch (e) {}
+                  s.jitsiBot = null;
+                }
+
                 deps.sessionManager.delete(shortCode);
               }
             }, 30000);
