@@ -8,6 +8,7 @@ const sessionsRepo = require('../db/repositories/sessions');
 const participantsRepo = require('../db/repositories/participants');
 const messagesRepo = require('../db/repositories/messages');
 const materialsRepo = require('../db/repositories/materials');
+const materialChunksRepo = require('../db/repositories/materialChunks');
 const primedContextRepo = require('../db/repositories/primedContext');
 const classesRepo = require('../db/repositories/classes');
 const classMembershipsRepo = require('../db/repositories/classMemberships');
@@ -297,6 +298,14 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
       url: originalType === 'url' ? url : null,
       extractedText
     });
+
+    try {
+      await materialChunksRepo.replaceForMaterial(material.id, session.id, extractedText, {
+        sourceKind: text ? 'pasted' : originalType === 'url' ? 'url' : 'material'
+      });
+    } catch (chunkError) {
+      console.warn('Material chunking warning:', chunkError.message);
+    }
 
     res.status(201).json({
       id: material.id,

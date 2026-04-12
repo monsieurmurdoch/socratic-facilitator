@@ -435,10 +435,12 @@
   function resetSetupDraft() {
     const titleInput = document.getElementById("session-title");
     const questionInput = document.getElementById("opening-question");
+    const pasteTextInput = document.getElementById("paste-text-input");
     const preview = document.getElementById("primed-preview");
     const themes = document.getElementById("primed-themes");
     if (titleInput) titleInput.value = "";
     if (questionInput) questionInput.value = "";
+    if (pasteTextInput) pasteTextInput.value = "";
     if (preview) preview.style.display = "none";
     if (themes) themes.innerHTML = "";
     materials = [];
@@ -1252,6 +1254,12 @@
           });
         } else if (m.type === "url") {
           await apiPost(`/api/sessions/${currentSessionId}/materials`, { url: m.url });
+        } else if (m.type === "text") {
+          await apiPost(`/api/sessions/${currentSessionId}/materials`, {
+            type: "txt",
+            text: m.text,
+            filename: m.name
+          });
         }
       }
 
@@ -1289,7 +1297,7 @@
     materials.forEach((m, i) => {
       const div = document.createElement("div");
       div.className = "material-item";
-      const icon = m.type === "url" ? "&#128279;" : "&#128196;";
+      const icon = m.type === "url" ? "&#128279;" : m.type === "text" ? "&#182;" : "&#128196;";
       const badge = m.fromClass ? ' <span class="material-badge">from class</span>' : '';
       div.innerHTML = `
         <span class="material-icon">${icon}</span>
@@ -1909,6 +1917,23 @@
       input.value = "";
       renderMaterials();
     }
+  });
+
+  document.getElementById("add-text-btn")?.addEventListener("click", () => {
+    if (materials.length >= MAX_MATERIALS) return;
+    const input = document.getElementById("paste-text-input");
+    const text = input?.value?.trim() || "";
+    if (!text) return;
+    const firstLine = text.split(/\r?\n/).find(Boolean) || "Pasted text";
+    const name = firstLine.length > 42 ? `${firstLine.slice(0, 39)}...` : firstLine;
+    materials.push({
+      type: "text",
+      name: name || "Pasted source text",
+      text,
+      extractedText: text
+    });
+    input.value = "";
+    renderMaterials();
   });
 
   // Remove material

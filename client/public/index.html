@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Socratic Facilitator</title>
-  <link rel="stylesheet" href="/src/style.css?v=18">
+  <link rel="stylesheet" href="/src/style.css?v=19">
 </head>
 <body>
 
@@ -13,8 +13,9 @@
 
     <!-- Signed-out header -->
     <div id="unsigned-header" class="welcome-header">
+      <span class="welcome-badge">Seminar Rooms For Real Discussion</span>
       <h1>Socratic Facilitator</h1>
-      <p>Upload materials. Start a discussion. Plato does the rest.</p>
+      <p>Give every class a stable room, preserve the memory of each session, and let Plato push thinking forward without taking the conversation over.</p>
     </div>
 
     <!-- Signed-in header bar (hidden until logged in) -->
@@ -326,6 +327,15 @@
             <button id="add-url-btn" class="btn btn-small btn-secondary">Add Link</button>
           </div>
 
+          <div class="paste-text-panel">
+            <label for="paste-text-input">Paste Source Text</label>
+            <textarea id="paste-text-input" placeholder="Paste a poem, excerpt, or passage here. Plato will treat it as shared source text for this session."></textarea>
+            <div class="paste-text-actions">
+              <span class="helper-text">Best for excerpts you want everyone to work from directly.</span>
+              <button id="add-text-btn" class="btn btn-small btn-secondary">Add Pasted Text</button>
+            </div>
+          </div>
+
           <div id="materials-list" class="materials-list"></div>
         </div>
 
@@ -483,6 +493,6 @@
     </div>
   </div>
 
-  <script src="/src/app.js?v=8"></script>
+  <script src="/src/app.js?v=9"></script>
 </body>
 </html>

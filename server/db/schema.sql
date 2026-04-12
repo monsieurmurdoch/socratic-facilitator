@@ -127,6 +127,18 @@ CREATE TABLE IF NOT EXISTS source_materials (
   uploaded_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS material_chunks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  material_id UUID REFERENCES source_materials(id) ON DELETE CASCADE,
+  session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
+  chunk_index INTEGER NOT NULL,
+  line_start INTEGER NOT NULL,
+  line_end INTEGER NOT NULL,
+  source_kind VARCHAR(20) NOT NULL DEFAULT 'material',
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Primed context table (AI comprehension of materials)
 CREATE TABLE IF NOT EXISTS primed_context (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -222,6 +234,7 @@ CREATE INDEX IF NOT EXISTS idx_message_analytics_anchor ON message_analytics(is_
 CREATE INDEX IF NOT EXISTS idx_participants_session ON participants(session_id);
 CREATE INDEX IF NOT EXISTS idx_state_session ON conversation_state(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_materials_session ON source_materials(session_id);
+CREATE INDEX IF NOT EXISTS idx_material_chunks_session ON material_chunks(session_id, chunk_index);
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_shortcode ON sessions(short_code);
 CREATE INDEX IF NOT EXISTS idx_sessions_owner_user ON sessions(owner_user_id, created_at DESC);

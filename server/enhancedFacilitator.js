@@ -27,8 +27,14 @@ const sessionPrimer = require("./content/primer");
 const primedContextRepo = require("./db/repositories/primedContext");
 const learnerProfilesRepo = require("./db/repositories/learnerProfiles");
 const materialsRepo = require("./db/repositories/materials");
+const materialChunksRepo = require("./db/repositories/materialChunks");
 const { claudeBreaker } = require("./utils/api-breakers");
 const { DEFAULT_ANTHROPIC_MODEL } = require("./models");
+const {
+  buildChunksFromText,
+  formatChunksForPrompt,
+  detectLikelySharedText
+} = require("./content/textGrounding");
 
 class EnhancedFacilitationEngine {
   constructor(apiKey) {
@@ -181,6 +187,7 @@ class EnhancedFacilitationEngine {
     const history = await stateTracker.getRecentHistory(40);
     const llmContext = orchestrator.getLLMContext();
     const participantCount = stateTracker.participants.size;
+    const topic = stateTracker.topic;
 
     // Determine what kind of intervention is needed
     const interventionType = this._determineInterventionType(decision, orchestrator);
@@ -195,8 +202,12 @@ class EnhancedFacilitationEngine {
       const dbSessionId = stateTracker.session?.id || stateTracker.sessionId;
       const primedCtx = await primedContextRepo.getBySession(dbSessionId);
       primedSnippet = sessionPrimer.getContextSnippet(primedCtx);
-      const combinedText = await materialsRepo.getCombinedText(dbSessionId);
-      groundingSnippet = this._buildGroundingSnippet(combinedText);
+      groundingSnippet = await this._buildGroundingSnippet(
+        dbSessionId,
+        responsePolicy?.turnText,
+        stateTracker,
+        topic
+      );
     } catch (e) {
       // No primed context — that's fine, not all sessions have materials
     }
@@ -457,36 +468,43 @@ class EnhancedFacilitationEngine {
     return turnCount >= 8 ? "interpretation" : "evidence";
   }
 
-  _buildGroundingSnippet(combinedText) {
-    const text = String(combinedText || "").trim();
-    if (!text) return null;
+  async _buildGroundingSnippet(sessionDbId, turnText, stateTracker, topic = {}) {
+    const searchQuery = [
+      turnText,
+      topic?.openingQuestion,
+      topic?.title
+    ].filter(Boolean).join(" ");
 
-    const rawLines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    const lines = rawLines.length >= 8 ? rawLines : this._wrapGroundingText(text, 110);
-    const maxLines = 80;
-    const numbered = lines
-      .slice(0, maxLines)
-      .map((line, index) => `${index + 1}. ${line}`)
-      .join("\n");
+    const materialChunks = await materialChunksRepo.searchRelevantBySession(sessionDbId, searchQuery, 4);
+    if (materialChunks.length > 0) {
+      return formatChunksForPrompt(materialChunks, "RELEVANT SOURCE EXCERPTS");
+    }
 
-    return `NUMBERED SOURCE TEXT (only cite these line numbers if you use them):\n${numbered}${lines.length > maxLines ? `\n... [${lines.length - maxLines} more lines omitted]` : ""}`;
+    const conversationGrounding = this._buildConversationGroundingSnippet(stateTracker, turnText);
+    if (conversationGrounding) {
+      return conversationGrounding;
+    }
+
+    const combinedText = await materialsRepo.getCombinedText(sessionDbId);
+    if (!combinedText) return null;
+
+    const chunks = buildChunksFromText(combinedText).slice(0, 4);
+    return formatChunksForPrompt(chunks, "SOURCE EXCERPTS");
   }
 
-  _wrapGroundingText(text, maxChars = 110) {
-    const words = String(text || "").split(/\s+/).filter(Boolean);
-    const lines = [];
-    let current = "";
-    for (const word of words) {
-      const candidate = current ? `${current} ${word}` : word;
-      if (candidate.length > maxChars && current) {
-        lines.push(current);
-        current = word;
-      } else {
-        current = candidate;
-      }
-    }
-    if (current) lines.push(current);
-    return lines;
+  _buildConversationGroundingSnippet(stateTracker, turnText) {
+    const turns = stateTracker.getTurnsIncludingCurrent
+      ? stateTracker.getTurnsIncludingCurrent()
+      : [];
+    const candidates = turns
+      .filter(turn => turn.participantId !== "__facilitator__" && detectLikelySharedText(turn.text))
+      .slice(-3);
+
+    if (candidates.length === 0) return null;
+
+    const active = candidates.find(turn => String(turn.text || "").includes(String(turnText || ""))) || candidates[candidates.length - 1];
+    const chunks = buildChunksFromText(active.text).slice(0, 4);
+    return formatChunksForPrompt(chunks, `TEXT SHARED IN CONVERSATION BY ${active.participantName}`);
   }
 
   /**
