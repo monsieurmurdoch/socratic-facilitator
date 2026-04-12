@@ -128,6 +128,14 @@ async function getActiveSessions() {
   return result.rows;
 }
 
+async function findActiveByClass(classId) {
+  const result = await db.query(
+    "SELECT * FROM sessions WHERE class_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+    [classId]
+  );
+  return result.rows[0] || null;
+}
+
 /**
  * Delete session and all related data
  */
@@ -352,6 +360,7 @@ module.exports = {
   findByShortCode,
   updateStatus,
   getActiveSessions,
+  findActiveByClass,
   deleteSession,
   listHistoryByUser,
   findLatestLiveByClassId,

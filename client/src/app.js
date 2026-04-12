@@ -154,6 +154,27 @@
     if (screens[name]) screens[name].classList.add("active");
   }
 
+  // Navigate to a screen and push browser history so the back button works
+  function navigateTo(name, pushHistory = true) {
+    const prev = currentScreen;
+    showScreen(name);
+    if (pushHistory && prev !== name) {
+      window.history.pushState({ screen: name }, '');
+    }
+  }
+
+  // Handle browser back/forward buttons
+  window.addEventListener('popstate', (e) => {
+    if (e.state?.screen) {
+      showScreen(e.state.screen);
+    } else {
+      showScreen('welcome');
+    }
+  });
+
+  // Set initial history state so back button from first navigation works
+  window.history.replaceState({ screen: 'welcome' }, '');
+
   function shouldAutoRestore(saved) {
     return !!(saved && saved.currentSessionId && saved.myId && ["lobby", "video"].includes(saved.currentScreen));
   }
@@ -409,7 +430,7 @@
     const { suggestedTitle = "" } = options;
     abandonDraftSession();
     resetSetupDraft();
-    showScreen("setup");
+    navigateTo("setup");
 
     const select = document.getElementById("session-class-select");
     const titleInput = document.getElementById("session-title");
@@ -1105,7 +1126,7 @@
           document.getElementById("lobby-topic").textContent = msg.topicTitle;
           document.getElementById("lobby-topic-section").style.display = "block";
         }
-        showScreen("lobby");
+        navigateTo("lobby");
         saveState();
 
         // Pre-fill name input in case we need it
@@ -1133,7 +1154,7 @@
       case "enter_video":
         discussionActive = false;
         if (!document.getElementById("video-screen").classList.contains("active")) {
-          showScreen("video");
+          navigateTo("video");
           await preAcquireMedia();          // single permission prompt
           launchJitsi(currentSessionId, myName);
           startSpeechRecognition();
@@ -1147,7 +1168,7 @@
       case "discussion_started":
         discussionActive = true;
         if (!document.getElementById("video-screen").classList.contains("active")) {
-          showScreen("video");
+          navigateTo("video");
           await preAcquireMedia();          // single permission prompt
           launchJitsi(currentSessionId, myName);
           startSpeechRecognition();
@@ -2242,7 +2263,7 @@
   const savedState = loadState();
   if (shouldAutoRestore(savedState)) {
     // Show a loading state while we try to rejoin
-    showScreen("lobby");
+    navigateTo("lobby", false);
     document.getElementById("session-code").textContent = savedState.currentSessionId;
     document.getElementById("participant-count").textContent = "Reconnecting...";
   } else {
