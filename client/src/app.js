@@ -26,6 +26,7 @@
   let sessionSearchTimer = null;
   let selectedClassId = null;
   let editingClassId = null;
+  let expandedClassId = null;
   let demoTeacherConfig = null; // null until server responds
   const MAX_MATERIALS = 5;
   let sttBatchBuffer = '';
@@ -477,167 +478,13 @@
   }
 
   function renderClasses() {
-    const list = document.getElementById("classes-list");
+    const grid = document.getElementById("class-grid");
     const select = document.getElementById("session-class-select");
     const previousValue = select.value;
 
+    // Always populate the setup-screen dropdown
     select.innerHTML = '<option value="">Not linked to a class</option>';
-
-    if (!accountUser) {
-      list.innerHTML = '<p class="empty-state">Sign in to create and reuse classes.</p>';
-      return;
-    }
-
-    if (!canManageClasses() && savedClasses.length === 0) {
-      list.innerHTML = '<p class="empty-state">No class memberships yet.</p>';
-      return;
-    }
-
-    if (!selectedClassId && savedClasses.length > 0) {
-      selectedClassId = savedClasses[0].id;
-    }
-
-    const orderedClasses = savedClasses;
-
-    if (orderedClasses.length === 0) {
-      list.innerHTML = '<p class="empty-state">No classes yet. Create your first class room here.</p>';
-    } else {
-      list.innerHTML = orderedClasses.map(cls => {
-        const isSelected = cls.id === selectedClassId;
-        const isEditing = cls.id === editingClassId;
-        if (isEditing) {
-          return `
-            <div class="workspace-item class-item class-item-selected class-item-editing" data-class-id="${escapeHtml(cls.id)}">
-              <input type="text" class="class-edit-name" value="${escapeHtml(cls.name)}" placeholder="Class name">
-              <input type="text" class="class-edit-age" value="${escapeHtml(cls.ageRange || '')}" placeholder="Age range (e.g. 14-15)">
-              <textarea class="class-edit-desc" placeholder="Notes">${escapeHtml(cls.description || '')}</textarea>
-              <div class="class-edit-actions">
-                <button class="btn btn-small btn-primary class-save-btn">Save</button>
-                <button class="btn btn-small btn-secondary class-cancel-btn">Cancel</button>
-              </div>
-            </div>`;
-        }
-        return `
-          <div class="workspace-item class-item${isSelected ? ' class-item-selected' : ''}" data-class-id="${escapeHtml(cls.id)}" draggable="true">
-            <span class="class-drag-handle" title="Drag to reorder">&#9776;</span>
-            <div class="class-item-main">
-              <strong>${escapeHtml(cls.name)}</strong>
-              <div class="workspace-item-meta">${escapeHtml(cls.description || "No notes yet.")}</div>
-              <div class="class-item-tags">
-                <span class="workspace-item-tag code-badge code-badge-room">${escapeHtml(cls.roomCode || "pending")}</span>
-                <span class="workspace-item-tag">${cls.sessionCount} session${cls.sessionCount === 1 ? "" : "s"}${cls.ageRange ? ` · Ages ${escapeHtml(cls.ageRange)}` : ""}</span>
-              </div>
-            </div>
-            <button class="class-edit-btn" title="Edit class">&#9998;</button>
-          </div>`;
-      }).join("");
-
-      // Bind click, edit, drag handlers
-      list.querySelectorAll('.class-item').forEach(item => {
-        const classId = item.dataset.classId;
-
-        // Select on click (main area only)
-        const main = item.querySelector('.class-item-main');
-        if (main) {
-          main.addEventListener('click', () => {
-            selectedClassId = classId;
-            renderClasses();
-            loadSelectedClassTimeline();
-          });
-          main.style.cursor = 'pointer';
-        }
-
-        // Edit button
-        const editBtn = item.querySelector('.class-edit-btn');
-        if (editBtn) {
-          editBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            editingClassId = classId;
-            renderClasses();
-          });
-        }
-
-        // Save button (in edit mode)
-        const saveBtn = item.querySelector('.class-save-btn');
-        if (saveBtn) {
-          saveBtn.addEventListener('click', async () => {
-            const name = item.querySelector('.class-edit-name').value.trim();
-            const ageRange = item.querySelector('.class-edit-age').value.trim() || null;
-            const description = item.querySelector('.class-edit-desc').value.trim() || null;
-            if (!name) { alert("Class name cannot be empty"); return; }
-            saveBtn.disabled = true;
-            saveBtn.textContent = "Saving...";
-            try {
-              const updated = await apiPatch(`/api/classes/${classId}`, { name, ageRange, description });
-              const idx = savedClasses.findIndex(c => c.id === classId);
-              if (idx !== -1) savedClasses[idx] = { ...savedClasses[idx], ...updated };
-              editingClassId = null;
-              renderClasses();
-            } catch (err) {
-              alert("Failed to save: " + err.message);
-              saveBtn.disabled = false;
-              saveBtn.textContent = "Save";
-            }
-          });
-        }
-
-        // Cancel button (in edit mode)
-        const cancelBtn = item.querySelector('.class-cancel-btn');
-        if (cancelBtn) {
-          cancelBtn.addEventListener('click', () => {
-            editingClassId = null;
-            renderClasses();
-          });
-        }
-
-        // Drag and drop
-        item.addEventListener('dragstart', (e) => {
-          item.classList.add('class-item-dragging');
-          e.dataTransfer.effectAllowed = 'move';
-          e.dataTransfer.setData('text/plain', classId);
-        });
-        item.addEventListener('dragend', () => {
-          item.classList.remove('class-item-dragging');
-          list.querySelectorAll('.class-item').forEach(el => el.classList.remove('class-item-drop-above', 'class-item-drop-below'));
-        });
-        item.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-          const rect = item.getBoundingClientRect();
-          const midY = rect.top + rect.height / 2;
-          list.querySelectorAll('.class-item').forEach(el => el.classList.remove('class-item-drop-above', 'class-item-drop-below'));
-          item.classList.add(e.clientY < midY ? 'class-item-drop-above' : 'class-item-drop-below');
-        });
-        item.addEventListener('dragleave', () => {
-          item.classList.remove('class-item-drop-above', 'class-item-drop-below');
-        });
-        item.addEventListener('drop', (e) => {
-          e.preventDefault();
-          const draggedId = e.dataTransfer.getData('text/plain');
-          if (draggedId === classId) return;
-          const ids = orderedClasses.map(c => c.id);
-          const fromIdx = ids.indexOf(draggedId);
-          if (fromIdx === -1) return;
-          ids.splice(fromIdx, 1);
-          const rect = item.getBoundingClientRect();
-          const toIdx = ids.indexOf(classId);
-          const insertIdx = e.clientY < rect.top + rect.height / 2 ? toIdx : toIdx + 1;
-          ids.splice(insertIdx, 0, draggedId);
-          // Reorder locally for instant feedback, then persist to server
-          const draggedCls = savedClasses.find(c => c.id === draggedId);
-          savedClasses.splice(savedClasses.indexOf(draggedCls), 1);
-          savedClasses.splice(insertIdx, 0, draggedCls);
-          renderClasses();
-          apiPatch('/api/classes/reorder', { order: ids }).catch(err => {
-            console.warn('[Classes] Reorder failed:', err.message);
-            refreshWorkspace(); // revert on failure
-          });
-        });
-      });
-    }
-
-    // Populate dropdown in display order
-    orderedClasses.forEach(cls => {
+    savedClasses.forEach(cls => {
       const option = document.createElement("option");
       option.value = cls.id;
       option.textContent = cls.name;
@@ -651,8 +498,258 @@
       select.value = previousValue;
     }
 
-    renderClassRoomSummary();
+    if (!accountUser) {
+      grid.innerHTML = '<p class="empty-state">Sign in to create and reuse classes.</p>';
+      return;
+    }
+
+    if (savedClasses.length === 0) {
+      grid.innerHTML = '<p class="empty-state">No classes yet. Create your first class to get started.</p>';
+      return;
+    }
+
+    if (!selectedClassId) {
+      selectedClassId = savedClasses[0].id;
+    }
+
+    // Render class card grid
+    grid.innerHTML = savedClasses.map(cls => {
+      const isExpanded = cls.id === expandedClassId;
+      const isEditing = cls.id === editingClassId;
+      const liveTag = selectedClassLiveSession && selectedClassId === cls.id
+        ? '<span class="class-card-live">LIVE</span>'
+        : '';
+      return `
+        <div class="class-card${isExpanded ? ' class-card-expanded' : ''}" data-class-id="${escapeHtml(cls.id)}" draggable="${isExpanded ? 'false' : 'true'}">
+          <div class="class-card-header">
+            <div class="class-card-info">
+              <strong class="class-card-name">${escapeHtml(cls.name)}</strong>
+              <div class="class-card-meta">${cls.sessionCount} session${cls.sessionCount === 1 ? '' : 's'}${cls.ageRange ? ` &middot; Ages ${escapeHtml(cls.ageRange)}` : ''}</div>
+            </div>
+            ${liveTag}
+          </div>
+          <div class="class-card-code">
+            <span class="code-badge code-badge-room">${escapeHtml(cls.roomCode || "pending")}</span>
+          </div>
+        </div>`;
+    }).join("");
+
+    // Bind card click → expand
+    grid.querySelectorAll('.class-card').forEach(card => {
+      const classId = card.dataset.classId;
+
+      card.addEventListener('click', () => {
+        if (expandedClassId === classId) {
+          // Collapse
+          expandedClassId = null;
+          selectedClassId = classId;
+        } else {
+          // Expand this card
+          expandedClassId = classId;
+          selectedClassId = classId;
+        }
+        renderClasses();
+        renderExpandedClass();
+        loadSelectedClassTimeline();
+      });
+
+      // Drag and drop (only on collapsed cards)
+      card.addEventListener('dragstart', (e) => {
+        card.classList.add('class-card-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', classId);
+      });
+      card.addEventListener('dragend', () => {
+        card.classList.remove('class-card-dragging');
+        grid.querySelectorAll('.class-card').forEach(el => el.classList.remove('class-card-drop-above', 'class-card-drop-below'));
+      });
+      card.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = card.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        grid.querySelectorAll('.class-card').forEach(el => el.classList.remove('class-card-drop-above', 'class-card-drop-below'));
+        card.classList.add(e.clientY < midY ? 'class-card-drop-above' : 'class-card-drop-below');
+      });
+      card.addEventListener('dragleave', () => {
+        card.classList.remove('class-card-drop-above', 'class-card-drop-below');
+      });
+      card.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (draggedId === classId) return;
+        const ids = savedClasses.map(c => c.id);
+        const fromIdx = ids.indexOf(draggedId);
+        if (fromIdx === -1) return;
+        ids.splice(fromIdx, 1);
+        const rect = card.getBoundingClientRect();
+        const toIdx = ids.indexOf(classId);
+        const insertIdx = e.clientY < rect.top + rect.height / 2 ? toIdx : toIdx + 1;
+        ids.splice(insertIdx, 0, draggedId);
+        const draggedCls = savedClasses.find(c => c.id === draggedId);
+        savedClasses.splice(savedClasses.indexOf(draggedCls), 1);
+        savedClasses.splice(insertIdx, 0, draggedCls);
+        renderClasses();
+        apiPatch('/api/classes/reorder', { order: ids }).catch(err => {
+          console.warn('[Classes] Reorder failed:', err.message);
+          refreshWorkspace();
+        });
+      });
+    });
+
+    renderExpandedClass();
     renderSetupContext();
+  }
+
+  function renderExpandedClass() {
+    const section = document.getElementById("class-expanded-section");
+    const card = document.getElementById("class-expanded-card");
+    if (!section || !card) return;
+
+    if (!expandedClassId) {
+      section.style.display = "none";
+      return;
+    }
+
+    const cls = savedClasses.find(c => c.id === expandedClassId);
+    if (!cls) {
+      section.style.display = "none";
+      expandedClassId = null;
+      return;
+    }
+
+    const liveSession = (selectedClassId === expandedClassId) ? selectedClassLiveSession : null;
+    const isEditing = editingClassId === expandedClassId;
+    section.style.display = "";
+
+    if (isEditing) {
+      card.innerHTML = `
+        <div class="class-expanded-edit">
+          <h3>Edit Class</h3>
+          <div class="form-group">
+            <label>Class Name</label>
+            <input type="text" class="class-edit-name" value="${escapeHtml(cls.name)}" placeholder="Class name">
+          </div>
+          <div class="form-group">
+            <label>Age Range</label>
+            <input type="text" class="class-edit-age" value="${escapeHtml(cls.ageRange || '')}" placeholder="e.g. 14-15">
+          </div>
+          <div class="form-group">
+            <label>Notes</label>
+            <textarea class="class-edit-desc" placeholder="Optional notes">${escapeHtml(cls.description || '')}</textarea>
+          </div>
+          <div class="class-edit-actions">
+            <button class="btn btn-primary btn-small class-save-btn">Save</button>
+            <button class="btn btn-secondary btn-small class-cancel-btn">Cancel</button>
+          </div>
+        </div>`;
+      card.querySelector('.class-save-btn').addEventListener('click', async () => {
+        const name = card.querySelector('.class-edit-name').value.trim();
+        const ageRange = card.querySelector('.class-edit-age').value.trim() || null;
+        const description = card.querySelector('.class-edit-desc').value.trim() || null;
+        if (!name) { alert("Class name cannot be empty"); return; }
+        const btn = card.querySelector('.class-save-btn');
+        btn.disabled = true;
+        btn.textContent = "Saving...";
+        try {
+          const updated = await apiPatch(`/api/classes/${cls.id}`, { name, ageRange, description });
+          const idx = savedClasses.findIndex(c => c.id === cls.id);
+          if (idx !== -1) savedClasses[idx] = { ...savedClasses[idx], ...updated };
+          editingClassId = null;
+          renderClasses();
+        } catch (err) {
+          alert("Failed to save: " + err.message);
+          btn.disabled = false;
+          btn.textContent = "Save";
+        }
+      });
+      card.querySelector('.class-cancel-btn').addEventListener('click', () => {
+        editingClassId = null;
+        renderClasses();
+      });
+      return;
+    }
+
+    card.innerHTML = `
+      <div class="class-expanded-layout">
+        <div class="class-expanded-left">
+          <div class="class-expanded-title-row">
+            <h3>${escapeHtml(cls.name)}</h3>
+            <button class="class-expanded-edit-btn" title="Edit class">&#9998;</button>
+            <button class="class-expanded-close-btn" title="Collapse">&times;</button>
+          </div>
+          <p class="class-expanded-desc">${escapeHtml(cls.description || "A persistent room for this class.")}</p>
+          <div class="class-expanded-code-row">
+            <span class="room-code-label">Room code</span>
+            <strong class="room-code-value">${escapeHtml(cls.roomCode || "pending")}</strong>
+            <button id="expanded-copy-code-btn" class="btn btn-secondary btn-small">Copy</button>
+          </div>
+          <div class="class-expanded-stats">
+            <div class="room-stat">
+              <span class="room-stat-label">Sessions</span>
+              <strong>${cls.sessionCount || 0}</strong>
+            </div>
+            <div class="room-stat">
+              <span class="room-stat-label">Age Range</span>
+              <strong>${escapeHtml(cls.ageRange || "Flexible")}</strong>
+            </div>
+            <div class="room-stat">
+              <span class="room-stat-label">Live Status</span>
+              <strong>${liveSession ? `${liveSession.status} now` : "No session open"}</strong>
+            </div>
+          </div>
+        </div>
+        <div class="class-expanded-right">
+          ${liveSession ? `
+            <div class="class-live-panel">
+              <span class="class-live-dot"></span>
+              <strong>Session is live</strong>
+              <p>${escapeHtml(liveSession.title)}</p>
+              <button id="expanded-join-live-btn" class="btn btn-primary">Join Live Session</button>
+            </div>
+          ` : `
+            <div class="class-start-panel">
+              <h4>Start Today's Discussion</h4>
+              <button id="expanded-start-btn" class="btn btn-primary">Go Live</button>
+            </div>
+          `}
+        </div>
+      </div>
+      <p class="room-code-note">Room codes stay the same for the class. Live session codes change each time you start a new session.</p>`;
+
+    // Wire up buttons
+    card.querySelector('.class-expanded-edit-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      editingClassId = expandedClassId;
+      renderClasses();
+    });
+    card.querySelector('.class-expanded-close-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      expandedClassId = null;
+      renderClasses();
+    });
+    document.getElementById("expanded-copy-code-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(cls.roomCode || "").then(() => {
+        const btn = document.getElementById("expanded-copy-code-btn");
+        if (!btn) return;
+        btn.textContent = "Copied";
+        setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+      });
+    });
+    document.getElementById("expanded-start-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      myName = accountUser?.name || "";
+      if (!myName) { alert("Sign in first."); return; }
+      openSetupForClass(cls.id, { suggestedTitle: `${cls.name} Discussion` });
+    });
+    document.getElementById("expanded-join-live-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!liveSession?.shortCode) return;
+      myName = accountUser?.name || "";
+      send({ type: "join_session", sessionId: liveSession.shortCode, name: myName, age: getAge(), authToken });
+    });
   }
 
   function renderSessionHistory() {
@@ -748,75 +845,8 @@
   }
 
   function renderClassRoomSummary() {
-    const summary = document.getElementById("class-room-summary");
-    if (!summary) return;
-
-    const cls = selectedClassSummary || getSelectedClass();
-    if (!cls) {
-      summary.className = "room-summary empty-state";
-      summary.innerHTML = 'Choose a class to see its room code, live session status, and timeline.';
-      return;
-    }
-
-    const liveSession = selectedClassLiveSession;
-    summary.className = "room-summary";
-    summary.innerHTML = `
-      <div class="room-summary-hero">
-        <div>
-          <span class="room-summary-label">Class Room</span>
-          <h4>${escapeHtml(cls.name)}</h4>
-          <p>${escapeHtml(cls.description || "A persistent room for this class. Students can keep using the same code across meetings.")}</p>
-        </div>
-        <div class="room-code-card">
-          <span class="room-code-label">Stable room code</span>
-          <strong id="selected-room-code">${escapeHtml(cls.roomCode || "pending")}</strong>
-          <button id="copy-room-code-btn" class="btn btn-secondary btn-small">Copy Code</button>
-        </div>
-      </div>
-      <div class="room-summary-metrics">
-        <div class="room-stat">
-          <span class="room-stat-label">Sessions</span>
-          <strong>${cls.sessionCount || 0}</strong>
-        </div>
-        <div class="room-stat">
-          <span class="room-stat-label">Age Range</span>
-          <strong>${escapeHtml(cls.ageRange || "Flexible")}</strong>
-        </div>
-        <div class="room-stat">
-          <span class="room-stat-label">Live Status</span>
-          <strong>${liveSession ? `${liveSession.status} now` : "No session open"}</strong>
-        </div>
-      </div>
-      <div class="room-summary-actions">
-        <button id="start-class-session-btn" class="btn btn-primary">Start Session In This Room</button>
-        ${liveSession ? `<button id="join-live-session-btn" class="btn btn-secondary">Join Live Session</button>` : ""}
-      </div>
-      <p class="room-code-note">Room codes stay the same for the class. Live session codes change each time you start a new session.</p>
-    `;
-
-    document.getElementById("copy-room-code-btn")?.addEventListener("click", () => {
-      navigator.clipboard.writeText(cls.roomCode || "").then(() => {
-        const btn = document.getElementById("copy-room-code-btn");
-        if (!btn) return;
-        btn.textContent = "Copied";
-        setTimeout(() => { btn.textContent = "Copy Code"; }, 1200);
-      });
-    });
-
-    document.getElementById("start-class-session-btn")?.addEventListener("click", () => {
-      myName = accountUser?.name || "";
-      if (!myName) {
-        alert("Sign in first.");
-        return;
-      }
-      openSetupForClass(cls.id, { suggestedTitle: `${cls.name} Discussion` });
-    });
-
-    document.getElementById("join-live-session-btn")?.addEventListener("click", () => {
-      if (!liveSession?.shortCode) return;
-      myName = accountUser?.name || "";
-      send({ type: "join_session", sessionId: liveSession.shortCode, name: myName, age: getAge(), authToken });
-    });
+    // Now rendered inside the expanded class card — just delegate
+    renderExpandedClass();
   }
 
   async function loadSelectedClassTimeline(query = sessionHistoryQuery) {
@@ -1734,9 +1764,8 @@
       const created = await apiPost("/api/classes", { name, ageRange, description });
       savedClasses.unshift(created);
       selectedClassId = created.id;
-      document.getElementById("new-class-name").value = "";
-      document.getElementById("new-class-age-range").value = "";
-      document.getElementById("new-class-description").value = "";
+      expandedClassId = created.id;
+      closeCreateClassModal();
       renderClasses();
       loadSelectedClassTimeline();
     } catch (error) {
@@ -1760,6 +1789,27 @@
   document.getElementById("login-btn").addEventListener("click", handleLogin);
   document.getElementById("demo-login-btn")?.addEventListener("click", handleDemoTeacherLogin);
   document.getElementById("create-class-btn").addEventListener("click", handleCreateClass);
+
+  // Create class modal
+  function openCreateClassModal() {
+    const modal = document.getElementById("create-class-modal");
+    if (!modal) return;
+    modal.style.display = "";
+    modal.classList.add("active");
+    document.getElementById("new-class-name")?.focus();
+  }
+  function closeCreateClassModal() {
+    const modal = document.getElementById("create-class-modal");
+    if (!modal) return;
+    modal.classList.remove("active");
+    modal.style.display = "none";
+    document.getElementById("new-class-name").value = "";
+    document.getElementById("new-class-age-range").value = "";
+    document.getElementById("new-class-description").value = "";
+  }
+  document.getElementById("open-create-class-modal-btn")?.addEventListener("click", openCreateClassModal);
+  document.getElementById("create-class-backdrop")?.addEventListener("click", closeCreateClassModal);
+  document.getElementById("create-class-close")?.addEventListener("click", closeCreateClassModal);
   document.getElementById("logout-btn").addEventListener("click", handleLogout);
   document.getElementById("session-history-search")?.addEventListener("input", (event) => {
     sessionHistoryQuery = event.target.value.trim();
@@ -1773,7 +1823,7 @@
     }, 220);
   });
 
-  ["join-code-input", "join-code-input-teacher", "join-code-input-student"].forEach((id) => {
+  ["join-code-input", "join-code-input-student"].forEach((id) => {
     const input = document.getElementById(id);
     if (!input) return;
     input.addEventListener("input", () => applyJoinCodeFormatting(input));
@@ -2289,18 +2339,7 @@
       });
     }
 
-    // Saved Classes toggle
-    const classesToggle = document.getElementById('classes-toggle');
-    const classesCard = document.getElementById('saved-classes-card');
-    if (classesToggle && classesCard) {
-      if (localStorage.getItem('classesCollapsed') === 'true') {
-        classesCard.classList.add('collapsed');
-      }
-      classesToggle.addEventListener('click', () => {
-        const now = classesCard.classList.toggle('collapsed');
-        localStorage.setItem('classesCollapsed', now);
-      });
-    }
+    // Saved Classes toggle (removed — now uses card grid)
   }
 
   function initAnalyticsModal() {

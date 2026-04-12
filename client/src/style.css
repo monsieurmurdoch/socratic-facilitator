@@ -2310,6 +2310,231 @@ body {
   border-color: rgba(139, 94, 60, 0.12);
 }
 
+/* ---- Class Card Grid ---- */
+.class-grid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.class-grid-header h3 {
+  margin: 0;
+}
+
+.class-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.class-card {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.9), rgba(243,240,235,0.92));
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+  user-select: none;
+}
+
+.class-card:hover {
+  border-color: rgba(61, 107, 94, 0.35);
+  box-shadow: 0 2px 12px var(--shadow);
+  transform: translateY(-1px);
+}
+
+.class-card-expanded {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(61, 107, 94, 0.18);
+}
+
+.class-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.class-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.class-card-name {
+  display: block;
+  font-size: 0.98rem;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.class-card-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.class-card-live {
+  background: #d63031;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  letter-spacing: 0.06em;
+  animation: livePulse 2s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.class-card-code {
+  margin-top: 4px;
+}
+
+/* Drag and drop on cards */
+.class-card-dragging {
+  opacity: 0.5;
+}
+
+.class-card-drop-above {
+  border-top: 3px solid var(--primary);
+}
+
+.class-card-drop-below {
+  border-bottom: 3px solid var(--primary);
+}
+
+/* ---- Expanded Class Card ---- */
+.class-expanded-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  animation: fadeIn 0.3s ease;
+}
+
+.class-expanded-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.class-expanded-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.class-expanded-title-row h3 {
+  margin: 0;
+  flex: 1;
+}
+
+.class-expanded-edit-btn,
+.class-expanded-close-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  transition: background 0.15s;
+}
+
+.class-expanded-edit-btn:hover,
+.class-expanded-close-btn:hover {
+  background: var(--surface-alt);
+}
+
+.class-expanded-desc {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.class-expanded-code-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.room-code-value {
+  font-family: 'Source Serif 4', serif;
+  font-size: 1.4rem;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+
+.class-expanded-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* Right side panels */
+.class-start-panel,
+.class-live-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 28px 20px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.86), rgba(243,240,235,0.9));
+  border: 1px solid var(--border);
+}
+
+.class-start-panel h4,
+.class-live-panel strong {
+  margin: 0;
+}
+
+.class-live-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: #d63031;
+  border-radius: 50%;
+  animation: livePulse 2s ease-in-out infinite;
+}
+
+.class-live-panel p {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  margin: 0;
+}
+
+/* Edit mode inside expanded card */
+.class-expanded-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.class-edit-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* ---- Create Class Modal ---- */
+.create-class-modal-content {
+  max-width: 440px;
+}
+
 .room-summary {
   display: flex;
   flex-direction: column;
@@ -2676,7 +2901,9 @@ body {
 
   .room-summary-hero,
   .room-summary-metrics,
-  .timeline-card {
+  .timeline-card,
+  .class-expanded-layout,
+  .class-expanded-stats {
     grid-template-columns: 1fr;
   }
 
@@ -2693,6 +2920,15 @@ body {
 
   .room-wait-actions {
     flex-direction: column;
+  }
+
+  .class-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .class-grid-header {
+    flex-direction: column;
+    gap: 12px;
   }
 
   .signin-prompt {
