@@ -711,6 +711,12 @@
           ` : `
             <div class="class-start-panel">
               <h4>Start Today's Discussion</h4>
+              <div class="form-group">
+                <input type="text" id="expanded-title-input" placeholder="Discussion title" value="${escapeHtml(cls.name)} Discussion">
+              </div>
+              <div class="form-group">
+                <textarea id="expanded-question-input" placeholder="Opening question (optional)" rows="2"></textarea>
+              </div>
               <button id="expanded-start-btn" class="btn btn-primary">Go Live</button>
             </div>
           `}
@@ -738,11 +744,46 @@
         setTimeout(() => { btn.textContent = "Copy"; }, 1200);
       });
     });
-    document.getElementById("expanded-start-btn")?.addEventListener("click", (e) => {
+    document.getElementById("expanded-start-btn")?.addEventListener("click", async (e) => {
       e.stopPropagation();
       myName = accountUser?.name || "";
       if (!myName) { alert("Sign in first."); return; }
-      openSetupForClass(cls.id, { suggestedTitle: `${cls.name} Discussion` });
+
+      const titleInput = document.getElementById("expanded-title-input");
+      const questionInput = document.getElementById("expanded-question-input");
+      const title = (titleInput?.value || "").trim() || `${cls.name} Discussion`;
+      const question = (questionInput?.value || "").trim() || null;
+      const btn = document.getElementById("expanded-start-btn");
+      if (btn) { btn.disabled = true; btn.textContent = "Creating..."; }
+
+      try {
+        const session = await apiPost("/api/sessions", {
+          title,
+          openingQuestion: question,
+          conversationGoal: null,
+          classId: cls.id
+        });
+        if (!session.shortCode) {
+          throw new Error("Server returned session without shortCode");
+        }
+        currentSessionId = session.shortCode;
+        isHost = true;
+        materials = [];
+        // Load saved materials before joining so they're ready for priming
+        await loadClassMaterials(cls.id);
+        refreshWorkspace();
+        send({
+          type: "join_session",
+          sessionId: session.shortCode,
+          name: myName,
+          age: getAge(),
+          authToken
+        });
+      } catch (error) {
+        console.error("[Session] Creation error:", error);
+        alert("Failed to create session: " + error.message);
+        if (btn) { btn.disabled = false; btn.textContent = "Go Live"; }
+      }
     });
     document.getElementById("expanded-join-live-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();

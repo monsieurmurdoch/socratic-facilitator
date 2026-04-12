@@ -2488,17 +2488,34 @@ body {
 .class-live-panel {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 14px;
-  padding: 28px 20px;
+  gap: 12px;
+  padding: 20px;
   border-radius: 16px;
   background:
     linear-gradient(180deg, rgba(255,255,255,0.86), rgba(243,240,235,0.9));
   border: 1px solid var(--border);
 }
 
-.class-start-panel h4,
+.class-start-panel h4 {
+  margin: 0 0 4px 0;
+  text-align: center;
+}
+
+.class-start-panel .form-group {
+  margin: 0;
+}
+
+.class-start-panel input,
+.class-start-panel textarea {
+  font-size: 0.85rem;
+  padding: 8px 10px;
+}
+
+.class-live-panel {
+  align-items: center;
+  text-align: center;
+}
+
 .class-live-panel strong {
   margin: 0;
 }
