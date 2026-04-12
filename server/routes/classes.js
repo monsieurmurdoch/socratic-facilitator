@@ -8,6 +8,41 @@ const sessionsRepo = require('../db/repositories/sessions');
 const { USER_ROLES, requireAuth, requireAnyRole } = require('../auth');
 
 router.use(express.json({ limit: '1mb' }));
+
+/**
+ * GET /api/classes/resolve/:code
+ * Public: resolve a persistent room code to its class and any live session.
+ * Used by students joining via a shared room code.
+ */
+router.get('/resolve/:code', async (req, res) => {
+  try {
+    const cls = await classesRepo.findByRoomCode(req.params.code);
+    if (!cls) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    const activeSession = await sessionsRepo.findLatestLiveByClassId(cls.id);
+
+    res.json({
+      class: {
+        id: cls.id,
+        name: cls.name,
+        description: cls.description,
+        roomCode: cls.room_code
+      },
+      activeSession: activeSession ? {
+        id: activeSession.id,
+        shortCode: activeSession.short_code,
+        title: activeSession.title,
+        status: activeSession.status
+      } : null
+    });
+  } catch (error) {
+    console.error('Resolve room code error:', error);
+    res.status(500).json({ error: 'Failed to resolve room code' });
+  }
+});
+
 router.use(requireAuth);
 
 router.get('/', async (req, res) => {
@@ -67,41 +102,6 @@ router.post('/', requireAnyRole(['Teacher', 'Admin', 'SuperAdmin']), async (req,
   } catch (error) {
     console.error('Create class error:', error);
     res.status(500).json({ error: 'Failed to create class' });
-  }
-});
-
-/**
- * GET /api/classes/resolve/:code
- * Public: resolve a persistent room code to its class and any active session.
- * Used by students joining via a shared room code.
- */
-router.get('/resolve/:code', async (req, res) => {
-  try {
-    const cls = await classesRepo.findByRoomCode(req.params.code);
-    if (!cls) {
-      return res.status(404).json({ error: 'Room not found' });
-    }
-
-    // Find any active session for this class
-    const activeSession = await sessionsRepo.findActiveByClass(cls.id);
-
-    res.json({
-      class: {
-        id: cls.id,
-        name: cls.name,
-        description: cls.description,
-        roomCode: cls.room_code
-      },
-      activeSession: activeSession ? {
-        id: activeSession.id,
-        shortCode: activeSession.short_code,
-        title: activeSession.title,
-        status: activeSession.status
-      } : null
-    });
-  } catch (error) {
-    console.error('Resolve room code error:', error);
-    res.status(500).json({ error: 'Failed to resolve room code' });
   }
 });
 

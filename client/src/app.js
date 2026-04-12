@@ -164,13 +164,38 @@
     }
   }
 
+  function leaveCurrentSession(nextScreen = "welcome") {
+    destroySttStream();
+    destroyJitsi();
+    clearState();
+    clearSessionUrlState();
+    pendingRoomJoin = null;
+    showScreen(nextScreen);
+    refreshWorkspace();
+    if (ws && ws.readyState === 1) {
+      try { ws.close(1000, "user_left_session"); } catch (error) {}
+    }
+  }
+
   // Handle browser back/forward buttons
   window.addEventListener('popstate', (e) => {
-    if (e.state?.screen) {
-      showScreen(e.state.screen);
-    } else {
-      showScreen('welcome');
+    const targetScreen = e.state?.screen || 'welcome';
+
+    if (currentScreen === "video" && targetScreen === "lobby") {
+      destroySttStream();
+      destroyJitsi();
+      discussionActive = false;
+      showScreen("lobby");
+      saveState();
+      return;
     }
+
+    if (["lobby", "video"].includes(currentScreen) && ["welcome", "setup", "roomWait"].includes(targetScreen)) {
+      leaveCurrentSession(targetScreen);
+      return;
+    }
+
+    showScreen(targetScreen);
   });
 
   // Set initial history state so back button from first navigation works
