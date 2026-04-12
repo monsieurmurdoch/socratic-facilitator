@@ -2767,6 +2767,24 @@ body {
   color: var(--text-secondary);
 }
 
+.timeline-expand-icon {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-left: 8px;
+  transition: transform 0.2s;
+}
+
+.timeline-toggle-row:hover .timeline-expand-icon {
+  color: var(--text-secondary);
+}
+
+.timeline-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  animation: fadeIn 0.2s ease;
+}
+
 .workspace-item.class-item {
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }

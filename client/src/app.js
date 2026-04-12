@@ -850,7 +850,7 @@
           <span class="timeline-stem${index === source.length - 1 ? ' timeline-stem-end' : ''}"></span>
         </div>
         <div class="timeline-body">
-          <div class="timeline-header">
+          <div class="timeline-header timeline-toggle-row" data-shortcode="${escapeHtml(session.shortCode)}">
             <div>
               <strong>${selectedClass ? `Session ${String(session.ordinal || source.length - index).padStart(2, '0')}` : escapeHtml(session.title)}</strong>
               <div class="workspace-item-meta timeline-subtitle">
@@ -858,24 +858,41 @@
               </div>
             </div>
             <span class="workspace-item-tag timeline-status-tag">${escapeHtml(session.status)}</span>
+            <span class="timeline-expand-icon">▼</span>
           </div>
-          <div class="workspace-item-meta timeline-stats">
-            ${session.participantCount} participants · ${session.messageCount} messages · You spoke about ${Math.round(Number(session.viewerSpeakingSeconds || 0))}s · contribution ${Number(session.viewerContributionScore || 0).toFixed(2)}
-          </div>
-          <p class="timeline-summary">${escapeHtml(buildSessionSummary(session))}</p>
-          ${(session.matchedParticipant || session.searchExcerpt) ? `
-            <div class="timeline-search-hit">
-              ${session.matchedParticipant ? `<span class="search-hit-pill">Matched student: ${escapeHtml(session.matchedParticipant)}</span>` : ""}
-              ${session.searchExcerpt ? `<p>“${escapeHtml(session.searchExcerpt)}${session.searchExcerpt.length >= 220 ? "…" : ""}”</p>` : ""}
+          <div class="timeline-details" style="display:none;">
+            <div class="workspace-item-meta timeline-stats">
+              ${session.participantCount} participants · ${session.messageCount} messages · You spoke about ${Math.round(Number(session.viewerSpeakingSeconds || 0))}s · contribution ${Number(session.viewerContributionScore || 0).toFixed(2)}
             </div>
-          ` : ""}
-          <div class="timeline-actions">
-            <button class="btn btn-secondary btn-small timeline-open-btn" data-shortcode="${escapeAttribute(session.shortCode)}">Open Analytics</button>
-            <span class="workspace-item-tag code-badge code-badge-session">${escapeHtml(session.shortCode)}</span>
+            <p class="timeline-summary">${escapeHtml(buildSessionSummary(session))}</p>
+            ${(session.matchedParticipant || session.searchExcerpt) ? `
+              <div class="timeline-search-hit">
+                ${session.matchedParticipant ? `<span class="search-hit-pill">Matched student: ${escapeHtml(session.matchedParticipant)}</span>` : ""}
+                ${session.searchExcerpt ? `<p>"${escapeHtml(session.searchExcerpt)}${session.searchExcerpt.length >= 220 ? "…" : ""}"</p>` : ""}
+              </div>
+            ` : ""}
+            <div class="timeline-actions">
+              <button class="btn btn-secondary btn-small timeline-open-btn" data-shortcode="${escapeAttribute(session.shortCode)}">Open Analytics</button>
+              <span class="workspace-item-tag code-badge code-badge-session">${escapeHtml(session.shortCode)}</span>
+            </div>
           </div>
         </div>
       </div>
     `).join("");
+
+    // Toggle expand/collapse on header click
+    list.querySelectorAll('.timeline-toggle-row').forEach(header => {
+      header.addEventListener('click', () => {
+        const details = header.nextElementSibling;
+        const icon = header.querySelector('.timeline-expand-icon');
+        if (details) {
+          const isHidden = details.style.display === 'none';
+          details.style.display = isHidden ? '' : 'none';
+          if (icon) icon.textContent = isHidden ? '▲' : '▼';
+        }
+      });
+      header.style.cursor = 'pointer';
+    });
 
     document.querySelectorAll('.timeline-open-btn').forEach(btn => {
       btn.addEventListener('click', (event) => {
