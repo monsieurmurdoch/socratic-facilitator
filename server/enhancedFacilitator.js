@@ -26,6 +26,7 @@ const {
 const sessionPrimer = require("./content/primer");
 const primedContextRepo = require("./db/repositories/primedContext");
 const learnerProfilesRepo = require("./db/repositories/learnerProfiles");
+const materialsRepo = require("./db/repositories/materials");
 const { claudeBreaker } = require("./utils/api-breakers");
 const { DEFAULT_ANTHROPIC_MODEL } = require("./models");
 
@@ -91,6 +92,18 @@ class EnhancedFacilitationEngine {
     });
 
     const decision = analysis.decision;
+    const responsePolicy = this._deriveResponsePolicy(stateTracker, message, {
+      llmContext: orchestrator.getLLMContext(),
+      participantCount,
+      ageCalibration
+    });
+
+    if (isSolo && !decision.shouldSpeak && !decision.deferred) {
+      decision.shouldSpeak = true;
+      decision.reason = `${decision.reason || 'solo_dialogue'}; solo_turn_response`;
+      decision.activation = Math.max(Number(decision.activation || 0), responsePolicy.minimumActivation);
+      decision.forcedBySoloCadence = true;
+    }
 
     // If we should speak, generate the message
     if (decision.shouldSpeak) {
@@ -98,7 +111,8 @@ class EnhancedFacilitationEngine {
         stateTracker,
         orchestrator,
         decision,
-        ageCalibration
+        ageCalibration,
+        responsePolicy
       );
 
       return {
@@ -117,7 +131,8 @@ class EnhancedFacilitationEngine {
       shouldSpeak: false,
       reasoning: decision.reason,
       activation: decision.activation,
-      analysis
+      analysis,
+      responsePolicy
     };
   }
 
@@ -161,7 +176,7 @@ class EnhancedFacilitationEngine {
   /**
    * Generate the facilitator message.
    */
-  async _generateMessage(stateTracker, orchestrator, decision, ageCalibration) {
+  async _generateMessage(stateTracker, orchestrator, decision, ageCalibration, responsePolicy = null) {
     const snapshot = await stateTracker.getStateSnapshot();
     const history = await stateTracker.getRecentHistory(40);
     const llmContext = orchestrator.getLLMContext();
@@ -175,10 +190,13 @@ class EnhancedFacilitationEngine {
 
     // Fetch primed context from materials (if any)
     let primedSnippet = null;
+    let groundingSnippet = null;
     try {
       const dbSessionId = stateTracker.session?.id || stateTracker.sessionId;
       const primedCtx = await primedContextRepo.getBySession(dbSessionId);
       primedSnippet = sessionPrimer.getContextSnippet(primedCtx);
+      const combinedText = await materialsRepo.getCombinedText(dbSessionId);
+      groundingSnippet = this._buildGroundingSnippet(combinedText);
     } catch (e) {
       // No primed context — that's fine, not all sessions have materials
     }
@@ -234,7 +252,9 @@ class EnhancedFacilitationEngine {
       ageProfile,
       participantCount,
       primedSnippet,
-      participantHistory
+      participantHistory,
+      responsePolicy,
+      groundingSnippet
     );
 
     const userMessage = this._buildUserMessage(
@@ -242,7 +262,9 @@ class EnhancedFacilitationEngine {
       history,
       decision,
       interventionType,
-      llmContext
+      llmContext,
+      responsePolicy,
+      groundingSnippet
     );
 
     try {
@@ -292,6 +314,181 @@ class EnhancedFacilitationEngine {
     }
   }
 
+  _deriveResponsePolicy(stateTracker, message, opts = {}) {
+    const turns = stateTracker.getTurnsIncludingCurrent
+      ? stateTracker.getTurnsIncludingCurrent()
+      : [];
+    const latestTurn = [...turns].reverse().find(turn => turn.participantId !== "__facilitator__");
+    const turnText = String(latestTurn?.text || message.text || "").trim();
+    const wordCount = turnText ? turnText.split(/\s+/).length : 0;
+    const llmAssessment = message.llmAssessment || {};
+
+    const specificity = Number(llmAssessment.specificity ?? this._estimateSpecificity(turnText));
+    const coherence = Number(llmAssessment.coherence ?? 0.5);
+    const evidenceSignal = this._computeEvidenceSignal(turnText);
+    const uncertaintySignal = this._computeUncertaintySignal(turnText);
+    const interpretiveSignal = this._computeInterpretiveSignal(turnText);
+    const depthSignal = Math.min(wordCount / 35, 1);
+    const humanUptake = Math.max(0, Math.min(
+      1,
+      (depthSignal * 0.2) +
+      (specificity * 0.25) +
+      (coherence * 0.15) +
+      (evidenceSignal * 0.25) +
+      (uncertaintySignal * 0.15)
+    ));
+
+    const participantCount = Number(opts.participantCount || 0);
+    const isSolo = participantCount <= 1;
+    const pedagogicalPhase = this._inferPedagogicalPhase({
+      turnText,
+      turnCount: turns.filter(turn => turn.participantId !== "__facilitator__").length,
+      evidenceSignal,
+      interpretiveSignal
+    });
+
+    let budget = "group";
+    let maxWords = 24;
+    let allowedQuestionTypes = [
+      "clarify",
+      "ask_for_evidence",
+      "test_assumption",
+      "contrast_readings"
+    ];
+    let forbiddenMoves = [
+      "deliver an interpretation as settled fact",
+      "summarize the participant's answer into the correct reading",
+      "introduce symbolism/theme before the participant has grounded in the text"
+    ];
+
+    if (isSolo) {
+      if (humanUptake < 0.34) {
+        budget = "micro";
+        maxWords = 10;
+        allowedQuestionTypes = ["clarify", "locate", "complete_the_thought"];
+        forbiddenMoves.push("paraphrase their idea at length");
+      } else if (humanUptake < 0.68) {
+        budget = "medium";
+        maxWords = 18;
+        allowedQuestionTypes = ["clarify", "ask_for_evidence", "make_a_distinction"];
+      } else {
+        budget = "deep";
+        maxWords = 28;
+        allowedQuestionTypes = ["ask_for_evidence", "test_assumption", "contrast_readings"];
+      }
+    }
+
+    if (pedagogicalPhase === "literal" || pedagogicalPhase === "evidence") {
+      forbiddenMoves.push("name the theme for them", "bridge immediately to the complete interpretation");
+    }
+
+    return {
+      isSolo,
+      turnText,
+      wordCount,
+      humanUptake: Math.round(humanUptake * 100) / 100,
+      evidenceSignal: Math.round(evidenceSignal * 100) / 100,
+      uncertaintySignal: Math.round(uncertaintySignal * 100) / 100,
+      interpretiveSignal: Math.round(interpretiveSignal * 100) / 100,
+      pedagogicalPhase,
+      budget,
+      maxWords,
+      allowedQuestionTypes,
+      forbiddenMoves,
+      minimumActivation: budget === "micro" ? 0.34 : budget === "medium" ? 0.38 : 0.42
+    };
+  }
+
+  _estimateSpecificity(text) {
+    const wordCount = String(text || "").trim().split(/\s+/).filter(Boolean).length;
+    if (!wordCount) return 0;
+    let score = 0.2;
+    if (wordCount >= 8) score += 0.15;
+    if (wordCount >= 16) score += 0.15;
+    if (/\b(because|for example|for instance|specifically|in the text|the line|the phrase)\b/i.test(text)) {
+      score += 0.3;
+    }
+    if (/["“”']/.test(text)) {
+      score += 0.2;
+    }
+    return Math.min(score, 1);
+  }
+
+  _computeEvidenceSignal(text) {
+    if (!text) return 0;
+    let score = 0;
+    if (/["“”']/.test(text)) score += 0.35;
+    if (/\b(line|lines|page|pages|stanza|paragraph|section|sentence)\b/i.test(text)) score += 0.25;
+    if (/\b(the text says|it says|the phrase|the word|because it says|in the passage)\b/i.test(text)) score += 0.25;
+    if (/\bfor example|for instance|look at\b/i.test(text)) score += 0.15;
+    return Math.min(score, 1);
+  }
+
+  _computeUncertaintySignal(text) {
+    if (!text) return 0;
+    let score = 0;
+    if (/\b(i think|maybe|i guess|i'm not sure|perhaps|it seems|kind of|sort of)\b/i.test(text)) score += 0.45;
+    if (/\?/.test(text)) score += 0.35;
+    if (/\b(confused|unclear|don't know|not sure)\b/i.test(text)) score += 0.2;
+    return Math.min(score, 1);
+  }
+
+  _computeInterpretiveSignal(text) {
+    if (!text) return 0;
+    let score = 0;
+    if (/\b(means|represents|symbol|theme|shows that|suggests that|implies|reveals)\b/i.test(text)) score += 0.6;
+    if (/\btherefore|so really|the point is\b/i.test(text)) score += 0.2;
+    return Math.min(score, 1);
+  }
+
+  _inferPedagogicalPhase({ turnText, turnCount, evidenceSignal, interpretiveSignal }) {
+    if (turnCount <= 2 && evidenceSignal < 0.25 && interpretiveSignal < 0.35) {
+      return "literal";
+    }
+    if (evidenceSignal >= 0.35 && interpretiveSignal < 0.55) {
+      return "evidence";
+    }
+    if (interpretiveSignal >= 0.55) {
+      return turnCount >= 10 ? "synthesis" : "interpretation";
+    }
+    if (/\bwhat do you mean|which part|where\b/i.test(turnText)) {
+      return "literal";
+    }
+    return turnCount >= 8 ? "interpretation" : "evidence";
+  }
+
+  _buildGroundingSnippet(combinedText) {
+    const text = String(combinedText || "").trim();
+    if (!text) return null;
+
+    const rawLines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const lines = rawLines.length >= 8 ? rawLines : this._wrapGroundingText(text, 110);
+    const maxLines = 80;
+    const numbered = lines
+      .slice(0, maxLines)
+      .map((line, index) => `${index + 1}. ${line}`)
+      .join("\n");
+
+    return `NUMBERED SOURCE TEXT (only cite these line numbers if you use them):\n${numbered}${lines.length > maxLines ? `\n... [${lines.length - maxLines} more lines omitted]` : ""}`;
+  }
+
+  _wrapGroundingText(text, maxChars = 110) {
+    const words = String(text || "").split(/\s+/).filter(Boolean);
+    const lines = [];
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length > maxChars && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) lines.push(current);
+    return lines;
+  }
+
   /**
    * Determine the type of intervention needed.
    */
@@ -336,7 +533,7 @@ class EnhancedFacilitationEngine {
   /**
    * Build the system prompt.
    */
-  _buildSystemPrompt(topic, ageCalibration, interventionType, llmContext, ageProfile = 'middle', participantCount = 2, primedSnippet = null, participantHistory = null) {
+  _buildSystemPrompt(topic, ageCalibration, interventionType, llmContext, ageProfile = 'middle', participantCount = 2, primedSnippet = null, participantHistory = null, responsePolicy = null, groundingSnippet = null) {
     const isSolo = participantCount <= 1;
     const interventionGuidance = this._getInterventionGuidance(interventionType, llmContext);
     const platoIdentity = getPlatoSystemPromptAddition(ageProfile);
@@ -372,7 +569,7 @@ class EnhancedFacilitationEngine {
 
     const silenceGuidance = isSolo
       ? `YOUR DEFAULT POSTURE IS LISTENING.
-You respond after each message — this is a dialogue. But keep responses tight: one question, nothing more.`
+You respond after each message — this is a dialogue. But scale the substance of your question to what the participant has actually given you.`
       : `YOUR DEFAULT STATE IS SILENCE.
 Most of the time, you should not speak. The conversation belongs to the participants.`;
 
@@ -387,7 +584,7 @@ FOCUS ON LITERAL MEANING: Start with questions about what the text literally say
 
 READING FACILITATION ("Help us Read" mode): When a numbered text or PDF has been uploaded, chunk into small age-appropriate segments (young: 1-3 sentences/~40 words; middle: one short paragraph/~100 words). Always prompt the participant to read the chunk aloud themselves rather than reading it to them. After they read, assess literal understanding using ONLY questions — target verbatim recall of key phrases where important, or accurate paraphrasing. Gracefully handle self-corrections or detected STT errors by adopting the corrected understanding (these are tracked in learner profiles). 
 
-For follow-along: Reference specific page numbers, line numbers or sections from the source (e.g. "page 242, lines 15-22") so the group can locate it visually or via screenshare in the room.
+For follow-along: Only reference page numbers, line numbers, or sections if they are actually present in the grounded source text you were given for this turn. If you cannot locate the passage exactly, say so indirectly by asking the participant to point to the phrase or short excerpt.
 
 SPEECH-TO-TEXT NOTE: Participants speak via microphone and their speech is transcribed by STT. Your name "Plato" is often misheard as "Play-Doh", "play doh", "play-doe", "play though", etc. Treat these as someone addressing you. STT may also misspell participant names — use context to infer who is speaking or being addressed.
 ${platoIdentity}
@@ -401,6 +598,12 @@ Phase: ${llmContext.phase}
 Messages so far: ${llmContext.messageCount}
 Engagement score: ${llmContext.engagementScore}
 Coherence score: ${llmContext.coherenceScore}
+${responsePolicy ? `Pedagogical phase: ${responsePolicy.pedagogicalPhase}
+Human uptake: ${responsePolicy.humanUptake}
+Response budget: ${responsePolicy.budget}
+Max words before the question mark: ${responsePolicy.maxWords}
+Allowed question types: ${responsePolicy.allowedQuestionTypes.join(", ")}
+Forbidden for this turn: ${responsePolicy.forbiddenMoves.join("; ")}` : ""}
 
 ${interventionGuidance}
 
@@ -409,6 +612,7 @@ Title: ${topic.title || 'Open Discussion'}
 ${topic.openingQuestion ? `Opening question: ${topic.openingQuestion}` : ''}
 ${topic.followUpAngles?.length ? `Possible follow-up angles: ${topic.followUpAngles.join("; ")}` : ''}
 ${primedSnippet ? `\nSOURCE MATERIALS (uploaded by the session creator — use these to ground your questions):\n${primedSnippet}` : ''}
+${groundingSnippet ? `\n${groundingSnippet}` : '\nGROUNDED TEXT ACCESS: You do not currently have a fully addressable text excerpt for this turn. Do not pretend to know exact line numbers or exact wording unless the participant just supplied it.'}
 
 AGE CALIBRATION:
 - Vocabulary level: ${ageCalibration.vocabLevel}
@@ -434,7 +638,11 @@ CRITICAL RULES:
 3. Never lecture. Never explain.
 4. If correcting a fact, do it gently as a question ("Is it possible that...?")
 5. Build on what they've said, especially anchor points.
-6. Never use these phrases: ${PLATO_IDENTITY.personality.language.forbiddenPhrases.slice(0, 4).join(', ')}`;
+6. Never complete the participant's interpretation for them.
+7. Do not turn one response into a polished summary of the text's meaning.
+8. In literal or evidence phase, stay close to wording, evidence, or distinctions — do not jump to theme or moral.
+9. If the response budget is micro, ask a very small clarifying question and do not paraphrase at length.
+10. Never use these phrases: ${PLATO_IDENTITY.personality.language.forbiddenPhrases.slice(0, 4).join(', ')}`;
   }
 
   /**
@@ -491,7 +699,7 @@ When in doubt, stay silent.`;
   /**
    * Build the user message with conversation context.
    */
-  _buildUserMessage(snapshot, history, decision, interventionType, llmContext) {
+  _buildUserMessage(snapshot, history, decision, interventionType, llmContext, responsePolicy = null, groundingSnippet = null) {
     return `CURRENT STATE:
 ${JSON.stringify(snapshot, null, 2)}
 
@@ -503,6 +711,12 @@ DECISION CONTEXT:
 - Activation: ${decision.activation}
 - Reason: ${decision.reason}
 ${decision.signals ? `- Engagement: ${decision.signals.engagementScore}\n- Coherence: ${decision.signals.coherenceScore}\n- Anchor drift: ${decision.signals.anchorDrift}` : ''}
+${responsePolicy ? `- Pedagogical phase: ${responsePolicy.pedagogicalPhase}
+- Human uptake: ${responsePolicy.humanUptake}
+- Response budget: ${responsePolicy.budget}
+- Target max words: ${responsePolicy.maxWords}
+- Allowed question types: ${responsePolicy.allowedQuestionTypes.join(", ")}` : ''}
+${groundingSnippet ? '- Grounded numbered source text is available above. Only use those line numbers if you mention line numbers.' : '- No grounded numbered source text is available. Do not claim exact location in the text.'}
 
 Based on this, generate your intervention message. Remember: ONE question, SHORT, use names.
 
