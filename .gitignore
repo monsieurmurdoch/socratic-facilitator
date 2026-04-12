@@ -35,6 +35,7 @@ server/models/
 # Build outputs
 dist/
 build/
+output/
 
 # Local-only helper worktrees and service checkouts
 .claude/worktrees/

@@ -6,6 +6,9 @@
   let sessionId = null;
   let paused = false;
   let joinedAt = null;
+  let sourceMaterials = [];
+  let selectedSourceId = "";
+  let sourceSearch = "";
 
   // --- DOM refs ---
   const $ = (id) => document.getElementById(id);
@@ -21,6 +24,14 @@
   $("join-btn").addEventListener("click", joinSession);
   $("session-code-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") joinSession();
+  });
+  $("source-material-select").addEventListener("change", (e) => {
+    selectedSourceId = e.target.value;
+    renderSourceText();
+  });
+  $("source-search-input").addEventListener("input", (e) => {
+    sourceSearch = e.target.value.trim().toLowerCase();
+    renderSourceText();
   });
 
   function joinSession() {
@@ -70,6 +81,7 @@
         if (msg.analyzerState) renderAnalyzer(msg.analyzerState);
         if (msg.recentTurns) renderInitialTranscript(msg.recentTurns);
         startTimer(msg.snapshot?.sessionDurationMin);
+        loadSourceText();
         break;
 
       case "dashboard_update":
@@ -226,6 +238,106 @@
       : "Never";
   }
 
+  async function loadSourceText() {
+    if (!sessionId) return;
+
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/source-text`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      sourceMaterials = payload.materials || [];
+      if (!selectedSourceId || !sourceMaterials.some((m) => materialKey(m) === selectedSourceId)) {
+        selectedSourceId = sourceMaterials[0] ? materialKey(sourceMaterials[0]) : "";
+      }
+      renderSourceSelector();
+      renderSourceText();
+    } catch (error) {
+      $("source-summary").textContent = "Could not load source text";
+      $("source-empty").style.display = "block";
+      $("source-empty").innerHTML = `<p>${esc(error.message || "Source text unavailable")}</p>`;
+      $("source-viewer").style.display = "none";
+    }
+  }
+
+  function renderSourceSelector() {
+    const select = $("source-material-select");
+    const current = selectedSourceId;
+    select.innerHTML = "";
+
+    if (!sourceMaterials.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No shared source text";
+      select.appendChild(option);
+      select.disabled = true;
+      return;
+    }
+
+    select.disabled = false;
+
+    for (const material of sourceMaterials) {
+      const option = document.createElement("option");
+      option.value = materialKey(material);
+      option.textContent = `${material.title} · ${material.lineCount || 0} lines`;
+      if (option.value === current) option.selected = true;
+      select.appendChild(option);
+    }
+  }
+
+  function renderSourceText() {
+    const viewer = $("source-viewer");
+    const empty = $("source-empty");
+    const summary = $("source-summary");
+    const material = sourceMaterials.find((item) => materialKey(item) === selectedSourceId) || sourceMaterials[0];
+
+    if (!material) {
+      summary.textContent = "No source loaded";
+      empty.style.display = "block";
+      empty.innerHTML = "<p>Uploaded poems, excerpts, and pasted source text will appear here with canonical line numbers.</p>";
+      viewer.style.display = "none";
+      return;
+    }
+
+    const chunks = (material.chunks || []).filter((chunk) => {
+      if (!sourceSearch) return true;
+      return String(chunk.content || "").toLowerCase().includes(sourceSearch)
+        || String(chunk.lineStart).includes(sourceSearch)
+        || String(chunk.lineEnd).includes(sourceSearch);
+    });
+
+    summary.textContent = `${material.title} · ${material.lineCount || 0} lines`;
+
+    if (!chunks.length) {
+      empty.style.display = "block";
+      empty.innerHTML = `<p>No lines match “${esc(sourceSearch)}”.</p>`;
+      viewer.style.display = "none";
+      return;
+    }
+
+    empty.style.display = "none";
+    viewer.style.display = "flex";
+    viewer.innerHTML = chunks.map((chunk) => {
+      const lines = String(chunk.content || "")
+        .split("\n")
+        .map((line, index) => ({
+          number: chunk.lineStart + index,
+          text: line
+        }));
+
+      return `<article class="source-chunk">
+        <div class="source-chunk-meta">Lines ${chunk.lineStart}-${chunk.lineEnd}</div>
+        <div class="source-lines">
+          ${lines.map((line) => `
+            <div class="source-line${matchesLine(line.text) ? " source-line-match" : ""}">
+              <span class="source-line-number">${line.number}</span>
+              <span class="source-line-text">${highlightMatch(esc(line.text))}</span>
+            </div>
+          `).join("")}
+        </div>
+      </article>`;
+    }).join("");
+  }
+
   function renderAnalyzer(state) {
     if (!state) return;
 
@@ -338,5 +450,20 @@
     const d = document.createElement("div");
     d.textContent = text || "";
     return d.innerHTML;
+  }
+
+  function materialKey(material) {
+    return material.materialId || material.title || "";
+  }
+
+  function matchesLine(text) {
+    return sourceSearch && String(text || "").toLowerCase().includes(sourceSearch);
+  }
+
+  function highlightMatch(escapedText) {
+    if (!sourceSearch) return escapedText;
+    const safeQuery = sourceSearch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(${safeQuery})`, "ig");
+    return escapedText.replace(regex, "<mark>$1</mark>");
   }
 })();

@@ -14,6 +14,7 @@ const classesRepo = require('../db/repositories/classes');
 const classMembershipsRepo = require('../db/repositories/classMemberships');
 const storage = require('../storage');
 const contentExtractor = require('../content/extractor');
+const { getOCRAvailability } = require('../content/ocr');
 const sessionPrimer = require('../content/primer');
 const { DISCUSSION_TOPICS } = require('../config');
 const { requireAuth } = require('../auth');
@@ -155,6 +156,16 @@ router.get('/resolve/:code', async (req, res) => {
   }
 });
 
+router.get('/ocr/status', async (_req, res) => {
+  try {
+    const availability = await getOCRAvailability();
+    res.json(availability);
+  } catch (error) {
+    console.error('OCR status error:', error);
+    res.status(500).json({ error: 'Failed to inspect OCR availability' });
+  }
+});
+
 // Get detailed analytics for a specific session
 router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
   try {
@@ -193,6 +204,25 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Session analytics error:', error);
     res.status(500).json({ error: 'Failed to load session analytics' });
+  }
+});
+
+router.get('/:code/source-text', async (req, res) => {
+  try {
+    const session = await sessionsRepo.findByShortCode(req.params.code);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const materials = await materialChunksRepo.getViewerBySession(session.id);
+    res.json({
+      sessionId: session.short_code,
+      sessionTitle: session.title,
+      materials
+    });
+  } catch (error) {
+    console.error('Get source text error:', error);
+    res.status(500).json({ error: 'Failed to load source text' });
   }
 });
 
@@ -259,6 +289,7 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
 
     const { type, url, text, filename: bodyFilename } = req.body;
     let extractedText = '';
+    let extractionMetadata = {};
     let filename = null;
     let storagePath = null;
     let originalType = type || 'other';
@@ -269,6 +300,7 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
       originalType = contentExtractor.getFileType(filename, req.file.mimetype);
       const extracted = await contentExtractor.extract(req.file.buffer, originalType);
       extractedText = extracted.text || '';
+      extractionMetadata = extracted.metadata || {};
     } else if (text) {
       // Pre-extracted text (e.g. carried over from a previous session's materials)
       filename = bodyFilename || 'class-material.txt';
@@ -279,6 +311,7 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
       filename = url.substring(0, 255);
       const extracted = await contentExtractor.extract(null, 'url', { url });
       extractedText = extracted.text || '';
+      extractionMetadata = extracted.metadata || {};
     } else {
       return res.status(400).json({ error: 'Either file or URL is required' });
     }
@@ -312,6 +345,8 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
       filename: material.filename,
       type: material.original_type,
       extractedLength: extractedText.length,
+      extractionMethod: extractionMetadata.extractionMethod || null,
+      extractionMetadata,
       uploadedAt: material.uploaded_at
     });
   } catch (error) {

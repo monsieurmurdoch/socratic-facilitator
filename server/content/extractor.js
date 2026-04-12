@@ -6,6 +6,11 @@
 
 const pdf = require('pdf-parse');
 const fs = require('fs').promises;
+const {
+  getOCRAvailability,
+  looksLikeWeakPDFExtraction,
+  extractTextFromPDFWithOCR
+} = require('./ocr');
 
 class ContentExtractor {
   /**
@@ -14,12 +19,41 @@ class ContentExtractor {
   async extractPDF(buffer) {
     try {
       const data = await pdf(buffer);
-      return {
-        text: data.text.trim(),
-        metadata: {
-          pages: data.numpages,
-          info: data.info
+      const nativeText = data.text.trim();
+      const nativeMetadata = {
+        pages: data.numpages,
+        info: data.info,
+        extractionMethod: 'native'
+      };
+
+      if (looksLikeWeakPDFExtraction(nativeText, { pages: data.numpages })) {
+        const ocr = await extractTextFromPDFWithOCR(buffer);
+        if (ocr.text && ocr.text.trim().length > nativeText.length * 0.75) {
+          return {
+            text: ocr.text.trim(),
+            metadata: {
+              ...nativeMetadata,
+              ocr: ocr.metadata,
+              extractionMethod: 'ocr'
+            }
+          };
         }
+
+        const availability = await getOCRAvailability();
+        return {
+          text: nativeText,
+          metadata: {
+            ...nativeMetadata,
+            ocrAttempted: availability.available,
+            ocrAvailable: availability.available,
+            extractionQuality: 'weak_native'
+          }
+        };
+      }
+
+      return {
+        text: nativeText,
+        metadata: nativeMetadata
       };
     } catch (error) {
       throw new Error(`PDF extraction failed: ${error.message}`);

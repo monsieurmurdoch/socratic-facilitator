@@ -4,17 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Teacher Dashboard — Socratic Facilitator</title>
-  <link rel="stylesheet" href="/src/dashboard.css?v=2">
+  <link rel="stylesheet" href="/src/dashboard.css?v=3">
 </head>
 <body>
   <!-- Join Screen -->
   <div id="join-screen" class="join-screen">
     <div class="join-card">
+      <span class="join-kicker">Live Seminar Control</span>
       <h1>Teacher Dashboard</h1>
-      <p>Monitor and control Plato in real time.</p>
+      <p>Monitor Plato, track discussion signals, and keep the shared text visible while the room is live.</p>
       <div class="join-form">
         <input type="text" id="session-code-input" placeholder="Session code (e.g. ab12cd)" maxlength="8" autocomplete="off">
         <button id="join-btn" class="ctrl-btn ctrl-primary">Monitor Session</button>
+      </div>
+      <div class="join-hint-row">
+        <span class="join-hint-chip">Live transcript</span>
+        <span class="join-hint-chip">Source text lines</span>
+        <span class="join-hint-chip">Teacher controls</span>
       </div>
     </div>
   </div>
@@ -24,15 +30,37 @@
 
     <header class="dash-header">
       <div class="dash-header-left">
-        <h1>Plato Dashboard</h1>
-        <span id="session-code" class="dash-code">------</span>
-        <span id="session-status" class="dash-badge">Connecting</span>
+        <div class="dash-brand">
+          <span class="dash-eyebrow">Teacher View</span>
+          <h1>Seminar Command</h1>
+        </div>
+        <div class="dash-session-meta">
+          <span id="session-code" class="dash-code">------</span>
+          <span id="session-status" class="dash-badge">Connecting</span>
+        </div>
       </div>
       <div class="dash-header-right">
-        <span id="topic-title" class="dash-topic"></span>
+        <div class="dash-header-topic">
+          <span class="dash-header-label">Discussion</span>
+          <span id="topic-title" class="dash-topic"></span>
+        </div>
         <span id="session-timer" class="dash-timer">0:00</span>
       </div>
     </header>
+
+    <section class="dash-hero">
+      <div class="hero-copy">
+        <span class="hero-kicker">Live Classroom Memory</span>
+        <h2>Keep the room, the text, and Plato in the same field of view.</h2>
+        <p>Watch the conversation unfold, ground it in the source material, and intervene without losing the thread.</p>
+      </div>
+      <div class="hero-pills">
+        <span class="hero-pill">Transcript</span>
+        <span class="hero-pill">Source Text</span>
+        <span class="hero-pill">Signals</span>
+        <span class="hero-pill">Controls</span>
+      </div>
+    </section>
 
     <div class="dash-grid">
 
@@ -126,6 +154,24 @@
         <div id="transcript-feed" class="transcript-feed"></div>
       </section>
 
+      <!-- Source Text -->
+      <section class="dash-card dash-source">
+        <div class="dash-card-heading">
+          <h2>Shared Source Text</h2>
+          <span id="source-summary" class="card-meta">No source loaded</span>
+        </div>
+        <div class="source-toolbar">
+          <select id="source-material-select" class="source-select">
+            <option value="">Select source text</option>
+          </select>
+          <input id="source-search-input" class="source-search-input" type="search" placeholder="Find a student name, phrase, or line">
+        </div>
+        <div id="source-empty" class="source-empty">
+          <p>Uploaded poems, excerpts, and pasted source text will appear here with canonical line numbers.</p>
+        </div>
+        <div id="source-viewer" class="source-viewer" style="display:none;"></div>
+      </section>
+
       <!-- Anchors -->
       <section class="dash-card dash-anchors">
         <h2>Key Anchors</h2>
@@ -147,6 +193,6 @@
     </div>
   </div>
 
-  <script src="/src/dashboard.js?v=2"></script>
+  <script src="/src/dashboard.js?v=3"></script>
 </body>
 </html>

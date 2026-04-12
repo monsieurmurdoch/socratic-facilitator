@@ -6,7 +6,7 @@
  */
 
 function stripExistingLinePrefix(line) {
-  return String(line || "").replace(/^\s*\d+\s*[\]\).:-]\s*/, "").trim();
+  return String(line || "").replace(/^\s*(?:\d+\s*[\]\).:\-]|\d+\.)\s*/u, "").trim();
 }
 
 function wrapText(text, maxChars = 110) {
@@ -32,11 +32,11 @@ function normalizeToLines(text) {
   const raw = String(text || "").replace(/\r\n/g, "\n").trim();
   if (!raw) return [];
 
-  const explicitLines = raw.split("\n")
-    .map(stripExistingLinePrefix)
-    .filter(Boolean);
+  const rawLines = raw.split("\n");
+  const explicitLines = rawLines.map(stripExistingLinePrefix).filter(Boolean);
+  const hasExplicitNumbering = rawLines.some((line) => /^\s*(?:\d+\s*[\]\).:\-]|\d+\.)\s*/u.test(line));
 
-  if (explicitLines.length >= 8) {
+  if (explicitLines.length >= 3 || hasExplicitNumbering) {
     return explicitLines;
   }
 

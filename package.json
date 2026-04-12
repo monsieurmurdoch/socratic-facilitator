@@ -14,7 +14,8 @@
     "setup": "bash ./jitsi/setup.sh && npm install",
     "local": "bash ./start-local.sh",
     "test": "jest --runInBand --forceExit",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "test:review": "node scripts/run-human-review.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

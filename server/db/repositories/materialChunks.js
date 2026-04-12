@@ -48,6 +48,57 @@ async function getBySession(sessionId) {
   return result.rows;
 }
 
+async function getViewerBySession(sessionId) {
+  const result = await db.query(
+    `SELECT
+       mc.id,
+       mc.material_id,
+       mc.session_id,
+       mc.chunk_index,
+       mc.line_start,
+       mc.line_end,
+       mc.source_kind,
+       mc.content,
+       mc.created_at,
+       sm.filename,
+       sm.original_type,
+       sm.uploaded_at
+     FROM material_chunks mc
+     LEFT JOIN source_materials sm ON sm.id = mc.material_id
+     WHERE mc.session_id = $1
+     ORDER BY sm.uploaded_at ASC NULLS LAST, mc.chunk_index ASC`,
+    [sessionId]
+  );
+
+  const byMaterial = new Map();
+
+  for (const row of result.rows) {
+    const key = row.material_id || `session-${sessionId}`;
+    if (!byMaterial.has(key)) {
+      byMaterial.set(key, {
+        materialId: row.material_id || null,
+        title: row.filename || "Shared Source Text",
+        originalType: row.original_type || row.source_kind || "text",
+        sourceKind: row.source_kind || "material",
+        chunks: []
+      });
+    }
+
+    byMaterial.get(key).chunks.push({
+      id: row.id,
+      chunkIndex: Number(row.chunk_index || 0),
+      lineStart: Number(row.line_start || 0),
+      lineEnd: Number(row.line_end || 0),
+      content: row.content || ""
+    });
+  }
+
+  return Array.from(byMaterial.values()).map((material) => ({
+    ...material,
+    lineCount: material.chunks.reduce((max, chunk) => Math.max(max, chunk.lineEnd), 0)
+  }));
+}
+
 async function searchRelevantBySession(sessionId, query, limit = 5) {
   const chunks = await getBySession(sessionId);
   if (chunks.length === 0) return [];
@@ -71,5 +122,6 @@ module.exports = {
   clearByMaterial,
   replaceForMaterial,
   getBySession,
+  getViewerBySession,
   searchRelevantBySession
 };
