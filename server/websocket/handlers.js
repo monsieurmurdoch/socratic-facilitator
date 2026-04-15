@@ -74,6 +74,7 @@ async function handleJoinDashboard(ws, msg, ctx) {
     snapshot,
     analyzerState,
     recentTurns,
+    currentParams: session.paramOverrides || {},
     paused: !!session.paused,
     active: !!session.active,
     topic: session.topic
@@ -90,6 +91,7 @@ async function handleJoinDashboard(ws, msg, ctx) {
       type: "dashboard_update",
       snapshot: snap,
       analyzerState: aState,
+      currentParams: s.paramOverrides || {},
       paused: !!s.paused,
       active: !!s.active
     }));
@@ -166,6 +168,10 @@ async function handleTeacherAdjustParams(ws, msg, ctx) {
   if (!session.paramOverrides) session.paramOverrides = {};
   Object.assign(session.paramOverrides, overrides);
   console.log(`[${ctx.currentSessionShortCode}] Teacher adjusted params:`, overrides);
+  ctx.sessionManager.broadcast(ctx.currentSessionShortCode, {
+    type: "teacher_params_updated",
+    params: session.paramOverrides
+  });
 }
 
 /**
@@ -299,6 +305,7 @@ async function handleJoinSession(ws, msg, ctx) {
     sessionId,
     topicTitle: session.topic.title,
     passage: session.topic.passage,
+    currentParams: session.paramOverrides || {},
     participants,
     yourId: ctx.clientId,
     yourRole: authUser?.role || null

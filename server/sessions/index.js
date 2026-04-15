@@ -6,9 +6,7 @@
 const { DISCUSSION_TOPICS, FACILITATION_PARAMS, getAgeCalibration, getFacilitationParams } = require("../config");
 const { createStore } = require("./store-factory");
 const profileBuilder = require("../analysis/profileBuilder");
-
-const WARMUP_STT_MERGE_MS = Number(process.env.WARMUP_STT_MERGE_MS || 1100);
-const WARMUP_STT_SETTLE_MS = Number(process.env.WARMUP_STT_SETTLE_MS || 450);
+const { getSpeechPatiencePreset, normalizeSpeechPatienceMode } = require("../speech-patience");
 const WARMUP_REPLY_BASE_DELAY_MS = Number(process.env.WARMUP_REPLY_BASE_DELAY_MS || 250);
 const WARMUP_REPLY_JITTER_MS = Number(process.env.WARMUP_REPLY_JITTER_MS || 450);
 
@@ -116,6 +114,11 @@ class SessionManager {
     };
   }
 
+  getSpeechPatience(session) {
+    const mode = normalizeSpeechPatienceMode(session?.paramOverrides?.speechPatienceMode);
+    return getSpeechPatiencePreset(mode);
+  }
+
   /**
    * Mark speech activity for warmup
    */
@@ -168,8 +171,9 @@ class SessionManager {
         this.clearPendingWarmupReply(session, clientId);
         return;
       }
-      if (pendingTurn.source === "stt" && Date.now() - latestSpeechAt < WARMUP_STT_SETTLE_MS) {
-        const retryDelay = Math.max(150, WARMUP_STT_SETTLE_MS - (Date.now() - latestSpeechAt));
+      const speechPatience = this.getSpeechPatience(session);
+      if (pendingTurn.source === "stt" && Date.now() - latestSpeechAt < speechPatience.warmupSettleMs) {
+        const retryDelay = Math.max(150, speechPatience.warmupSettleMs - (Date.now() - latestSpeechAt));
         const timer = setTimeout(generateReply, retryDelay);
         session.pendingWarmupReplies.set(clientId, { timer });
         return;
@@ -205,7 +209,8 @@ class SessionManager {
     };
 
     if (pendingTurn.source === "stt") {
-      const timer = setTimeout(generateReply, WARMUP_STT_SETTLE_MS);
+      const speechPatience = this.getSpeechPatience(session);
+      const timer = setTimeout(generateReply, speechPatience.warmupSettleMs);
       session.pendingWarmupReplies.set(clientId, { timer });
       return;
     }
@@ -244,7 +249,8 @@ class SessionManager {
       clearTimeout(pendingTurn.timer);
     }
 
-    const delay = source === "stt" ? WARMUP_STT_MERGE_MS : 0;
+    const speechPatience = this.getSpeechPatience(session);
+    const delay = source === "stt" ? speechPatience.warmupMergeMs : 0;
     pendingTurn.timer = setTimeout(() => {
       this.finalizeWarmupTurn(sessionShortCode, clientId).catch((error) => {
         console.error("[warmup] finalize turn error:", error.message);

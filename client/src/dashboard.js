@@ -12,6 +12,7 @@
   let sessionActive = false;
   let participantCount = 0;
   let sourceReloadScheduled = false;
+  let applyingRemoteParams = false;
 
   // --- DOM refs ---
   const $ = (id) => document.getElementById(id);
@@ -39,6 +40,24 @@
   $("source-refresh-btn").addEventListener("click", () => {
     loadSourceText(true);
   });
+
+  function speechPatienceValueToMode(value) {
+    if (Number(value) <= 1) return "quick";
+    if (Number(value) >= 3) return "patient";
+    return "balanced";
+  }
+
+  function speechPatienceModeToValue(mode) {
+    if (mode === "quick") return 1;
+    if (mode === "patient") return 3;
+    return 2;
+  }
+
+  function speechPatienceLabel(mode) {
+    if (mode === "quick") return "Quick";
+    if (mode === "patient") return "Patient";
+    return "Balanced";
+  }
 
   function joinSession() {
     const code = $("session-code-input").value.trim().toLowerCase();
@@ -83,6 +102,7 @@
           $("topic-title").textContent = msg.topic.title || "";
         }
         updateStatus(msg.active, msg.paused);
+        applyCurrentParams(msg.currentParams);
         if (msg.snapshot) renderSnapshot(msg.snapshot);
         if (msg.analyzerState) renderAnalyzer(msg.analyzerState);
         if (msg.recentTurns) renderInitialTranscript(msg.recentTurns);
@@ -94,6 +114,7 @@
         if (msg.snapshot) renderSnapshot(msg.snapshot);
         if (msg.analyzerState) renderAnalyzer(msg.analyzerState);
         updateStatus(msg.active, msg.paused);
+        applyCurrentParams(msg.currentParams);
         maybeReloadSourceText();
         break;
 
@@ -121,6 +142,10 @@
       case "facilitator_resumed":
         paused = false;
         updatePauseUI();
+        break;
+
+      case "teacher_params_updated":
+        applyCurrentParams(msg.params);
         break;
 
       case "discussion_started":
@@ -164,13 +189,16 @@
   // Slider debounce
   let paramTimer = null;
   function onParamChange() {
+    if (applyingRemoteParams) return;
     clearTimeout(paramTimer);
     const gap = parseInt($("param-gap").value);
     const ratio = parseInt($("param-ratio").value);
     const silence = parseInt($("param-silence").value);
+    const speechPatienceMode = speechPatienceValueToMode($("param-patience").value);
     $("param-gap-val").textContent = gap + "s";
     $("param-ratio-val").textContent = ratio + "%";
     $("param-silence-val").textContent = silence + "s";
+    $("param-patience-val").textContent = speechPatienceLabel(speechPatienceMode);
     $("params-status").textContent = "Applying live…";
     paramTimer = setTimeout(() => {
       send({
@@ -178,7 +206,8 @@
         params: {
           minInterventionGapSec: gap,
           maxAITalkRatio: ratio / 100,
-          silenceTimeoutSec: silence
+          silenceTimeoutSec: silence,
+          speechPatienceMode
         }
       });
       const statusEl = $("params-status");
@@ -195,6 +224,7 @@
   $("param-gap").addEventListener("input", onParamChange);
   $("param-ratio").addEventListener("input", onParamChange);
   $("param-silence").addEventListener("input", onParamChange);
+  $("param-patience").addEventListener("input", onParamChange);
 
   // --- Renderers ---
 
@@ -286,6 +316,24 @@
     if (sourceReloadScheduled || sourceMaterials.length > 0) return;
     sourceReloadScheduled = true;
     window.setTimeout(() => loadSourceText(), 600);
+  }
+
+  function applyCurrentParams(params = {}) {
+    applyingRemoteParams = true;
+    const gap = Number(params.minInterventionGapSec || $("param-gap").value || 15);
+    const ratio = Number(params.maxAITalkRatio != null ? params.maxAITalkRatio * 100 : $("param-ratio").value || 15);
+    const silence = Number(params.silenceTimeoutSec || $("param-silence").value || 45);
+    const patienceMode = params.speechPatienceMode || speechPatienceValueToMode($("param-patience").value || 2);
+
+    $("param-gap").value = String(Math.max(5, Math.min(60, Math.round(gap))));
+    $("param-ratio").value = String(Math.max(5, Math.min(50, Math.round(ratio))));
+    $("param-silence").value = String(Math.max(10, Math.min(120, Math.round(silence))));
+    $("param-patience").value = String(speechPatienceModeToValue(patienceMode));
+    $("param-gap-val").textContent = $("param-gap").value + "s";
+    $("param-ratio-val").textContent = $("param-ratio").value + "%";
+    $("param-silence-val").textContent = $("param-silence").value + "s";
+    $("param-patience-val").textContent = speechPatienceLabel(patienceMode);
+    applyingRemoteParams = false;
   }
 
   function syncControlState() {

@@ -1302,6 +1302,33 @@ body {
   opacity: 0.9;
 }
 
+.sidebar-voice-tools {
+  padding: 10px 20px 12px;
+  border-top: 1px solid rgba(139, 69, 19, 0.08);
+  flex-shrink: 0;
+}
+
+.voice-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.voice-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.voice-toggle-help {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 /* Sidebar controls */
 
 .sidebar-controls {

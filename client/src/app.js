@@ -34,10 +34,16 @@
   let lastInterimTranscript = '';
   let discussionActive = false;
   let currentScreen = "welcome";
-  const STT_FLUSH_MS_WARMUP = 450;
-  const STT_FLUSH_MS_DISCUSSION = 350;
+  let teacherSpeechPatienceMode = "balanced";
+  let slowSpeakerMode = false;
   let wsReconnectDelay = 1000; // exponential backoff starting at 1s
   const WS_RECONNECT_MAX = 30000; // cap at 30s
+
+  const SPEECH_PATIENCE_PRESETS = {
+    quick: { warmup: 260, discussion: 220, vadFlush: 110 },
+    balanced: { warmup: 450, discussion: 350, vadFlush: 180 },
+    patient: { warmup: 900, discussion: 720, vadFlush: 320 }
+  };
 
   // ---- State Persistence ----
   const STORAGE_KEY = "socratic_state";
@@ -80,6 +86,7 @@
     isHost = false;
     discussionActive = false;
     currentScreen = "welcome";
+    teacherSpeechPatienceMode = "balanced";
     sttBatchBuffer = "";
     lastInterimTranscript = "";
     clearTimeout(sttBatchTimer);
@@ -450,6 +457,32 @@
   function applyJoinCodeFormatting(input) {
     if (!input) return;
     input.value = normalizeJoinCode(input.value);
+  }
+
+  function normalizeSpeechPatienceMode(mode) {
+    const value = String(mode || "").trim().toLowerCase();
+    if (value === "quick" || value === "patient" || value === "balanced") {
+      return value;
+    }
+    return "balanced";
+  }
+
+  function getSpeechPatienceProfile() {
+    const base = SPEECH_PATIENCE_PRESETS[normalizeSpeechPatienceMode(teacherSpeechPatienceMode)] || SPEECH_PATIENCE_PRESETS.balanced;
+    if (!slowSpeakerMode) return base;
+    return {
+      warmup: Math.round(base.warmup * 1.8),
+      discussion: Math.round(base.discussion * 1.8),
+      vadFlush: Math.round(base.vadFlush * 1.7)
+    };
+  }
+
+  function applyTeacherParams(params = {}) {
+    if (params.speechPatienceMode) {
+      teacherSpeechPatienceMode = normalizeSpeechPatienceMode(params.speechPatienceMode);
+    } else {
+      teacherSpeechPatienceMode = "balanced";
+    }
   }
 
   function openSetupForClass(classId = null, options = {}) {
@@ -1238,6 +1271,7 @@
         const isRejoin = currentSessionId === msg.sessionId && myId === msg.yourId;
         currentSessionId = msg.sessionId;
         discussionActive = false;
+        applyTeacherParams(msg.currentParams || {});
         // Only reset feed on fresh join — preserve transcript on reconnect
         if (!isRejoin) {
           resetConversationFeed();
@@ -1262,6 +1296,10 @@
         }
         break;
       }
+
+      case "teacher_params_updated":
+        applyTeacherParams(msg.params || {});
+        break;
 
       case "participant_joined":
         participants.push({ name: msg.name });
@@ -1342,7 +1380,7 @@
         if (msg.event === "speech_started") {
           setFacilitatorStatus("listening");
         } else if (msg.event === "speech_stopped" && sttBatchBuffer.trim()) {
-          scheduleSttFlush(Math.min(180, getSttFlushDelay()));
+          scheduleSttFlush(Math.min(getSpeechPatienceProfile().vadFlush, getSttFlushDelay()));
         }
         break;
 
@@ -1638,7 +1676,8 @@
   }
 
   function getSttFlushDelay() {
-    return discussionActive ? STT_FLUSH_MS_DISCUSSION : STT_FLUSH_MS_WARMUP;
+    const profile = getSpeechPatienceProfile();
+    return discussionActive ? profile.discussion : profile.warmup;
   }
 
   function mergeTranscriptText(base, incoming) {
@@ -2203,6 +2242,10 @@
     addTranscriptEntry(myName, text, true, false);
     send({ type: "message", text, source: "text" });
     input.value = "";
+  });
+
+  document.getElementById("slow-speaker-toggle")?.addEventListener("change", (e) => {
+    slowSpeakerMode = !!e.target.checked;
   });
 
   document.getElementById("video-end-btn").addEventListener("click", () => {
