@@ -2408,6 +2408,13 @@ body {
   text-align: center;
 }
 
+.class-start-help {
+  margin: -2px 0 2px;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
 .class-start-panel .form-group {
   margin: 0;
 }
@@ -2440,6 +2447,16 @@ body {
   color: var(--text-secondary);
   font-size: 0.88rem;
   margin: 0;
+}
+
+.class-start-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.class-start-actions .btn {
+  flex: 1 1 180px;
 }
 
 /* Edit mode inside expanded card */

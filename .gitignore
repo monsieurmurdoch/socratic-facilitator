@@ -43,3 +43,8 @@ output/
 
 # Legacy local Jitsi checkout path
 jitsi/docker-jitsi-meet/
+
+# Local scratch / accidental duplicates
+curl
+.claude/launch 2.json
+server/moves 2.js

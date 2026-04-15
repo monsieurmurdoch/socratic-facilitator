@@ -9,6 +9,9 @@
   let sourceMaterials = [];
   let selectedSourceId = "";
   let sourceSearch = "";
+  let sessionActive = false;
+  let participantCount = 0;
+  let sourceReloadScheduled = false;
 
   // --- DOM refs ---
   const $ = (id) => document.getElementById(id);
@@ -32,6 +35,9 @@
   $("source-search-input").addEventListener("input", (e) => {
     sourceSearch = e.target.value.trim().toLowerCase();
     renderSourceText();
+  });
+  $("source-refresh-btn").addEventListener("click", () => {
+    loadSourceText(true);
   });
 
   function joinSession() {
@@ -88,6 +94,7 @@
         if (msg.snapshot) renderSnapshot(msg.snapshot);
         if (msg.analyzerState) renderAnalyzer(msg.analyzerState);
         updateStatus(msg.active, msg.paused);
+        maybeReloadSourceText();
         break;
 
       case "participant_message":
@@ -164,6 +171,7 @@
     $("param-gap-val").textContent = gap + "s";
     $("param-ratio-val").textContent = ratio + "%";
     $("param-silence-val").textContent = silence + "s";
+    $("params-status").textContent = "Applying live…";
     paramTimer = setTimeout(() => {
       send({
         type: "teacher_adjust_params",
@@ -173,6 +181,14 @@
           silenceTimeoutSec: silence
         }
       });
+      const statusEl = $("params-status");
+      if (statusEl) {
+        statusEl.textContent = "Live settings updated for this session.";
+        window.clearTimeout(statusEl._resetTimer);
+        statusEl._resetTimer = window.setTimeout(() => {
+          statusEl.textContent = "Changes apply live to the current discussion.";
+        }, 2200);
+      }
     }, 500);
   }
 
@@ -183,6 +199,7 @@
   // --- Renderers ---
 
   function updateStatus(active, isPaused) {
+    sessionActive = !!active;
     const badge = $("session-status");
     if (isPaused) {
       badge.textContent = "Paused";
@@ -204,6 +221,9 @@
   }
 
   function renderSnapshot(snap) {
+    participantCount = Array.isArray(snap.participants) ? snap.participants.length : 0;
+    syncControlState();
+
     // Participants
     const list = $("participant-list");
     const participants = snap.participants || [];
@@ -238,8 +258,11 @@
       : "Never";
   }
 
-  async function loadSourceText() {
+  async function loadSourceText(force = false) {
     if (!sessionId) return;
+    if (!force) {
+      sourceReloadScheduled = false;
+    }
 
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/source-text`);
@@ -256,6 +279,28 @@
       $("source-empty").style.display = "block";
       $("source-empty").innerHTML = `<p>${esc(error.message || "Source text unavailable")}</p>`;
       $("source-viewer").style.display = "none";
+    }
+  }
+
+  function maybeReloadSourceText() {
+    if (sourceReloadScheduled || sourceMaterials.length > 0) return;
+    sourceReloadScheduled = true;
+    window.setTimeout(() => loadSourceText(), 600);
+  }
+
+  function syncControlState() {
+    const forceBtn = $("force-btn");
+    const help = $("controls-help");
+    if (!forceBtn || !help) return;
+
+    const isGroupLive = sessionActive && participantCount >= 2;
+    forceBtn.disabled = !isGroupLive;
+    if (!sessionActive) {
+      help.textContent = "These controls only act on a live discussion. Warmup and ended sessions won't trigger a forced intervention.";
+    } else if (participantCount < 2) {
+      help.textContent = "Force Intervention is mainly for observing a live group discussion. In solo mode, Plato already responds turn by turn.";
+    } else {
+      help.textContent = "Pause, resume, and live slider changes affect this discussion immediately. Force Intervention prompts an extra Plato move now.";
     }
   }
 
@@ -293,7 +338,7 @@
     if (!material) {
       summary.textContent = "No source loaded";
       empty.style.display = "block";
-      empty.innerHTML = "<p>Uploaded poems, excerpts, and pasted source text will appear here with canonical line numbers.</p>";
+      empty.innerHTML = "<p>No shared source text is attached to this live session yet. Add or edit reading from the class room's Source Text & Setup flow, then refresh here.</p>";
       viewer.style.display = "none";
       return;
     }

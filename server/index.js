@@ -123,6 +123,7 @@ async function initialize() {
     fastLLM,
     stalenessGuard,
     USE_ENHANCED_SYSTEM,
+    useEnhancedSystem: USE_ENHANCED_SYSTEM,
     FACILITATION_PARAMS,
     sessionsRepo: require("./db/repositories/sessions"),
     jitsiLauncher,

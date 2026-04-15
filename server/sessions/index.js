@@ -3,12 +3,12 @@
  * Manages active session state and session-related operations
  */
 
-const { DISCUSSION_TOPICS, FACILITATION_PARAMS, getAgeCalibration } = require("../config");
+const { DISCUSSION_TOPICS, FACILITATION_PARAMS, getAgeCalibration, getFacilitationParams } = require("../config");
 const { createStore } = require("./store-factory");
 const profileBuilder = require("../analysis/profileBuilder");
 
-const WARMUP_STT_MERGE_MS = Number(process.env.WARMUP_STT_MERGE_MS || 2500);
-const WARMUP_STT_SETTLE_MS = Number(process.env.WARMUP_STT_SETTLE_MS || 900);
+const WARMUP_STT_MERGE_MS = Number(process.env.WARMUP_STT_MERGE_MS || 1100);
+const WARMUP_STT_SETTLE_MS = Number(process.env.WARMUP_STT_SETTLE_MS || 450);
 const WARMUP_REPLY_BASE_DELAY_MS = Number(process.env.WARMUP_REPLY_BASE_DELAY_MS || 250);
 const WARMUP_REPLY_JITTER_MS = Number(process.env.WARMUP_REPLY_JITTER_MS || 450);
 
@@ -104,6 +104,16 @@ class SessionManager {
       clearTimeout(pendingReply.timer);
     }
     session.pendingWarmupReplies.delete(clientId);
+  }
+
+  getEffectiveParams(session) {
+    const participantCount = session?.stateTracker?.participants?.size || 0;
+    const base = { ...getFacilitationParams(participantCount || 0) };
+    if (!session?.paramOverrides) return base;
+    return {
+      ...base,
+      ...session.paramOverrides
+    };
   }
 
   /**
@@ -260,7 +270,8 @@ class SessionManager {
       // Use age-calibrated silence tolerance instead of flat timeout
       const ages = Array.from(session.stateTracker.participants.values()).map(p => p.age);
       const ageCalibration = getAgeCalibration(ages);
-      const silenceThreshold = ageCalibration.silenceToleranceSec || FACILITATION_PARAMS.silenceTimeoutSec;
+      const effectiveParams = this.getEffectiveParams(session);
+      const silenceThreshold = effectiveParams.silenceTimeoutSec || ageCalibration.silenceToleranceSec || FACILITATION_PARAMS.silenceTimeoutSec;
 
       if (snapshot.silenceSinceLastActivitySec >= silenceThreshold) {
         const decision = await this.deps.enhancedEngine.decide(session.stateTracker);
@@ -383,6 +394,9 @@ class SessionManager {
       return;
     }
 
+    const effectiveParams = this.getEffectiveParams(session);
+    const hardConstraints = await session.stateTracker.getHardConstraints(effectiveParams);
+
     // Use enhanced engine with orchestrator if enabled
     let decision;
     const pipelineStart = Date.now();
@@ -418,6 +432,14 @@ class SessionManager {
     }
 
     const pipelineLatencyMs = Date.now() - pipelineStart;
+
+    if (decision.shouldSpeak && !hardConstraints.canSpeak && !decision.forced) {
+      decision = {
+        ...decision,
+        shouldSpeak: false,
+        reasoning: `${decision.reasoning || decision.reason || 'suppressed'} | constrained: ${hardConstraints.reasons.join('; ')}`
+      };
+    }
 
     if (decision.shouldSpeak && decision.message) {
       if (pipelineLatencyMs > 8000) {

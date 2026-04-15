@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Teacher Dashboard — Socratic Facilitator</title>
-  <link rel="stylesheet" href="/src/dashboard.css?v=3">
+  <link rel="stylesheet" href="/src/dashboard.css?v=4">
 </head>
 <body>
   <!-- Join Screen -->
@@ -66,12 +66,18 @@
 
       <!-- Controls -->
       <section class="dash-card dash-controls">
-        <h2>Plato Controls</h2>
+        <div class="dash-card-heading">
+          <h2>Plato Controls</h2>
+          <span class="card-meta">Changes apply live to this session.</span>
+        </div>
         <div class="control-buttons">
           <button id="pause-btn" class="ctrl-btn ctrl-pause">Pause Plato</button>
           <button id="resume-btn" class="ctrl-btn ctrl-resume" style="display:none;">Resume Plato</button>
           <button id="force-btn" class="ctrl-btn ctrl-force">Force Intervention</button>
         </div>
+        <p id="controls-help" class="dash-helper">
+          Best used while watching a live group discussion. Force Intervention is least meaningful in a solo warmup.
+        </p>
 
         <div class="control-slider-group">
           <label>Intervention Gap</label>
@@ -99,11 +105,15 @@
           <input id="goal-input" type="text" placeholder="Set a goal for Plato..." class="goal-input">
           <button id="goal-btn" class="ctrl-btn ctrl-sm">Set</button>
         </div>
+        <p id="params-status" class="dash-helper subtle">Live settings idle.</p>
       </section>
 
       <!-- Signals -->
       <section class="dash-card dash-signals">
-        <h2>Neuron Signals</h2>
+        <div class="dash-card-heading">
+          <h2>Live Facilitation Signals</h2>
+          <span class="card-meta">The internal cues Plato uses when deciding whether to speak.</span>
+        </div>
         <div class="signal-list">
           <div class="signal-item">
             <span class="signal-label">Activation</span>
@@ -165,6 +175,7 @@
             <option value="">Select source text</option>
           </select>
           <input id="source-search-input" class="source-search-input" type="search" placeholder="Find a student name, phrase, or line">
+          <button id="source-refresh-btn" class="ctrl-btn ctrl-sm">Refresh</button>
         </div>
         <div id="source-empty" class="source-empty">
           <p>Uploaded poems, excerpts, and pasted source text will appear here with canonical line numbers.</p>

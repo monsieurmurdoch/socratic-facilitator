@@ -531,7 +531,7 @@ async function handleSttStart(ws, msg, ctx) {
   const dgUrl = `wss://api.deepgram.com/v1/listen?` +
     `encoding=linear16&sample_rate=16000&channels=1` +
     `&interim_results=true&punctuate=true&language=en-US` +
-    `&endpointing=500&vad_events=true`;
+    `&endpointing=300&vad_events=true`;
   ctx.deepgramWs = new WebSocket(dgUrl, {
     headers: { Authorization: `Token ${dgKey}` }
   });

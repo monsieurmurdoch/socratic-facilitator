@@ -34,8 +34,8 @@
   let lastInterimTranscript = '';
   let discussionActive = false;
   let currentScreen = "welcome";
-  const STT_FLUSH_MS_WARMUP = 1200;
-  const STT_FLUSH_MS_DISCUSSION = 800;
+  const STT_FLUSH_MS_WARMUP = 450;
+  const STT_FLUSH_MS_DISCUSSION = 350;
   let wsReconnectDelay = 1000; // exponential backoff starting at 1s
   const WS_RECONNECT_MAX = 30000; // cap at 30s
 
@@ -732,17 +732,22 @@
               <strong>Session is live</strong>
               <p>${escapeHtml(liveSession.title)}</p>
               <button id="expanded-join-live-btn" class="btn btn-primary">Join Live Session</button>
+              <button id="expanded-open-setup-btn" class="btn btn-secondary btn-small">Source Text & Setup</button>
             </div>
           ` : `
             <div class="class-start-panel">
               <h4>Start Today's Discussion</h4>
+              <p class="class-start-help">Go live here for speed, or open Source Text & Setup if you want to add a poem, paste an excerpt, or upload a PDF first.</p>
               <div class="form-group">
                 <input type="text" id="expanded-title-input" placeholder="Discussion title" value="${escapeHtml(cls.name)} Discussion">
               </div>
               <div class="form-group">
                 <textarea id="expanded-question-input" placeholder="Opening question (optional)" rows="2"></textarea>
               </div>
-              <button id="expanded-start-btn" class="btn btn-primary">Go Live</button>
+              <div class="class-start-actions">
+                <button id="expanded-start-btn" class="btn btn-primary">Go Live</button>
+                <button id="expanded-open-setup-btn" class="btn btn-secondary">Source Text & Setup</button>
+              </div>
             </div>
           `}
         </div>
@@ -815,6 +820,12 @@
       if (!liveSession?.shortCode) return;
       myName = accountUser?.name || "";
       send({ type: "join_session", sessionId: liveSession.shortCode, name: myName, age: getAge(), authToken });
+    });
+    document.getElementById("expanded-open-setup-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openSetupForClass(cls.id, {
+        suggestedTitle: liveSession?.title || `${cls.name} Discussion`
+      });
     });
   }
 
@@ -1323,8 +1334,15 @@
             lastInterimTranscript = msg.text.trim();
             const preview = mergeTranscriptText(sttBatchBuffer, lastInterimTranscript);
             updateLocalSpeechDraft(preview, true);
-            scheduleSttFlush();
           }
+        }
+        break;
+
+      case "vad_event":
+        if (msg.event === "speech_started") {
+          setFacilitatorStatus("listening");
+        } else if (msg.event === "speech_stopped" && sttBatchBuffer.trim()) {
+          scheduleSttFlush(Math.min(180, getSttFlushDelay()));
         }
         break;
 
@@ -1683,11 +1701,11 @@
     console.log("[STT] Batched final:", text);
   }
 
-  function scheduleSttFlush() {
+  function scheduleSttFlush(delayOverride = null) {
     clearTimeout(sttBatchTimer);
     sttBatchTimer = setTimeout(() => {
       flushSttBatch();
-    }, getSttFlushDelay());
+    }, delayOverride == null ? getSttFlushDelay() : delayOverride);
   }
 
   function updatePartialTranscript(name, text) {

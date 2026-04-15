@@ -2,6 +2,10 @@
 
 A multi-party conversation engine that facilitates Socratic discussions among groups of students. Features real-time AI facilitation, document priming, and conversation state analysis.
 
+## Contributing
+
+See [CONTRIBUTING.md](/Users/robertmalka/Desktop/socratic-facilitator/CONTRIBUTING.md) for branching rules and PR expectations. The short version: keep `main` deployable, use a branch for every change, and delete stale branches after merge.
+
 ## Architecture
 
 ```
