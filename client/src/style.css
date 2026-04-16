@@ -1335,6 +1335,15 @@ body {
   padding: 12px 20px;
   border-top: 1.5px solid var(--border);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar-controls-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
 }
 
 .btn-end {
@@ -1376,6 +1385,11 @@ body {
 
 .btn-dashboard:hover {
   background: #236b42;
+}
+
+.sidebar-controls-top .btn,
+.sidebar-controls-top .btn-dashboard {
+  width: 100%;
 }
 
 .dash-icon {

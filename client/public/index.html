@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Socratic Facilitator</title>
-  <link rel="stylesheet" href="/src/style.css?v=21">
+  <link rel="stylesheet" href="/src/style.css?v=22">
 </head>
 <body>
 
@@ -436,11 +436,13 @@
         </div>
 
         <div class="sidebar-controls">
-          <button id="start-discussion-btn" class="btn btn-primary">Start Discussion</button>
+          <div class="sidebar-controls-top">
+            <button id="start-discussion-btn" class="btn btn-primary">Start Discussion</button>
+            <a id="video-dashboard-btn" href="#" target="_blank" class="btn btn-dashboard" style="display:none;" title="Open Plato Dashboard in new tab">
+              <span class="dash-icon">&#9638;&#9638;&#9638;</span> Dashboard
+            </a>
+          </div>
           <button id="video-end-btn" class="btn btn-end">End Discussion</button>
-          <a id="video-dashboard-btn" href="#" target="_blank" class="btn btn-dashboard" style="display:none;" title="Open Plato Dashboard in new tab">
-            <span class="dash-icon">&#9638;&#9638;&#9638;</span> Dashboard
-          </a>
         </div>
       </div>
     </div>
