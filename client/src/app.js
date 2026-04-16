@@ -1194,11 +1194,9 @@
 
     jitsiApi.addEventListener('audioMuteStatusChanged', (event) => {
       console.log('[Jitsi] Audio mute:', event.muted);
-      if (event.muted) {
-        stopSpeechRecognition();
-      } else {
-        startSpeechRecognition();
-      }
+      // STT uses its own local mic stream and should not flap just because
+      // Jitsi toggles conference mute state during startup or device changes.
+      // Keep STT lifecycle tied to session/video state, not Jitsi mute events.
     });
 
     jitsiApi.addEventListener('errorOccurred', (event) => {

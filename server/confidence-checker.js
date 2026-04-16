@@ -10,6 +10,36 @@ class ConfidenceChecker {
   constructor() {
     // Uses fastLLM singleton - no API key needed, has built-in fallbacks
     this.fastLLM = fastLLM;
+    this.lastTranscript = '';
+    this.lastAssessmentAt = 0;
+  }
+
+  heuristicConfidence(transcript) {
+    const text = String(transcript || '').trim();
+    if (!text) {
+      return { confidence: 0, reasoning: 'Empty transcript', isReady: false };
+    }
+
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    const hasTerminalPunctuation = /[.?!]["']?$/.test(text);
+    const soundsCompleteGreeting = /^(hi|hello|hey|howdy)\b.+[?!.]?$/i.test(text);
+    const looksQuestion = /\?$/.test(text) || /^(can|could|would|will|do|did|is|are|what|why|how|when|where)\b/i.test(text);
+    const trailingFragment = /\b(and|or|but|because|if|so|then|well)\s*$/i.test(text);
+
+    if (wordCount <= 2 && !hasTerminalPunctuation) {
+      return { confidence: 0.08, reasoning: 'Very short fragment', isReady: false };
+    }
+    if (trailingFragment) {
+      return { confidence: 0.2, reasoning: 'Likely unfinished thought', isReady: false };
+    }
+    if (hasTerminalPunctuation || soundsCompleteGreeting || (looksQuestion && wordCount >= 3)) {
+      return { confidence: 0.82, reasoning: 'Looks like a complete greeting or question', isReady: true };
+    }
+    if (wordCount >= 8) {
+      return { confidence: 0.58, reasoning: 'Substantial utterance but no clear ending yet', isReady: false };
+    }
+
+    return { confidence: 0.28, reasoning: 'Still waiting for more speech', isReady: false };
   }
 
   /**
@@ -22,6 +52,18 @@ class ConfidenceChecker {
       return { confidence: 0, reasoning: 'Empty transcript', isReady: false };
     }
 
+      const normalized = transcript.trim();
+      const now = Date.now();
+      if (normalized === this.lastTranscript && now - this.lastAssessmentAt < 400) {
+        return { confidence: 0, reasoning: 'Duplicate interim transcript', isReady: false };
+      }
+      this.lastTranscript = normalized;
+      this.lastAssessmentAt = now;
+
+      const heuristic = this.heuristicConfidence(normalized);
+      if (heuristic.isReady || normalized.split(/\s+/).length < 5) {
+        return heuristic;
+      }
 
       const startTime = Date.now();
 
@@ -49,8 +91,8 @@ Be conservative - only mark isReady=true for clearly complete thoughts, question
       const duration = Date.now() - startTime;
       console.log(`[Confidence] Assessment took ${duration}ms`);
 
-      if (duration > 50) {
-        console.warn(`[Confidence] Assessment exceeded 50ms target: ${duration}ms`);
+      if (duration > 120) {
+        console.warn(`[Confidence] Assessment exceeded 120ms target: ${duration}ms`);
       }
 
       // fastLLM returns null on failure/timeout - graceful fallback
