@@ -14,6 +14,7 @@
   let isHost = false;
   let jitsiApi = null;
   let materials = [];
+  let materialsClassId = null;
   let authToken = null;
   let accountUser = null;
   let savedClasses = [];
@@ -524,6 +525,7 @@
     if (preview) preview.style.display = "none";
     if (themes) themes.innerHTML = "";
     materials = [];
+    materialsClassId = null;
     renderMaterials();
   }
 
@@ -605,6 +607,12 @@
           // Expand this card
           expandedClassId = classId;
           selectedClassId = classId;
+          materials = [];
+          materialsClassId = classId;
+          renderMaterials();
+          loadClassMaterials(classId).catch(err => {
+            console.warn('[Materials] Could not pre-load class materials:', err.message);
+          });
         }
         renderClasses();
         renderExpandedClass();
@@ -765,21 +773,45 @@
               <strong>Session is live</strong>
               <p>${escapeHtml(liveSession.title)}</p>
               <button id="expanded-join-live-btn" class="btn btn-primary">Join Live Session</button>
-              <button id="expanded-open-setup-btn" class="btn btn-secondary btn-small">Source Text & Setup</button>
             </div>
           ` : `
             <div class="class-start-panel">
               <h4>Start Today's Discussion</h4>
-              <p class="class-start-help">Go live here for speed, or open Source Text & Setup if you want to add a poem, paste an excerpt, or upload a PDF first.</p>
+              <p class="class-start-help">Add readings right here, confirm what’s attached, and then go live when the room is ready.</p>
               <div class="form-group">
                 <input type="text" id="expanded-title-input" placeholder="Discussion title" value="${escapeHtml(cls.name)} Discussion">
               </div>
               <div class="form-group">
                 <textarea id="expanded-question-input" placeholder="Opening question (optional)" rows="2"></textarea>
               </div>
+              <div class="class-materials-panel">
+                <div class="class-materials-heading">
+                  <h5>Source Text</h5>
+                  <span id="expanded-material-count" class="material-count">(${materials.length}/${MAX_MATERIALS})</span>
+                </div>
+                <div id="expanded-upload-area" class="upload-area upload-area-compact">
+                  <div class="upload-icon">+</div>
+                  <p>Upload file</p>
+                  <p class="upload-hint">PDF, TXT, DOCX</p>
+                </div>
+                <input type="file" id="expanded-file-input" accept=".pdf,.txt,.docx,.doc" multiple hidden>
+                <div class="url-input-row url-input-row-compact">
+                  <input type="text" id="expanded-url-input" placeholder="Paste a link to a poem, article, or excerpt">
+                  <button id="expanded-add-url-btn" class="btn btn-small btn-secondary">Add Link</button>
+                </div>
+                <div class="paste-text-panel paste-text-panel-compact">
+                  <label for="expanded-paste-text-input">Paste Source Text</label>
+                  <textarea id="expanded-paste-text-input" placeholder="Paste a poem, excerpt, or passage here."></textarea>
+                  <div class="paste-text-actions">
+                    <span class="helper-text">These materials will be attached to the next live session for this class.</span>
+                    <button id="expanded-add-text-btn" class="btn btn-small btn-secondary">Add Text</button>
+                  </div>
+                </div>
+                <div id="expanded-materials-list" class="materials-list materials-list-compact"></div>
+              </div>
               <div class="class-start-actions">
                 <button id="expanded-start-btn" class="btn btn-primary">Go Live</button>
-                <button id="expanded-open-setup-btn" class="btn btn-secondary">Source Text & Setup</button>
+                <button id="expanded-clear-materials-btn" class="btn btn-secondary">Clear Source Text</button>
               </div>
             </div>
           `}
@@ -831,9 +863,7 @@
         }
         currentSessionId = session.shortCode;
         isHost = true;
-        materials = [];
-        // Load saved materials before joining so they're ready for priming
-        await loadClassMaterials(cls.id);
+        materialsClassId = cls.id;
         refreshWorkspace();
         send({
           type: "join_session",
@@ -854,12 +884,13 @@
       myName = accountUser?.name || "";
       send({ type: "join_session", sessionId: liveSession.shortCode, name: myName, age: getAge(), authToken });
     });
-    document.getElementById("expanded-open-setup-btn")?.addEventListener("click", (e) => {
+    document.getElementById("expanded-clear-materials-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      openSetupForClass(cls.id, {
-        suggestedTitle: liveSession?.title || `${cls.name} Discussion`
-      });
+      materials = [];
+      materialsClassId = cls.id;
+      renderMaterials();
     });
+    bindExpandedMaterialsControls(cls.id);
   }
 
   function renderSessionHistory() {
@@ -1479,33 +1510,138 @@
   }
 
   function renderMaterials() {
-    const container = document.getElementById("materials-list");
-    const countEl = document.getElementById("material-count");
-    container.innerHTML = "";
-    countEl.textContent = `(${materials.length}/${MAX_MATERIALS})`;
+    const containers = [
+      document.getElementById("materials-list"),
+      document.getElementById("expanded-materials-list")
+    ].filter(Boolean);
+    const countEls = [
+      document.getElementById("material-count"),
+      document.getElementById("expanded-material-count")
+    ].filter(Boolean);
+    const uploadAreas = [
+      document.getElementById("upload-area"),
+      document.getElementById("expanded-upload-area")
+    ].filter(Boolean);
 
-    materials.forEach((m, i) => {
-      const div = document.createElement("div");
-      div.className = "material-item";
-      const icon = m.type === "url" ? "&#128279;" : m.type === "text" ? "&#182;" : "&#128196;";
-      const badge = m.fromClass ? ' <span class="material-badge">from class</span>' : '';
-      div.innerHTML = `
-        <span class="material-icon">${icon}</span>
-        <span class="material-name">${escapeHtml(m.name)}${badge}</span>
-        <button class="material-remove" data-index="${i}">&times;</button>
-      `;
-      container.appendChild(div);
+    countEls.forEach(el => {
+      el.textContent = `(${materials.length}/${MAX_MATERIALS})`;
     });
 
-    // Disable upload if at limit
-    const uploadArea = document.getElementById("upload-area");
-    if (materials.length >= MAX_MATERIALS) {
-      uploadArea.style.opacity = "0.5";
-      uploadArea.style.pointerEvents = "none";
-    } else {
-      uploadArea.style.opacity = "1";
-      uploadArea.style.pointerEvents = "auto";
+    containers.forEach(container => {
+      container.innerHTML = "";
+      materials.forEach((m, i) => {
+        const div = document.createElement("div");
+        div.className = "material-item";
+        const icon = m.type === "url" ? "&#128279;" : m.type === "text" ? "&#182;" : "&#128196;";
+        const badge = m.fromClass ? ' <span class="material-badge">saved</span>' : ' <span class="material-badge">new</span>';
+        div.innerHTML = `
+          <span class="material-icon">${icon}</span>
+          <span class="material-name">${escapeHtml(m.name)}${badge}</span>
+          <button class="material-remove" data-index="${i}">&times;</button>
+        `;
+        container.appendChild(div);
+      });
+
+      if (materials.length === 0) {
+        container.innerHTML = '<p class="empty-state empty-state-tight">No source text attached yet.</p>';
+      }
+    });
+
+    uploadAreas.forEach(uploadArea => {
+      if (!uploadArea) return;
+      if (materials.length >= MAX_MATERIALS) {
+        uploadArea.style.opacity = "0.5";
+        uploadArea.style.pointerEvents = "none";
+      } else {
+        uploadArea.style.opacity = "1";
+        uploadArea.style.pointerEvents = "auto";
+      }
+    });
+  }
+
+  function addUrlMaterial(url) {
+    if (materials.length >= MAX_MATERIALS) return false;
+    if (!url) return false;
+    const displayName = url.length > 50 ? url.substring(0, 47) + "..." : url;
+    materials.push({ type: "url", name: displayName, url });
+    renderMaterials();
+    return true;
+  }
+
+  function addPastedMaterial(text) {
+    if (materials.length >= MAX_MATERIALS) return false;
+    const cleanText = String(text || "").trim();
+    if (!cleanText) return false;
+    const firstLine = cleanText.split(/\r?\n/).find(Boolean) || "Pasted text";
+    const name = firstLine.length > 42 ? `${firstLine.slice(0, 39)}...` : firstLine;
+    materials.push({
+      type: "text",
+      name: name || "Pasted source text",
+      text: cleanText,
+      extractedText: cleanText
+    });
+    renderMaterials();
+    return true;
+  }
+
+  function bindExpandedMaterialsControls(classId) {
+    const uploadArea = document.getElementById("expanded-upload-area");
+    const fileInput = document.getElementById("expanded-file-input");
+    const urlInput = document.getElementById("expanded-url-input");
+    const addUrlBtn = document.getElementById("expanded-add-url-btn");
+    const textInput = document.getElementById("expanded-paste-text-input");
+    const addTextBtn = document.getElementById("expanded-add-text-btn");
+    const list = document.getElementById("expanded-materials-list");
+
+    if (uploadArea && fileInput) {
+      uploadArea.addEventListener("click", () => {
+        materialsClassId = classId;
+        if (materials.length < MAX_MATERIALS) fileInput.click();
+      });
+      uploadArea.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadArea.classList.add("dragover");
+      });
+      uploadArea.addEventListener("dragleave", () => {
+        uploadArea.classList.remove("dragover");
+      });
+      uploadArea.addEventListener("drop", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadArea.classList.remove("dragover");
+        materialsClassId = classId;
+        handleFiles(e.dataTransfer.files);
+      });
+      fileInput.addEventListener("change", () => {
+        materialsClassId = classId;
+        handleFiles(fileInput.files);
+      });
     }
+
+    addUrlBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      materialsClassId = classId;
+      if (addUrlMaterial(urlInput?.value?.trim())) {
+        urlInput.value = "";
+      }
+    });
+
+    addTextBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      materialsClassId = classId;
+      if (addPastedMaterial(textInput?.value || "")) {
+        textInput.value = "";
+      }
+    });
+
+    list?.addEventListener("click", (e) => {
+      if (e.target.classList.contains("material-remove")) {
+        const index = parseInt(e.target.dataset.index, 10);
+        materials.splice(index, 1);
+        materialsClassId = classId;
+        renderMaterials();
+      }
+    });
   }
 
   function renderSetupContext() {
@@ -1592,8 +1728,11 @@
           extractedText: m.extractedText,
           fromClass: true
         }));
-        renderMaterials();
+      } else {
+        materials = [];
       }
+      materialsClassId = classId;
+      renderMaterials();
     } catch (err) {
       console.warn('[Materials] Could not load class materials:', err.message);
     }
@@ -2059,6 +2198,7 @@
     } else {
       // Cleared class → clear pre-loaded materials
       materials = materials.filter(m => !m.fromClass);
+      materialsClassId = null;
       renderMaterials();
     }
     renderSetupContext();
@@ -2111,33 +2251,17 @@
 
   // URL input
   document.getElementById("add-url-btn").addEventListener("click", () => {
-    if (materials.length >= MAX_MATERIALS) return;
     const input = document.getElementById("url-input");
-    const url = input.value.trim();
-    if (url) {
-      // Truncate display name
-      const displayName = url.length > 50 ? url.substring(0, 47) + "..." : url;
-      materials.push({ type: "url", name: displayName, url: url });
+    if (addUrlMaterial(input.value.trim())) {
       input.value = "";
-      renderMaterials();
     }
   });
 
   document.getElementById("add-text-btn")?.addEventListener("click", () => {
-    if (materials.length >= MAX_MATERIALS) return;
     const input = document.getElementById("paste-text-input");
-    const text = input?.value?.trim() || "";
-    if (!text) return;
-    const firstLine = text.split(/\r?\n/).find(Boolean) || "Pasted text";
-    const name = firstLine.length > 42 ? `${firstLine.slice(0, 39)}...` : firstLine;
-    materials.push({
-      type: "text",
-      name: name || "Pasted source text",
-      text,
-      extractedText: text
-    });
-    input.value = "";
-    renderMaterials();
+    if (addPastedMaterial(input?.value || "")) {
+      input.value = "";
+    }
   });
 
   // Remove material

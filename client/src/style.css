@@ -2486,6 +2486,73 @@ body {
   flex: 1 1 180px;
 }
 
+.class-materials-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 2px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 251, 245, 0.76);
+  border: 1px solid rgba(139, 69, 19, 0.12);
+}
+
+.class-materials-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.class-materials-heading h5 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.upload-area-compact {
+  min-height: 0;
+  padding: 14px 12px;
+}
+
+.upload-area-compact .upload-icon {
+  width: 34px;
+  height: 34px;
+  font-size: 1.1rem;
+}
+
+.upload-area-compact p {
+  margin: 0;
+}
+
+.url-input-row-compact {
+  gap: 8px;
+}
+
+.url-input-row-compact input {
+  min-width: 0;
+}
+
+.paste-text-panel-compact {
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.paste-text-panel-compact textarea {
+  min-height: 88px;
+}
+
+.materials-list-compact {
+  max-height: 188px;
+  overflow: auto;
+}
+
+.empty-state-tight {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
 /* Edit mode inside expanded card */
 .class-expanded-edit {
   display: flex;

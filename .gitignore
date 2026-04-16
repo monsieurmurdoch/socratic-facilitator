@@ -48,3 +48,4 @@ jitsi/docker-jitsi-meet/
 curl
 .claude/launch 2.json
 server/moves 2.js
+client/src/dashboard 2.css
