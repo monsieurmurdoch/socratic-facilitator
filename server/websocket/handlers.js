@@ -62,7 +62,7 @@ async function handleJoinDashboard(ws, msg, ctx) {
   }
 
   ctx.currentSessionShortCode = sessionId;
-  session.clients.push({ ws, clientId: ctx.clientId, role: "teacher" });
+  session.clients.push({ ws, clientId: ctx.clientId, role: "teacher", clientKind: "dashboard" });
 
   const snapshot = await session.stateTracker.getStateSnapshot();
   const analyzerState = ctx.deps.enhancedEngine.getAnalyzerState?.(sessionId) || null;
@@ -284,7 +284,14 @@ async function handleJoinSession(ws, msg, ctx) {
     clearTimeout(session._cleanupTimer);
     session._cleanupTimer = null;
   }
-  session.clients.push({ ws, clientId: ctx.clientId, name, userId: authUser?.id || null, role: authUser?.role || null });
+  session.clients.push({
+    ws,
+    clientId: ctx.clientId,
+    name,
+    userId: authUser?.id || null,
+    role: authUser?.role || null,
+    clientKind: "session"
+  });
   console.log(`[join_session] Sending session_joined response`);
 
   ctx.sessionManager.broadcast(sessionId, {
@@ -392,7 +399,7 @@ async function handleRejoinSession(ws, msg, ctx) {
       // Add client to session
       ctx.clientId = oldClientId;
       ctx.currentSessionShortCode = sessionId;
-      session.clients.push({ ws, clientId: ctx.clientId, name: participant.name });
+      session.clients.push({ ws, clientId: ctx.clientId, name: participant.name, clientKind: "session" });
 
       return;
     } catch (err) {
@@ -420,7 +427,7 @@ async function handleRejoinSession(ws, msg, ctx) {
   }
 
   session.clients = session.clients.filter(c => c.clientId !== ctx.clientId);
-  session.clients.push({ ws, clientId: ctx.clientId, name: participant.name });
+  session.clients.push({ ws, clientId: ctx.clientId, name: participant.name, clientKind: "session" });
 
   const participants = Array.from(session.stateTracker.participants.values())
     .map(p => ({ name: p.name, id: p.id }));

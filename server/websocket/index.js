@@ -118,15 +118,18 @@ function setupWebSocket(wss, deps) {
             });
           }
 
-          if (session.clients.length === 0) {
-            // Grace period: keep session alive for 30s so reconnects don't lose state
+          const liveSessionClients = session.clients.filter(c => c.clientKind !== 'dashboard');
+          if (liveSessionClients.length === 0) {
+            // Grace period: keep the discussion session alive for 30s so reconnects don't lose state.
+            // Dashboard-only observers should not keep an old room perpetually "live".
             const shortCode = currentSessionShortCode;
             const dbSessionId = session.dbSession?.id;
-            console.log(`[${shortCode}] All clients disconnected — 30s grace period before cleanup`);
+            console.log(`[${shortCode}] No live session clients remain — 30s grace period before cleanup`);
             if (session._cleanupTimer) clearTimeout(session._cleanupTimer);
             session._cleanupTimer = setTimeout(async () => {
               const s = deps.sessionManager.get(shortCode);
-              if (s && s.clients.length === 0) {
+              const remainingLiveSessionClients = s?.clients?.filter(c => c.clientKind !== 'dashboard') || [];
+              if (s && remainingLiveSessionClients.length === 0) {
                 console.log(`[${shortCode}] Grace period expired — cleaning up session`);
 
                 // Mark session as ended in database
