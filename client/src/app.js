@@ -2442,6 +2442,9 @@
 
     sttContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     const source = sttContext.createMediaStreamSource(sttStream);
+    const mutedSink = sttContext.createGain();
+    mutedSink.gain.value = 0;
+    mutedSink.connect(sttContext.destination);
 
     // Tell server to open Deepgram connection
     send({ type: "stt_start" });
@@ -2457,19 +2460,19 @@
           }
         };
         source.connect(sttNode);
-        sttNode.connect(sttContext.destination); // required to keep processing alive
+        sttNode.connect(mutedSink); // keep processing alive without locally monitoring the mic
       } catch (e) {
         console.warn("[STT] AudioWorklet failed, using ScriptProcessor:", e.message);
-        setupScriptProcessor(source);
+        setupScriptProcessor(source, mutedSink);
       }
     } else {
-      setupScriptProcessor(source);
+      setupScriptProcessor(source, mutedSink);
     }
 
     console.log("[STT] Streaming to Deepgram via server, sampleRate:", sttContext.sampleRate);
   }
 
-  function setupScriptProcessor(source) {
+  function setupScriptProcessor(source, mutedSink) {
     sttNode = sttContext.createScriptProcessor(2048, 1, 1);
     sttNode.onaudioprocess = (e) => {
       if (ws && ws.readyState === 1) {
@@ -2483,7 +2486,7 @@
       }
     };
     source.connect(sttNode);
-    sttNode.connect(sttContext.destination);
+    sttNode.connect(mutedSink);
   }
 
   function stopSpeechRecognition() {
