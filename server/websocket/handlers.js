@@ -260,10 +260,13 @@ async function handleJoinSession(ws, msg, ctx) {
   // Check for duplicate name (e.g. same user in two tabs)
   const existingByName = Array.from(session.stateTracker.participants.values())
     .find(p => p.name.toLowerCase() === name.toLowerCase());
+  let joinedParticipantId = ctx.clientId;
+  let isFreshParticipant = false;
   if (existingByName) {
     // Reuse the existing participant identity instead of creating a duplicate
     console.log(`[join_session] Duplicate name "${name}" — reusing existing participant ${existingByName.id}`);
     ctx.clientId = existingByName.id;
+    joinedParticipantId = existingByName.id;
     // Remove stale client entry if any
     session.clients = session.clients.filter(c => c.clientId !== ctx.clientId);
   } else {
@@ -276,6 +279,8 @@ async function handleJoinSession(ws, msg, ctx) {
       accountRole: authUser?.role || null,
       sessionRole
     });
+    joinedParticipantId = ctx.clientId;
+    isFreshParticipant = true;
   }
 
   ctx.currentSessionShortCode = sessionId;
@@ -294,11 +299,14 @@ async function handleJoinSession(ws, msg, ctx) {
   });
   console.log(`[join_session] Sending session_joined response`);
 
-  ctx.sessionManager.broadcast(sessionId, {
-    type: "participant_joined",
-    name,
-    participantCount: session.stateTracker.participants.size
-  });
+  if (isFreshParticipant) {
+    ctx.sessionManager.broadcast(sessionId, {
+      type: "participant_joined",
+      name,
+      participantId: joinedParticipantId,
+      participantCount: session.stateTracker.participants.size
+    });
+  }
 
   // Note: STT is handled by the Jitsi bot (Deepgram) in video mode.
   // Text messages from the WebSocket "message" handler still work for

@@ -1283,6 +1283,10 @@
         const overlay = document.getElementById("readonly-overlay");
         const feed = document.getElementById("readonly-feed");
         const titleEl = document.getElementById("readonly-title");
+        clearState();
+        clearSessionUrlState();
+        pendingRoomJoin = null;
+        showScreen("welcome");
         if (overlay && feed) {
           titleEl.textContent = msg.title || "Past Discussion";
           feed.innerHTML = msg.messages.map(m => {
@@ -1331,7 +1335,9 @@
         break;
 
       case "participant_joined":
-        participants.push({ name: msg.name });
+        if (!participants.some(p => (msg.participantId && p.id === msg.participantId) || p.name === msg.name)) {
+          participants.push({ name: msg.name, id: msg.participantId || null });
+        }
         updateParticipantList();
         document.getElementById("participant-count").textContent = `${msg.participantCount} participants`;
         break;
