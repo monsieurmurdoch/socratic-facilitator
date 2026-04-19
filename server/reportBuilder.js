@@ -9,7 +9,8 @@ function buildSessionReport({
   memberships = [],
   analytics = [],
   messages = [],
-  privacy = null
+  privacy = null,
+  coverageSummary = null
 }) {
   const participantMessages = messages.filter(message => message.sender_type === 'participant');
   const facilitatorMessages = messages.filter(message => message.sender_type === 'facilitator');
@@ -68,6 +69,9 @@ function buildSessionReport({
   if (quieterVoices.length) {
     overview.push(`Quieter voices in this session included ${quieterVoices.join(', ')}.`);
   }
+  if (coverageSummary && coverageSummary.totalChunks > 0) {
+    overview.push(`The discussion referenced ${coverageSummary.coveredChunks} of ${coverageSummary.totalChunks} source passages (${coverageSummary.coveragePercent}%).`);
+  }
 
   let nextPrompt = 'What idea from today still feels unresolved, and why does it matter?';
   if (avgCoherence < 0.55) {
@@ -104,6 +108,15 @@ function buildSessionReport({
     anchorComments,
     highValueComments,
     suggestedNextPrompt: nextPrompt,
+    coverage: coverageSummary && coverageSummary.totalChunks > 0 ? {
+      percentCovered: coverageSummary.coveragePercent,
+      totalChunks: coverageSummary.totalChunks,
+      coveredChunks: coverageSummary.coveredChunks,
+      uncoveredSections: coverageSummary.uncoveredChunks.map(c => ({
+        chunkIndex: Number(c.chunk_index || 0),
+        snippet: (c.content || '').substring(0, 120) + ((c.content || '').length > 120 ? '...' : '')
+      }))
+    } : null,
     privacy: privacy ? {
       retentionDays: privacy.retention_days,
       allowAiScoring: privacy.allow_ai_scoring,

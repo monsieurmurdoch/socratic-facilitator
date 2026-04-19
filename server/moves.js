@@ -301,6 +301,23 @@ const MOVES = {
       "What is literally happening in this part of the poem?",
       "Before we talk about what it means, what does the text actually say here?"
     ]
+  },
+
+  SURFACE_UNEXPLORED: {
+    id: "surface_unexplored",
+    name: "Surface Unexplored",
+    description: "Gently draw the group's attention to a passage or section of the source material that hasn't been discussed yet. Use sparingly — only when the conversation has stalled or significant material has been skipped.",
+    conditions: [
+      "Less than half the source material has been referenced",
+      "The conversation has stalled or has been going for many turns",
+      "There's an important passage that the group hasn't encountered"
+    ],
+    priority: 4,
+    examples: [
+      "There's a part of the text we haven't touched yet — {passage_snippet}. What do you make of that?",
+      "We've been focused on {covered_topic}, but I'm curious about {unexplored_topic}. What does the text actually say about that?",
+      "Something in the reading we haven't discussed: {passage_snippet}. Does that change anything for you?"
+    ]
   }
 };
 

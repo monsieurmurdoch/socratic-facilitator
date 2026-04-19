@@ -8,6 +8,7 @@
 const { Pool } = require('pg');
 
 let pool = null;
+let pgvectorAvailable = false;
 
 function getPool() {
   if (!pool) {
@@ -132,6 +133,15 @@ async function initializeSchema() {
     }
 
     console.log(`[DB] Schema initialized: ${successCount} statements executed, ${skipCount} skipped (already exist)`);
+
+    // Detect pgvector availability for semantic search
+    try {
+      const extResult = await query("SELECT extname FROM pg_extension WHERE extname = 'vector'");
+      pgvectorAvailable = extResult.rows.length > 0;
+    } catch (e) {
+      pgvectorAvailable = false;
+    }
+    console.log(`[DB] pgvector available: ${pgvectorAvailable}`);
   } catch (error) {
     console.error('[DB] Schema initialization error:', error.message);
     throw error;
@@ -143,5 +153,6 @@ module.exports = {
   transaction,
   end,
   initializeSchema,
-  getPool
+  getPool,
+  get pgvectorAvailable() { return pgvectorAvailable; },
 };
