@@ -179,7 +179,8 @@ async function handleTeacherAdjustParams(ws, msg, ctx) {
  */
 async function handleJoinSession(ws, msg, ctx) {
   const { sessionId, name, age, authToken } = msg;
-  console.log(`[join_session] Looking up session: ${sessionId}`);
+  let requestedCode = sessionId;
+  console.log(`[join_session] Looking up session: ${requestedCode}`);
   let authUser = null;
   if (authToken) {
     try {
@@ -189,23 +190,43 @@ async function handleJoinSession(ws, msg, ctx) {
       console.warn("[join_session] Invalid auth token:", error.message);
     }
   }
-  let session = ctx.sessionManager.get(sessionId);
+  let session = ctx.sessionManager.get(requestedCode);
 
   // If not in memory, try loading from DB (supports REST-created sessions)
   if (!session) {
     console.log(`[join_session] Not in memory, loading from DB...`);
     try {
-      const dbSession = await ctx.deps.sessionsRepo.findByShortCode(sessionId);
+      let dbSession = await ctx.deps.sessionsRepo.findByShortCode(requestedCode);
+      if (!dbSession) {
+        const classesRepo = require("../db/repositories/classes");
+        const cls = await classesRepo.findByRoomCode(requestedCode);
+        if (cls) {
+          const liveSession = await ctx.deps.sessionsRepo.findLatestLiveByClassId(cls.id);
+          if (!liveSession) {
+            ws.send(JSON.stringify({
+              type: "room_not_live",
+              roomCode: cls.room_code,
+              classId: cls.id,
+              className: cls.name,
+              classDescription: cls.description || null
+            }));
+            return;
+          }
+          requestedCode = liveSession.short_code;
+          dbSession = await ctx.deps.sessionsRepo.findByShortCode(requestedCode);
+        }
+      }
+
       console.log(`[join_session] DB lookup result:`, dbSession ? `found (id=${dbSession.id})` : 'not found');
       if (dbSession) {
         // If session has ended, send the transcript as read-only instead of live join
         if (dbSession.status === 'ended') {
-          console.log(`[join_session] Session ${sessionId} has ended — sending read-only transcript`);
+          console.log(`[join_session] Session ${requestedCode} has ended — sending read-only transcript`);
           const messagesRepo = require("../db/repositories/messages");
           const msgs = await messagesRepo.getBySession(dbSession.id, { limit: 500 });
           ws.send(JSON.stringify({
             type: "session_ended_readonly",
-            sessionId,
+            sessionId: requestedCode,
             title: dbSession.title,
             messages: msgs.map(m => ({
               senderType: m.sender_type,
@@ -244,7 +265,7 @@ async function handleJoinSession(ws, msg, ctx) {
           active: dbSession.status === 'active',
           topic
         };
-        ctx.sessionManager.set(sessionId, session);
+        ctx.sessionManager.set(requestedCode, session);
       }
     } catch (err) {
       console.error("[join_session] Error loading from DB:", err);
@@ -283,7 +304,7 @@ async function handleJoinSession(ws, msg, ctx) {
     isFreshParticipant = true;
   }
 
-  ctx.currentSessionShortCode = sessionId;
+  ctx.currentSessionShortCode = requestedCode;
   // Cancel cleanup grace period if someone joins
   if (session._cleanupTimer) {
     clearTimeout(session._cleanupTimer);
@@ -300,7 +321,7 @@ async function handleJoinSession(ws, msg, ctx) {
   console.log(`[join_session] Sending session_joined response`);
 
   if (isFreshParticipant) {
-    ctx.sessionManager.broadcast(sessionId, {
+    ctx.sessionManager.broadcast(requestedCode, {
       type: "participant_joined",
       name,
       participantId: joinedParticipantId,
@@ -317,7 +338,7 @@ async function handleJoinSession(ws, msg, ctx) {
 
   ws.send(JSON.stringify({
     type: "session_joined",
-    sessionId,
+    sessionId: requestedCode,
     topicTitle: session.topic.title,
     passage: session.topic.passage,
     currentParams: session.paramOverrides || {},

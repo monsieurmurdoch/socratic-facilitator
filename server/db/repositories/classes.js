@@ -13,6 +13,11 @@ function generateRoomCode() {
   return `RM-${code}`;
 }
 
+async function ensureRoomCodeSchema() {
+  await db.query(`ALTER TABLE IF EXISTS classes ADD COLUMN IF NOT EXISTS room_code VARCHAR(16)`);
+  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_room_code_unique ON classes(room_code) WHERE room_code IS NOT NULL`);
+}
+
 async function codeExistsAnywhere(code) {
   const normalized = normalizeCode(code);
   let classResult = { rowCount: 0 };
@@ -72,7 +77,15 @@ async function persistRoomCode(classId, roomCode) {
     return result.rows[0] || null;
   } catch (error) {
     if (error?.code === '42703') {
-      return null;
+      await ensureRoomCodeSchema();
+      const retried = await db.query(
+        `UPDATE classes
+         SET room_code = $2, updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [classId, roomCode]
+      );
+      return retried.rows[0] || null;
     }
     throw error;
   }
@@ -99,13 +112,14 @@ async function create({ ownerUserId, name, description = null, ageRange = null }
     return result.rows[0];
   } catch (error) {
     if (error?.code !== '42703') throw error;
+    await ensureRoomCodeSchema();
     const legacyResult = await db.query(
-      `INSERT INTO classes (owner_user_id, name, description, age_range)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO classes (owner_user_id, name, description, age_range, room_code)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [ownerUserId, name, description, ageRange]
+      [ownerUserId, name, description, ageRange, roomCode]
     );
-    return { ...legacyResult.rows[0], room_code: roomCode };
+    return legacyResult.rows[0];
   }
 }
 
@@ -175,7 +189,15 @@ async function findByRoomCode(roomCode) {
     return ensureRoomCode(result.rows[0] || null);
   } catch (error) {
     if (error?.code === '42703') {
-      return null;
+      await ensureRoomCodeSchema();
+      const retried = await db.query(
+        `SELECT *
+         FROM classes
+         WHERE room_code IS NOT NULL
+           AND LOWER(REGEXP_REPLACE(room_code, '[^a-z0-9]', '', 'g')) = $1`,
+        [normalizeCode(roomCode)]
+      );
+      return ensureRoomCode(retried.rows[0] || null);
     }
     throw error;
   }

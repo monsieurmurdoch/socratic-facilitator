@@ -1300,6 +1300,17 @@
         break;
       }
 
+      case "room_not_live":
+        clearState();
+        clearSessionUrlState();
+        showRoomWaitScreen({
+          roomCode: msg.roomCode,
+          classId: msg.classId,
+          className: msg.className,
+          classDescription: msg.classDescription
+        });
+        break;
+
       case "session_joined": {
         const isRejoin = currentSessionId === msg.sessionId && myId === msg.yourId;
         currentSessionId = msg.sessionId;
