@@ -28,12 +28,15 @@ const primedContextRepo = require("./db/repositories/primedContext");
 const learnerProfilesRepo = require("./db/repositories/learnerProfiles");
 const materialsRepo = require("./db/repositories/materials");
 const materialChunksRepo = require("./db/repositories/materialChunks");
+const chunkCoverageRepo = require("./db/repositories/chunkCoverage");
 const { claudeBreaker } = require("./utils/api-breakers");
 const { DEFAULT_ANTHROPIC_MODEL } = require("./models");
 const {
   buildChunksFromText,
   formatChunksForPrompt,
-  detectLikelySharedText
+  detectLikelySharedText,
+  extractQuotedPhrases,
+  extractLineReference
 } = require("./content/textGrounding");
 
 class EnhancedFacilitationEngine {
@@ -43,6 +46,9 @@ class EnhancedFacilitationEngine {
 
     // Orchestrator instances per session
     this.orchestrators = new Map();
+
+    // Rate-limit tracking for surface_unexplored steering
+    this.lastSteeringAt = new Map();
 
     // Message assessor for LLM-based analysis
     this.messageAssessor = new MessageAssessor(apiKey);
@@ -189,27 +195,63 @@ class EnhancedFacilitationEngine {
     const participantCount = stateTracker.participants.size;
     const topic = stateTracker.topic;
 
-    // Determine what kind of intervention is needed
-    const interventionType = this._determineInterventionType(decision, orchestrator);
-
     const ages = Array.from(stateTracker.participants.values()).map(p => p.age);
     const ageProfile = this._getAgeProfile(ages);
 
     // Fetch primed context from materials (if any)
     let primedSnippet = null;
     let groundingSnippet = null;
+    let groundingChunkIds = [];
+    let dbSessionId = null;
     try {
-      const dbSessionId = stateTracker.session?.id || stateTracker.sessionId;
+      dbSessionId = stateTracker.session?.id || stateTracker.sessionId;
       const primedCtx = await primedContextRepo.getBySession(dbSessionId);
       primedSnippet = sessionPrimer.getContextSnippet(primedCtx);
-      groundingSnippet = await this._buildGroundingSnippet(
+      const groundingResult = await this._buildGroundingSnippet(
         dbSessionId,
         responsePolicy?.turnText,
         stateTracker,
         topic
       );
+      groundingSnippet = groundingResult.snippet;
+      groundingChunkIds = groundingResult.matchedChunkIds;
     } catch (e) {
       // No primed context — that's fine, not all sessions have materials
+    }
+
+    // Record coverage for matched chunks (fire-and-forget)
+    if (dbSessionId && groundingChunkIds.length > 0) {
+      chunkCoverageRepo.recordReferences(
+        dbSessionId,
+        groundingChunkIds,
+        null // messageId not yet available at this point
+      ).catch(err => {
+        console.warn('[Facilitator] Coverage recording failed:', err.message);
+      });
+    }
+
+    // Pre-compute steering eligibility (async, before intervention type check)
+    let steeringEligible = false;
+    let steeringChunk = null;
+    if (dbSessionId) {
+      try {
+        const orchestratorState = orchestrator.getState();
+        const turns = stateTracker.getTurnsIncludingCurrent
+          ? stateTracker.getTurnsIncludingCurrent()
+          : [];
+        const turnCount = turns.filter(t => t.participantId !== "__facilitator__").length;
+        const result = await this._checkSteeringEligibility(dbSessionId, orchestratorState, turnCount);
+        steeringEligible = result.eligible;
+        steeringChunk = result.uncoveredChunk;
+      } catch (e) { /* ignore — steering is optional */ }
+    }
+
+    // Determine what kind of intervention is needed
+    const interventionType = this._determineInterventionType(decision, orchestrator, steeringEligible, steeringChunk);
+
+    // Track steering timestamp if used
+    if (interventionType === 'surface_unexplored' && dbSessionId) {
+      this.lastSteeringAt.set(dbSessionId, Date.now());
     }
 
     // Fetch participant history from learner profiles (if available)
@@ -469,29 +511,43 @@ class EnhancedFacilitationEngine {
   }
 
   async _buildGroundingSnippet(sessionDbId, turnText, stateTracker, topic = {}) {
+    const recentTurns = stateTracker.getTurnsIncludingCurrent
+      ? stateTracker.getTurnsIncludingCurrent().filter(turn => turn.participantId !== "__facilitator__").slice(-3)
+      : [];
+    const quotedPhrases = [
+      ...extractQuotedPhrases(turnText),
+      ...recentTurns.flatMap(turn => extractQuotedPhrases(turn.text || ""))
+    ].slice(0, 6);
+    const lineReference = extractLineReference(turnText);
     const searchQuery = [
       turnText,
+      ...quotedPhrases,
       topic?.openingQuestion,
       topic?.title
     ].filter(Boolean).join(" ");
 
     const materialChunks = await materialChunksRepo.searchRelevantBySession(sessionDbId, searchQuery, 4);
     if (materialChunks.length > 0) {
-      return formatChunksForPrompt(materialChunks, "RELEVANT SOURCE EXCERPTS");
+      const heading = lineReference
+        ? `RELEVANT SOURCE EXCERPTS (requested lines ${lineReference.start}-${lineReference.end})`
+        : "RELEVANT SOURCE EXCERPTS";
+      const snippet = formatChunksForPrompt(materialChunks, heading);
+      const matchedChunkIds = materialChunks.map(c => c.id).filter(Boolean);
+      return { snippet, matchedChunkIds };
     }
 
     const conversationGrounding = this._buildConversationGroundingSnippet(stateTracker, turnText);
     if (conversationGrounding) {
-      return conversationGrounding;
+      return { snippet: conversationGrounding, matchedChunkIds: [] };
     }
 
     const combinedText = await materialsRepo.getCombinedText(sessionDbId);
-    if (!combinedText) return null;
+    if (!combinedText) return { snippet: null, matchedChunkIds: [] };
 
     // Fallback: rotate a 4-chunk window through the document by turn count so
     // Plato isn't perpetually quoting the opening when nothing else matches.
     const allChunks = buildChunksFromText(combinedText);
-    if (allChunks.length === 0) return null;
+    if (allChunks.length === 0) return { snippet: null, matchedChunkIds: [] };
     const windowSize = Math.min(4, allChunks.length);
     const turnCount = stateTracker?.getTurnsIncludingCurrent
       ? stateTracker.getTurnsIncludingCurrent().length
@@ -501,7 +557,8 @@ class EnhancedFacilitationEngine {
       ? 0
       : (turnCount * stride) % (allChunks.length - windowSize + 1);
     const chunks = allChunks.slice(start, start + windowSize);
-    return formatChunksForPrompt(chunks, "SOURCE EXCERPTS");
+    const snippet = formatChunksForPrompt(chunks, "SOURCE EXCERPTS");
+    return { snippet, matchedChunkIds: [] };
   }
 
   _buildConversationGroundingSnippet(stateTracker, turnText) {
@@ -520,9 +577,57 @@ class EnhancedFacilitationEngine {
   }
 
   /**
+   * Check whether the surface_unexplored steering move is eligible.
+   *
+   * Eligibility:
+   * - Coverage < 50% AND (turnCount >= 8 OR conversation is stalled)
+   * - Not within 5-minute cooldown of last steering move
+   * - Materials exist for this session
+   *
+   * @param {string} sessionId
+   * @param {object} orchestratorState - from orchestrator.getState()
+   * @param {number} turnCount
+   * @returns {Promise<{eligible: boolean, uncoveredChunk: object|null}>}
+   */
+  async _checkSteeringEligibility(sessionId, orchestratorState, turnCount) {
+    try {
+      const coverage = await chunkCoverageRepo.getCoverageSummary(sessionId);
+
+      // No materials or everything is covered
+      if (!coverage || coverage.totalChunks === 0 || coverage.coveragePercent >= 50) {
+        return { eligible: false, uncoveredChunk: null };
+      }
+
+      // Not enough turns and conversation isn't stalled
+      const signals = orchestratorState?.signals || {};
+      const isStalled = (signals.silenceDepth || 0) > 0.5 || (signals.engagementScore || 1) < 0.4;
+      if (turnCount < 8 && !isStalled) {
+        return { eligible: false, uncoveredChunk: null };
+      }
+
+      // Rate limit: at most one steering move per 5 minutes
+      const lastSteering = this.lastSteeringAt.get(sessionId);
+      if (lastSteering && Date.now() - lastSteering < 5 * 60 * 1000) {
+        return { eligible: false, uncoveredChunk: null };
+      }
+
+      // Pick the first uncovered chunk (by chunk_index)
+      const uncovered = coverage.uncoveredChunks[0];
+      if (!uncovered) {
+        return { eligible: false, uncoveredChunk: null };
+      }
+
+      return { eligible: true, uncoveredChunk: uncovered };
+    } catch (err) {
+      console.warn('[Facilitator] Steering eligibility check failed:', err.message);
+      return { eligible: false, uncoveredChunk: null };
+    }
+  }
+
+  /**
    * Determine the type of intervention needed.
    */
-  _determineInterventionType(decision, orchestrator) {
+  _determineInterventionType(decision, orchestrator, steeringEligible = false, steeringChunk = null) {
     const state = orchestrator.getState();
 
     // Check for factual error
@@ -557,6 +662,12 @@ class EnhancedFacilitationEngine {
     }
 
     // Default: normal facilitation
+    // Check for unexplored material steering (pre-computed eligibility)
+    if (steeringEligible && steeringChunk) {
+      this._pendingSteeringChunk = steeringChunk;
+      return 'surface_unexplored';
+    }
+
     return 'normal';
   }
 
@@ -672,7 +783,8 @@ CRITICAL RULES:
 7. Do not turn one response into a polished summary of the text's meaning.
 8. In literal or evidence phase, stay close to wording, evidence, or distinctions — do not jump to theme or moral.
 9. If the response budget is micro, ask a very small clarifying question and do not paraphrase at length.
-10. Never use these phrases: ${PLATO_IDENTITY.personality.language.forbiddenPhrases.slice(0, 4).join(', ')}`;
+10. When grounded source excerpts are present, stay close to those excerpts before widening out. Ask about the phrase, line, contrast, or detail the participant just raised.
+11. Never use these phrases: ${PLATO_IDENTITY.personality.language.forbiddenPhrases.slice(0, 4).join(', ')}`;
   }
 
   /**
@@ -718,6 +830,18 @@ Check in gently without pressure.`;
         return `📢 HUMAN INVITED YOU TO SPEAK:
 A participant explicitly asked for your input. This is a rare invitation - use it well.
 Don't over-explain, but you can be slightly more substantive than usual.`;
+
+      case 'surface_unexplored': {
+        const chunk = this._pendingSteeringChunk;
+        this._pendingSteeringChunk = null;
+        const snippet = (chunk?.content || '').substring(0, 300);
+        return `UNEXPLORED PASSAGE:
+The discussion has covered less than half the source material. Here's a passage that hasn't been touched:
+
+"${snippet}"
+
+You MAY bring this into the conversation if it serves the inquiry. Do NOT force it. If the group is naturally going somewhere productive, let them. This is a suggestion, not an obligation.`;
+      }
 
       default:
         return `NORMAL FACILITATION MODE:
@@ -1037,6 +1161,7 @@ Respond as Plato. Keep it casual and SHORT. No quotation marks around your respo
   cleanupSession(sessionId) {
     this.orchestrators.delete(sessionId);
     this.warmupHistories.delete(sessionId);
+    this.lastSteeringAt.delete(sessionId);
   }
 
   /**
