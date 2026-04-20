@@ -5,7 +5,7 @@
 
 const WebSocket = require("ws");
 const { DISCUSSION_TOPICS } = require("../config");
-const { authenticateToken } = require("../auth");
+const { authenticateToken, issueParticipantToken } = require("../auth");
 const { v4: uuidv4 } = require("uuid");
 
 /**
@@ -336,6 +336,20 @@ async function handleJoinSession(ws, msg, ctx) {
   const participants = Array.from(session.stateTracker.participants.values())
     .map(p => ({ name: p.name, id: p.id, role: p.accountRole }));
 
+  // Mint a session-scoped participant token so anonymous joiners can hit
+  // session-scoped HTTP endpoints (e.g. /source-text) without a user account.
+  let participantToken = null;
+  try {
+    participantToken = issueParticipantToken({
+      sessionShortCode: requestedCode,
+      sessionId: session.dbSession?.id || null,
+      participantId: joinedParticipantId,
+      name
+    });
+  } catch (err) {
+    console.warn("[join_session] Failed to mint participant token:", err.message);
+  }
+
   ws.send(JSON.stringify({
     type: "session_joined",
     sessionId: requestedCode,
@@ -344,7 +358,8 @@ async function handleJoinSession(ws, msg, ctx) {
     currentParams: session.paramOverrides || {},
     participants,
     yourId: ctx.clientId,
-    yourRole: authUser?.role || null
+    yourRole: authUser?.role || null,
+    participantToken
   }));
 }
 
@@ -414,6 +429,18 @@ async function handleRejoinSession(ws, msg, ctx) {
         timestamp: m.timestamp
       }));
 
+      let participantToken = null;
+      try {
+        participantToken = issueParticipantToken({
+          sessionShortCode: sessionId,
+          sessionId: dbSession.id,
+          participantId: oldClientId,
+          name: participant?.name || null
+        });
+      } catch (err) {
+        console.warn("[rejoin_session] Failed to mint participant token:", err.message);
+      }
+
       ws.send(JSON.stringify({
         type: "session_restored",
         readOnly: isReadOnly,
@@ -422,7 +449,8 @@ async function handleRejoinSession(ws, msg, ctx) {
         sessionId,
         topicTitle: topic.title,
         passage: topic.passage,
-        yourId: oldClientId
+        yourId: oldClientId,
+        participantToken
       }));
 
       // Add client to session
@@ -461,13 +489,26 @@ async function handleRejoinSession(ws, msg, ctx) {
   const participants = Array.from(session.stateTracker.participants.values())
     .map(p => ({ name: p.name, id: p.id }));
 
+  let participantToken = null;
+  try {
+    participantToken = issueParticipantToken({
+      sessionShortCode: sessionId,
+      sessionId: session.dbSession?.id || null,
+      participantId: ctx.clientId,
+      name: participant?.name || null
+    });
+  } catch (err) {
+    console.warn("[rejoin_session] Failed to mint participant token:", err.message);
+  }
+
   ws.send(JSON.stringify({
     type: "session_joined",
     sessionId,
     topicTitle: session.topic.title,
     passage: session.topic.passage,
     participants,
-    yourId: ctx.clientId
+    yourId: ctx.clientId,
+    participantToken
   }));
 
   if (session.active) {

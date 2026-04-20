@@ -16,6 +16,7 @@
   let materials = [];
   let materialsClassId = null;
   let authToken = null;
+  let participantToken = null; // session-scoped, issued at WS join, used for /source-text
   let accountUser = null;
   let savedClasses = [];
   let sessionHistory = [];
@@ -93,6 +94,10 @@
     clearTimeout(sttBatchTimer);
     sttBatchTimer = null;
     clearLocalSpeechDraft();
+    // Drop the session-scoped participant token — it's only valid for the
+    // session we're leaving.
+    participantToken = null;
+    try { sessionStorage.removeItem("participantToken"); } catch (_) {}
   }
 
   function resetConversationFeed() {
@@ -124,6 +129,13 @@
     } catch (e) {
       authToken = null;
       accountUser = null;
+    }
+    // Restore the session-scoped participant token so /source-text keeps
+    // working across page refreshes until WS rejoin issues a fresh one.
+    try {
+      participantToken = sessionStorage.getItem("participantToken") || null;
+    } catch (_) {
+      participantToken = null;
     }
   }
 
@@ -217,6 +229,12 @@
     const headers = { ...extra };
     if (authToken) {
       headers.Authorization = `Bearer ${authToken}`;
+    }
+    // Always include the participant token if present — it's harmless on
+    // endpoints that ignore it, and required for anonymous joiners hitting
+    // the session-scoped endpoints (/source-text).
+    if (participantToken) {
+      headers["X-Participant-Token"] = participantToken;
     }
     return headers;
   }
@@ -1322,6 +1340,12 @@
       case "session_joined": {
         const isRejoin = currentSessionId === msg.sessionId && myId === msg.yourId;
         currentSessionId = msg.sessionId;
+        // Stash the session-scoped participant token so anonymous joiners can
+        // hit /source-text and other participant-facing endpoints.
+        if (msg.participantToken) {
+          participantToken = msg.participantToken;
+          try { sessionStorage.setItem("participantToken", participantToken); } catch (_) {}
+        }
         discussionActive = false;
         applyTeacherParams(msg.currentParams || {});
         // Only reset feed on fresh join — preserve transcript on reconnect

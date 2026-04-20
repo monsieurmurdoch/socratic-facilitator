@@ -19,7 +19,7 @@ const contentExtractor = require('../content/extractor');
 const { getOCRAvailability } = require('../content/ocr');
 const sessionPrimer = require('../content/primer');
 const { DISCUSSION_TOPICS } = require('../config');
-const { requireAuth } = require('../auth');
+const { requireAuth, verifyParticipantToken } = require('../auth');
 const { apiLimiter } = require('../middleware/rate-limit');
 
 // Enable JSON body parsing
@@ -276,13 +276,45 @@ router.get('/:code/report', requireAuth, async (req, res) => {
   }
 });
 
-router.get('/:code/source-text', requireAuth, async (req, res) => {
+/**
+ * Source-text viewer endpoint. Accepts EITHER a normal user JWT (full access
+ * via loadSessionForUser) OR a session-scoped participant token issued at WS
+ * join time. The participant token allows anonymous live participants to
+ * read the materials being discussed without needing a user account.
+ */
+router.get('/:code/source-text', async (req, res) => {
   try {
-    const session = await loadSessionForUser(req, res);
-    if (!session) return;
+    // Path 1: signed-in user with access to this session
+    if (req.user) {
+      const session = await loadSessionForUser(req, res);
+      if (!session) return; // loadSessionForUser already wrote the response
+      const materials = await materialChunksRepo.getViewerBySession(session.id);
+      return res.json({
+        sessionId: session.short_code,
+        sessionTitle: session.title,
+        materials
+      });
+    }
+
+    // Path 2: anonymous participant with a valid WS-issued token
+    const participantToken = req.headers['x-participant-token'] || null;
+    const payload = verifyParticipantToken(participantToken);
+    if (!payload) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Token must match the requested session — prevents using one session's
+    // token to read another session's materials.
+    const session = await sessionsRepo.findByShortCode(req.params.code);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    if (payload.sessionShortCode !== req.params.code || payload.sessionId !== session.id) {
+      return res.status(403).json({ error: 'Token does not match this session' });
+    }
 
     const materials = await materialChunksRepo.getViewerBySession(session.id);
-    res.json({
+    return res.json({
       sessionId: session.short_code,
       sessionTitle: session.title,
       materials
