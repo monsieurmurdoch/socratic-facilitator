@@ -102,6 +102,26 @@ async function initialize() {
     throw error; // Re-throw to prevent server from starting
   }
 
+  // Sweep sessions left in 'waiting' / 'active' from a previous run that
+  // crashed or was killed before end_discussion fired. Without this sweep,
+  // the dashboard keeps showing those classes as having a live session.
+  // A session is "stale" if its last message (or started_at, or created_at)
+  // is older than STALE_SESSION_MINUTES (default 30) — short enough to
+  // self-heal after a crash, long enough that a quick redeploy won't kill
+  // a real in-progress discussion.
+  try {
+    const sessionsRepo = require("./db/repositories/sessions");
+    const staleAfterMinutes = Number(process.env.STALE_SESSION_MINUTES || 30);
+    const swept = await sessionsRepo.markStaleActiveSessionsEnded(staleAfterMinutes);
+    if (swept.length > 0) {
+      console.warn(`[boot] Swept ${swept.length} stale active session(s) — older than ${staleAfterMinutes} min:`,
+        swept.map(s => `${s.short_code}${s.class_id ? ` (class ${s.class_id})` : ''}`).join(', '));
+    }
+  } catch (err) {
+    console.error('[boot] Failed to sweep stale active sessions:', err.message);
+    // Non-fatal — keep booting.
+  }
+
   // Initialize engine and services
   const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
   console.log(`[INIT] ANTHROPIC_API_KEY: ${ANTHROPIC_KEY ? ANTHROPIC_KEY.substring(0, 10) + '...' : 'NOT SET'}`);
