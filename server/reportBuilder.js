@@ -1,6 +1,33 @@
+const sessionsRepo = require('./db/repositories/sessions');
+const sessionMembershipsRepo = require('./db/repositories/sessionMemberships');
+const messagesRepo = require('./db/repositories/messages');
+const messageAnalyticsRepo = require('./db/repositories/messageAnalytics');
+const sessionReportsRepo = require('./db/repositories/sessionReports');
+const classesRepo = require('./db/repositories/classes');
+const privacySettingsRepo = require('./db/repositories/privacySettings');
+const { narrateReport } = require('./reportNarrator');
+
 function round(value, digits = 2) {
   const factor = 10 ** digits;
   return Math.round(Number(value || 0) * factor) / factor;
+}
+
+function summarizePlatoMoves(messages) {
+  const facilitator = messages.filter(m => m.sender_type === 'facilitator');
+  const byMove = {};
+  for (const m of facilitator) {
+    const key = m.move_type || 'unspecified';
+    byMove[key] = (byMove[key] || 0) + 1;
+  }
+  return { totalInterventions: facilitator.length, byMove };
+}
+
+function durationSeconds(session) {
+  if (!session?.started_at || !session?.ended_at) return null;
+  const start = new Date(session.started_at).getTime();
+  const end = new Date(session.ended_at).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  return Math.round((end - start) / 1000);
 }
 
 function buildSessionReport({
@@ -113,6 +140,52 @@ function buildSessionReport({
   };
 }
 
+/**
+ * Gather every input the report needs from the database, build the
+ * deterministic skeleton, then ask the narrator (best-effort) for the
+ * qualitative layer. Persists the resulting JSON to session_reports.
+ */
+async function assembleAndPersistReport({ sessionId, apiKey }) {
+  const session = await sessionsRepo.findById(sessionId);
+  if (!session) {
+    throw new Error(`Session ${sessionId} not found`);
+  }
+
+  const [memberships, analytics, messages] = await Promise.all([
+    sessionMembershipsRepo.listBySession(sessionId),
+    messageAnalyticsRepo.listBySession(sessionId, 500),
+    messagesRepo.getBySession(sessionId, { limit: 1000, order: 'ASC' })
+  ]);
+
+  const classInfo = session.class_id ? await classesRepo.findById(session.class_id) : null;
+  const privacy = session.class_id ? await privacySettingsRepo.getOrDefault(session.class_id) : null;
+
+  const skeleton = buildSessionReport({ session, classInfo, memberships, analytics, messages, privacy });
+  skeleton.metrics.durationSeconds = durationSeconds(session);
+  skeleton.whatPlatoDid = summarizePlatoMoves(messages);
+
+  let narrative = null;
+  try {
+    narrative = await narrateReport({ apiKey, session, skeleton, messages });
+  } catch (err) {
+    console.warn(`[Report] Narration failed for session ${sessionId}: ${err.message}`);
+  }
+
+  if (narrative) {
+    if (narrative.tldr.length) skeleton.overview = narrative.tldr;
+    skeleton.strongestMoments = narrative.strongestMoments;
+    skeleton.unexploredTensions = narrative.unexploredTensions;
+    if (narrative.suggestedNextPrompt) skeleton.suggestedNextPrompt = narrative.suggestedNextPrompt;
+  } else {
+    skeleton.strongestMoments = [];
+    skeleton.unexploredTensions = [];
+  }
+
+  await sessionReportsRepo.upsert({ sessionId, reportType: 'teacher_debrief', reportJson: skeleton });
+  return skeleton;
+}
+
 module.exports = {
-  buildSessionReport
+  buildSessionReport,
+  assembleAndPersistReport
 };

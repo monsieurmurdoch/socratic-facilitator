@@ -488,7 +488,19 @@ class EnhancedFacilitationEngine {
     const combinedText = await materialsRepo.getCombinedText(sessionDbId);
     if (!combinedText) return null;
 
-    const chunks = buildChunksFromText(combinedText).slice(0, 4);
+    // Fallback: rotate a 4-chunk window through the document by turn count so
+    // Plato isn't perpetually quoting the opening when nothing else matches.
+    const allChunks = buildChunksFromText(combinedText);
+    if (allChunks.length === 0) return null;
+    const windowSize = Math.min(4, allChunks.length);
+    const turnCount = stateTracker?.getTurnsIncludingCurrent
+      ? stateTracker.getTurnsIncludingCurrent().length
+      : 0;
+    const stride = 2;
+    const start = allChunks.length <= windowSize
+      ? 0
+      : (turnCount * stride) % (allChunks.length - windowSize + 1);
+    const chunks = allChunks.slice(start, start + windowSize);
     return formatChunksForPrompt(chunks, "SOURCE EXCERPTS");
   }
 
@@ -806,12 +818,12 @@ ${safeMaterials ? 'Use the SOURCE MATERIALS below.' : ''}
 Generate a brief, warm opening (3-4 sentences max) that:
 1. Welcomes everyone by name
 2. ${safeMaterials ? 'Briefly references the materials' : 'Introduces the topic naturally'}
-3. Asks a single thought-provoking opening question
+3. ${safeOpeningQ ? 'Asks the opening question below VERBATIM, exactly as written. Do not rephrase, paraphrase, shorten, or "improve" it.' : 'Asks a single thought-provoking opening question'}
 Do NOT explain Socratic method. Do NOT give rules. Do NOT lecture. Respond with ONLY the opening message text.
 </instructions>
 
 ${safePassage ? `<passage>${safePassage}</passage>` : ''}
-${safeOpeningQ ? `<suggested_question>${safeOpeningQ}</suggested_question>` : ''}
+${safeOpeningQ ? `<opening_question_verbatim>${safeOpeningQ}</opening_question_verbatim>` : ''}
 ${safeMaterials ? `<source_materials>${safeMaterials}</source_materials>` : ''}
 
 Respond with ONLY the opening message text, nothing else.`;

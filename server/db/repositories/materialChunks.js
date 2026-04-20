@@ -10,30 +10,32 @@ async function clearByMaterial(materialId) {
 }
 
 async function replaceForMaterial(materialId, sessionId, text, opts = {}) {
-  await clearByMaterial(materialId);
   const chunks = buildChunksFromText(text, opts);
-  for (const chunk of chunks) {
-    await db.query(
-      `INSERT INTO material_chunks (
-         material_id,
-         session_id,
-         chunk_index,
-         line_start,
-         line_end,
-         source_kind,
-         content
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        materialId,
-        sessionId,
-        chunk.chunkIndex,
-        chunk.lineStart,
-        chunk.lineEnd,
-        opts.sourceKind || 'material',
-        chunk.content
-      ]
-    );
-  }
+  await db.transaction(async (client) => {
+    await client.query('DELETE FROM material_chunks WHERE material_id = $1', [materialId]);
+    for (const chunk of chunks) {
+      await client.query(
+        `INSERT INTO material_chunks (
+           material_id,
+           session_id,
+           chunk_index,
+           line_start,
+           line_end,
+           source_kind,
+           content
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          materialId,
+          sessionId,
+          chunk.chunkIndex,
+          chunk.lineStart,
+          chunk.lineEnd,
+          opts.sourceKind || 'material',
+          chunk.content
+        ]
+      );
+    }
+  });
   return chunks;
 }
 

@@ -52,9 +52,11 @@ const upload = multer({
     const allowedTypes = [
       'application/pdf',
       'text/plain',
+      'application/xml',
+      'text/xml',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ];
-    const allowedExtensions = ['.pdf', '.txt', '.docx'];
+    const allowedExtensions = ['.pdf', '.txt', '.xml', '.docx'];
 
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {

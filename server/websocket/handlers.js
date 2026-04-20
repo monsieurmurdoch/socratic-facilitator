@@ -663,6 +663,23 @@ async function handleEndDiscussion(ws, msg, ctx) {
   });
 
   console.log(`[${ctx.currentSessionShortCode}] Discussion ended.`);
+
+  const sessionDbId = session.dbSession.id;
+  const shortCode = ctx.currentSessionShortCode;
+  const reportBuilder = ctx.deps.reportBuilder;
+  if (reportBuilder?.assembleAndPersistReport) {
+    setImmediate(() => {
+      reportBuilder
+        .assembleAndPersistReport({ sessionId: sessionDbId, apiKey: process.env.ANTHROPIC_API_KEY })
+        .then(() => {
+          ctx.sessionManager.broadcast(shortCode, { type: 'report_ready', shortCode });
+          console.log(`[${shortCode}] Post-session report generated.`);
+        })
+        .catch((err) => {
+          console.error(`[${shortCode}] Report generation failed:`, err.message);
+        });
+    });
+  }
 }
 
 // Export handlers map

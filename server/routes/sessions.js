@@ -7,6 +7,8 @@ const router = express.Router();
 const sessionsRepo = require('../db/repositories/sessions');
 const participantsRepo = require('../db/repositories/participants');
 const messagesRepo = require('../db/repositories/messages');
+const sessionReportsRepo = require('../db/repositories/sessionReports');
+const reportBuilder = require('../reportBuilder');
 const materialsRepo = require('../db/repositories/materials');
 const materialChunksRepo = require('../db/repositories/materialChunks');
 const primedContextRepo = require('../db/repositories/primedContext');
@@ -23,6 +25,36 @@ const { apiLimiter } = require('../middleware/rate-limit');
 // Enable JSON body parsing
 router.use(express.json({ limit: '10mb' }));
 router.use(express.urlencoded({ extended: true }));
+
+/**
+ * Resolve session by short code and verify the authenticated user has access
+ * (owner, in the session's class, or was a participant). Returns the session
+ * row on success, or null after writing the appropriate error response.
+ */
+async function loadSessionForUser(req, res, { ownerOnly = false } = {}) {
+  const session = await sessionsRepo.findByShortCode(req.params.code);
+  if (!session) {
+    res.status(404).json({ error: 'Session not found' });
+    return null;
+  }
+  const userId = req.user.id;
+  const isOwner = session.owner_user_id === userId;
+  if (ownerOnly) {
+    if (!isOwner) {
+      res.status(403).json({ error: 'Access denied' });
+      return null;
+    }
+    return session;
+  }
+  const hasAccess = isOwner ||
+    (session.class_id && await sessionsRepo.userInClass(session.class_id, userId)) ||
+    await sessionsRepo.userWasParticipant(session.id, userId);
+  if (!hasAccess) {
+    res.status(403).json({ error: 'Access denied' });
+    return null;
+  }
+  return session;
+}
 
 /**
  * Create a new session
@@ -207,12 +239,47 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
   }
 });
 
-router.get('/:code/source-text', async (req, res) => {
+/**
+ * Get the post-session report for a session.
+ * Returns the persisted JSON if one exists; if the session has ended but no
+ * report has been generated yet, lazily generates one. Auth-gated to users
+ * who own, teach, or participated in the session.
+ */
+router.get('/:code/report', requireAuth, async (req, res) => {
   try {
-    const session = await sessionsRepo.findByShortCode(req.params.code);
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+    const { code } = req.params;
+    const userId = req.user.id;
+
+    const session = await sessionsRepo.findByShortCode(code);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const hasAccess = session.owner_user_id === userId ||
+      (session.class_id && await sessionsRepo.userInClass(session.class_id, userId)) ||
+      await sessionsRepo.userWasParticipant(session.id, userId);
+    if (!hasAccess) return res.status(403).json({ error: 'Access denied' });
+
+    let report = await sessionReportsRepo.getBySession(session.id);
+    if (!report && session.status === 'ended') {
+      const generated = await reportBuilder.assembleAndPersistReport({
+        sessionId: session.id,
+        apiKey: process.env.ANTHROPIC_API_KEY
+      });
+      return res.json({ status: 'ready', report: generated, generatedAt: new Date().toISOString() });
     }
+    if (!report) {
+      return res.status(409).json({ error: 'Report not yet available; session is still active.' });
+    }
+    res.json({ status: 'ready', report: report.report_json, generatedAt: report.generated_at });
+  } catch (error) {
+    console.error('Get session report error:', error);
+    res.status(500).json({ error: 'Failed to load session report' });
+  }
+});
+
+router.get('/:code/source-text', requireAuth, async (req, res) => {
+  try {
+    const session = await loadSessionForUser(req, res);
+    if (!session) return;
 
     const materials = await materialChunksRepo.getViewerBySession(session.id);
     res.json({
@@ -237,11 +304,16 @@ router.get('/:code', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    const participants = await participantsRepo.getBySession(session.id);
-    const materials = await materialsRepo.getBySession(session.id);
-    const primedContext = await primedContextRepo.getBySession(session.id);
+    const userId = req.user?.id || null;
+    const isOwner = userId && session.owner_user_id === userId;
+    const hasFullAccess = isOwner ||
+      (userId && session.class_id && await sessionsRepo.userInClass(session.class_id, userId)) ||
+      (userId && await sessionsRepo.userWasParticipant(session.id, userId));
 
-    res.json({
+    // Public minimal payload — enough for an anonymous joiner to land on the
+    // lobby. Sensitive fields (participants, materials, primed context) are
+    // gated behind hasFullAccess.
+    const payload = {
       id: session.id,
       shortCode: session.short_code,
       title: session.title,
@@ -250,26 +322,36 @@ router.get('/:code', async (req, res) => {
       status: session.status,
       createdAt: session.created_at,
       startedAt: session.started_at,
-      endedAt: session.ended_at,
-      participants: participants.map(p => ({
+      endedAt: session.ended_at
+    };
+
+    if (hasFullAccess) {
+      const [participants, materials, primedContext] = await Promise.all([
+        participantsRepo.getBySession(session.id),
+        materialsRepo.getBySession(session.id),
+        primedContextRepo.getBySession(session.id)
+      ]);
+      payload.participants = participants.map(p => ({
         id: p.id,
         name: p.name,
         age: p.age,
         role: p.role
-      })),
-      materials: materials.map(m => ({
+      }));
+      payload.materials = materials.map(m => ({
         id: m.id,
         filename: m.filename,
         type: m.original_type
-      })),
-      primedContext: primedContext ? {
+      }));
+      payload.primedContext = primedContext ? {
         status: primedContext.comprehension_status,
         summary: primedContext.summary,
         keyThemes: primedContext.key_themes,
         potentialTensions: primedContext.potential_tensions,
         suggestedAngles: primedContext.suggested_angles
-      } : null
-    });
+      } : null;
+    }
+
+    res.json(payload);
   } catch (error) {
     console.error('Get session error:', error);
     res.status(500).json({ error: 'Failed to get session' });
@@ -280,12 +362,10 @@ router.get('/:code', async (req, res) => {
  * Upload materials to a session
  * POST /api/sessions/:code/materials
  */
-router.post('/:code/materials', storage.upload.single('file'), async (req, res) => {
+router.post('/:code/materials', requireAuth, storage.upload.single('file'), async (req, res) => {
   try {
-    const session = await sessionsRepo.findByShortCode(req.params.code);
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
+    const session = await loadSessionForUser(req, res, { ownerOnly: true });
+    if (!session) return;
 
     const { type, url, text, filename: bodyFilename } = req.body;
     let extractedText = '';
@@ -314,12 +394,6 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
       extractionMetadata = extracted.metadata || {};
     } else {
       return res.status(400).json({ error: 'Either file or URL is required' });
-    }
-
-    // Basic auth/ownership check (enhance with full requireAuth if needed)
-    if (!req.user && process.env.NODE_ENV === 'production') {
-      console.warn(`[Upload] Unauthenticated upload to session ${req.params.code}`);
-      // In prod, could reject or require join token; for now log
     }
 
     // Note: Full text stored for analysis; truncation happens only in LLM prompt construction (see enhancedFacilitator + primer)
@@ -359,12 +433,10 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
  * Prime session materials
  * POST /api/sessions/:code/prime
  */
-router.post('/:code/prime', async (req, res) => {
+router.post('/:code/prime', requireAuth, async (req, res) => {
   try {
-    const session = await sessionsRepo.findByShortCode(req.params.code);
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
+    const session = await loadSessionForUser(req, res, { ownerOnly: true });
+    if (!session) return;
 
     let primedContext = await primedContextRepo.getBySession(session.id);
     if (primedContext?.comprehension_status === 'complete') {
@@ -421,12 +493,10 @@ router.post('/:code/prime', async (req, res) => {
  * Get session messages
  * GET /api/sessions/:code/messages
  */
-router.get('/:code/messages', async (req, res) => {
+router.get('/:code/messages', requireAuth, async (req, res) => {
   try {
-    const session = await sessionsRepo.findByShortCode(req.params.code);
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
+    const session = await loadSessionForUser(req, res);
+    if (!session) return;
 
     const limit = parseInt(req.query.limit) || 100;
     const offset = parseInt(req.query.offset) || 0;
@@ -451,10 +521,16 @@ router.get('/:code/messages', async (req, res) => {
  * Delete a material
  * DELETE /api/sessions/:code/materials/:materialId
  */
-router.delete('/:code/materials/:materialId', async (req, res) => {
+router.delete('/:code/materials/:materialId', requireAuth, async (req, res) => {
   try {
+    const session = await loadSessionForUser(req, res, { ownerOnly: true });
+    if (!session) return;
+
     const material = await materialsRepo.findById(req.params.materialId);
     if (!material) {
+      return res.status(404).json({ error: 'Material not found' });
+    }
+    if (material.session_id !== session.id) {
       return res.status(404).json({ error: 'Material not found' });
     }
 

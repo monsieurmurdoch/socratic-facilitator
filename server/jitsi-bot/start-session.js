@@ -1,5 +1,9 @@
 /**
- * Session starter for Jitsi bot
+ * Session starter for Jitsi bot — EXPERIMENTAL / QUARANTINED.
+ *
+ * Read server/jitsi-bot/EXPERIMENTAL.md before touching this. Production
+ * STT runs through the per-browser Deepgram relay in
+ * server/websocket/handlers.js, not through this bot.
  *
  * This module provides a way to launch a Jitsi bot from the main server
  * when a video mode session starts. The bot runs as a child process

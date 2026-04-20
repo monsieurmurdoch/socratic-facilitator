@@ -69,15 +69,26 @@ app.use("/api/parents", parentsRouter);
 app.use("/api/integrations", integrationsRouter);
 app.use("/", miscRouter);
 
-// Jitsi bot launcher (for video mode)
-// Disabled on Railway — Puppeteer/Chrome can't run in Alpine containers.
-// STT is handled client-side via Web Speech API instead.
+// Jitsi bot launcher — QUARANTINED / EXPERIMENTAL.
+// See server/jitsi-bot/EXPERIMENTAL.md for context. Production STT runs
+// client-side via the per-browser Deepgram relay in
+// server/websocket/handlers.js, not via this bot.
 let jitsiLauncher = null;
 if (process.env.ENABLE_JITSI_BOT === 'true') {
-  try {
-    jitsiLauncher = require("./jitsi-bot/start-session");
-  } catch (e) {
-    console.log("Jitsi bot module not available:", e.message);
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowedInProd = process.env.JITSI_BOT_ALLOW_IN_PRODUCTION === 'true';
+  if (isProduction && !allowedInProd) {
+    console.warn(
+      '[Jitsi] ENABLE_JITSI_BOT=true ignored in production. ' +
+      'Set JITSI_BOT_ALLOW_IN_PRODUCTION=true to override (read server/jitsi-bot/EXPERIMENTAL.md first).'
+    );
+  } else {
+    console.warn('[Jitsi] Loading EXPERIMENTAL bot launcher. See server/jitsi-bot/EXPERIMENTAL.md.');
+    try {
+      jitsiLauncher = require("./jitsi-bot/start-session");
+    } catch (e) {
+      console.log("Jitsi bot module not available:", e.message);
+    }
   }
 }
 
@@ -126,6 +137,7 @@ async function initialize() {
     useEnhancedSystem: USE_ENHANCED_SYSTEM,
     FACILITATION_PARAMS,
     sessionsRepo: require("./db/repositories/sessions"),
+    reportBuilder: require("./reportBuilder"),
     jitsiLauncher,
     // TTS (if needed in future)
     generateTTS: require("./voice/tts").generateTTS
