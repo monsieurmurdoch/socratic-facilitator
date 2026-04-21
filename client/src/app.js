@@ -1220,9 +1220,13 @@
 
     jitsiApi.addEventListener('audioMuteStatusChanged', (event) => {
       console.log('[Jitsi] Audio mute:', event.muted);
-      // STT uses its own local mic stream and should not flap just because
-      // Jitsi toggles conference mute state during startup or device changes.
-      // Keep STT lifecycle tied to session/video state, not Jitsi mute events.
+      // Sync browser STT with Jitsi mute so the AI actually stops listening
+      // when a participant mutes. Without this, Jitsi mute only stops the
+      // audio stream to other participants — the browser's own mic stream
+      // (which we relay to Deepgram) keeps running, so the AI still "hears"
+      // them. Debounce because Jitsi emits mute events during init / device
+      // changes that we shouldn't react to immediately.
+      scheduleJitsiMuteState(event.muted);
     });
 
     jitsiApi.addEventListener('errorOccurred', (event) => {
@@ -1237,6 +1241,9 @@
       jitsiApi.dispose();
       jitsiApi = null;
     }
+    // Clear mute-sync state so a fresh Jitsi launch doesn't inherit stale
+    // mute bookkeeping from the previous session.
+    resetJitsiMuteState();
   }
 
   // ---- Share Link ----
@@ -2438,6 +2445,42 @@
   let sttNode = null;    // AudioWorklet or ScriptProcessor
   let sttContext = null;  // AudioContext
   let sttActive = false;
+  // Tracks whether Jitsi thinks the participant is muted. Drives pause/resume
+  // of the browser STT stream so "mute in Jitsi" actually stops the AI from
+  // hearing the participant.
+  let jitsiMicMuted = false;
+  let jitsiMuteTimer = null;
+
+  function scheduleJitsiMuteState(muted) {
+    if (jitsiMuteTimer) clearTimeout(jitsiMuteTimer);
+    jitsiMuteTimer = setTimeout(() => {
+      applyJitsiMuteState(muted);
+      jitsiMuteTimer = null;
+    }, 180);
+  }
+
+  function applyJitsiMuteState(muted) {
+    jitsiMicMuted = !!muted;
+    // Only drive STT lifecycle while the user is actually in the video
+    // screen. Mute events that fire during Jitsi init or device changes
+    // on other screens shouldn't flap the STT pipeline.
+    if (currentScreen !== "video") return;
+    if (jitsiMicMuted) {
+      console.log("[STT] Jitsi mic muted — stopping browser STT");
+      stopSpeechRecognition();
+    } else if (!sttActive && currentSessionId) {
+      console.log("[STT] Jitsi mic unmuted — resuming browser STT");
+      startSpeechRecognition();
+    }
+  }
+
+  function resetJitsiMuteState() {
+    if (jitsiMuteTimer) {
+      clearTimeout(jitsiMuteTimer);
+      jitsiMuteTimer = null;
+    }
+    jitsiMicMuted = false;
+  }
 
   /**
    * Pre-acquire camera+mic in a single getUserMedia call so Safari only
@@ -2470,6 +2513,14 @@
   async function startSpeechRecognition() {
     if (sttActive) {
       console.log("[STT] Already active, skipping");
+      return;
+    }
+    // Respect Jitsi mute: if the participant muted before we tried to start
+    // STT (e.g. session start kicks STT while they're still muted), don't
+    // open the mic. The audioMuteStatusChanged handler will call this again
+    // when they unmute.
+    if (jitsiMicMuted) {
+      console.log("[STT] Jitsi mic is muted — not starting");
       return;
     }
     // Set flag IMMEDIATELY to prevent race condition with Jitsi's audioMuteStatusChanged event
