@@ -107,7 +107,7 @@ async function getBySession(sessionId) {
   const result = await db.query(
     `SELECT id, material_id, session_id, chunk_index,
             line_start, line_end, source_kind, content, created_at,
-            embedding, embedding_json
+            embedding, embedding_json, importance, role
      FROM material_chunks
      WHERE session_id = $1
      ORDER BY chunk_index ASC`,
@@ -354,12 +354,22 @@ function computeHybridResults(chunks, tokens, queryEmbedding, limit, lineReferen
     .slice(0, limit);
 }
 
+async function updateImportanceBatch(scores) {
+  for (const { id, importance, role } of scores) {
+    await db.query(
+      'UPDATE material_chunks SET importance = $1, role = $2 WHERE id = $3',
+      [importance, role, id]
+    );
+  }
+}
+
 module.exports = {
   clearByMaterial,
   replaceForMaterial,
   getBySession,
   getViewerBySession,
   searchRelevantBySession,
+  updateImportanceBatch,
   // Exposed for testing
   getEmbedding,
   normalizeScore,

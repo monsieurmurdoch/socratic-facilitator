@@ -398,6 +398,21 @@ router.post('/:code/prime', async (req, res) => {
       const result = await sessionPrimer.prime(combinedText, session.conversation_goal);
       const updated = await primedContextRepo.complete(primedContext.id, result);
 
+      // Score chunk importance (fire-and-forget, non-blocking)
+      setImmediate(async () => {
+        try {
+          const chunks = await materialChunksRepo.getBySession(session.id);
+          if (chunks.length > 0) {
+            const scores = await sessionPrimer.scoreChunkImportance(chunks, session.conversation_goal);
+            if (scores.length > 0) {
+              await materialChunksRepo.updateImportanceBatch(scores);
+            }
+          }
+        } catch (err) {
+          console.warn('[Prime] Chunk importance scoring failed:', err.message);
+        }
+      });
+
       res.json({
         status: 'complete',
         context: {

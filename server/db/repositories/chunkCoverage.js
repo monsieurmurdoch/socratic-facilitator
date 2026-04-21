@@ -88,15 +88,17 @@ async function getCoverageSummary(sessionId) {
   const coveredChunks = parseInt(coveredResult.rows[0]?.covered || 0, 10);
 
   // Uncovered chunks: chunks in this session NOT in chunk_coverage
+  // Sort by importance DESC so most discussion-worthy passages surface first
   const uncoveredResult = await db.query(
-    `SELECT mc.id, mc.chunk_index, mc.content, mc.line_start, mc.line_end
+    `SELECT mc.id, mc.chunk_index, mc.content, mc.line_start, mc.line_end,
+            mc.importance, mc.role
      FROM material_chunks mc
      WHERE mc.session_id = $1
        AND NOT EXISTS (
          SELECT 1 FROM chunk_coverage cc
          WHERE cc.chunk_id = mc.id AND cc.session_id = $1
        )
-     ORDER BY mc.chunk_index ASC`,
+     ORDER BY mc.importance DESC NULLS LAST, mc.chunk_index ASC`,
     [sessionId]
   );
 

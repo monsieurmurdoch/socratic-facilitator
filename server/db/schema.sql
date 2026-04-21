@@ -478,6 +478,16 @@ CREATE TABLE IF NOT EXISTS chunk_coverage (
 
 CREATE INDEX IF NOT EXISTS idx_chunk_coverage_session ON chunk_coverage(session_id);
 
+-- Chunk importance scoring (Phase 4: Structured Chunk Metadata)
+ALTER TABLE material_chunks
+  ADD COLUMN IF NOT EXISTS importance FLOAT;
+
+ALTER TABLE material_chunks
+  ADD COLUMN IF NOT EXISTS role VARCHAR(20);
+
+CREATE INDEX IF NOT EXISTS idx_material_chunks_importance
+  ON material_chunks(session_id, importance DESC NULLS LAST);
+
 -- Robust fixes for schema warnings and missing columns (user_id, is_anchor, etc.)
 -- This ensures the DB is always consistent even if the $ splitter fails on functions
 ALTER TABLE IF EXISTS session_memberships ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;

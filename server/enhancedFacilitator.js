@@ -823,7 +823,8 @@ Don't over-explain, but you can be slightly more substantive than usual.`;
         const chunk = this._pendingSteeringChunk;
         this._pendingSteeringChunk = null;
         const snippet = (chunk?.content || '').substring(0, 300);
-        return `UNEXPLORED PASSAGE:
+        const roleTag = chunk?.role ? ` (this is a ${chunk.role})` : '';
+        return `UNEXPLORED PASSAGE${roleTag}:
 The discussion has covered less than half the source material. Here's a passage that hasn't been touched:
 
 "${snippet}"

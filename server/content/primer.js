@@ -102,6 +102,75 @@ Respond in JSON format only:
 
     return snippet;
   }
+
+  /**
+   * Score chunk importance and role using a single LLM call per batch.
+   * Called once per upload, after priming. Fire-and-forget.
+   *
+   * @param {Array<{id: string, content: string}>} chunks
+   * @param {string|null} goal - Conversation goal for context
+   * @returns {Array<{id: string, importance: number, role: string}>}
+   */
+  async scoreChunkImportance(chunks, goal = null) {
+    if (!chunks || chunks.length === 0) return [];
+
+    const BATCH_SIZE = 30;
+    if (chunks.length > BATCH_SIZE) {
+      const allResults = [];
+      for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+        const batch = chunks.slice(i, i + BATCH_SIZE);
+        const results = await this._scoreBatch(batch, goal);
+        allResults.push(...results);
+      }
+      return allResults;
+    }
+
+    return this._scoreBatch(chunks, goal);
+  }
+
+  /**
+   * Score a single batch of chunks (max ~30).
+   * @private
+   */
+  async _scoreBatch(chunks, goal) {
+    const chunkList = chunks.map((c, i) =>
+      `[${i}] ${c.content.substring(0, 400)}`
+    ).join('\n\n');
+
+    const prompt = `You are analyzing passages from source material for a Socratic discussion.
+
+${goal ? `DISCUSSION GOAL: ${goal}\n\n` : ''}PASSAGES:
+${chunkList}
+
+For each passage, score:
+- "importance": 0.0-1.0 — how central is this passage to the core ideas? Key claims and pivotal arguments score highest. Tangential details and transitions score lowest.
+- "role": one of "claim" (central argument/thesis), "evidence" (supporting data/example), "example" (illustrative case), "transition" (connecting/metadata text), "definition" (defines a key term)
+
+Respond in JSON only — an array of objects with "index", "importance", and "role":
+[{"index": 0, "importance": 0.9, "role": "claim"}, ...]`;
+
+    try {
+      const response = await this.client.messages.create({
+        model: this.model,
+        max_tokens: 4000,
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const text = response.content[0].text.trim();
+      const jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const scores = JSON.parse(jsonStr);
+
+      const validRoles = ['claim', 'evidence', 'example', 'transition', 'definition'];
+      return scores.map(s => ({
+        id: chunks[s.index]?.id,
+        importance: Math.min(1, Math.max(0, Number(s.importance) || 0)),
+        role: validRoles.includes(s.role) ? s.role : 'transition'
+      })).filter(s => s.id);
+    } catch (err) {
+      console.error('[Primer] Chunk importance scoring failed:', err.message);
+      return [];
+    }
+  }
 }
 
 module.exports = new SessionPrimer();
