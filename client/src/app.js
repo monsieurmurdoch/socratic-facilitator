@@ -39,6 +39,8 @@
   let slowSpeakerMode = false;
   let wsReconnectDelay = 1000; // exponential backoff starting at 1s
   const WS_RECONNECT_MAX = 30000; // cap at 30s
+  let jitsiMicMuted = false;
+  let jitsiMuteTimer = null;
 
   const SPEECH_PATIENCE_PRESETS = {
     quick: { warmup: 260, discussion: 220, vadFlush: 110 },
@@ -92,6 +94,7 @@
     lastInterimTranscript = "";
     clearTimeout(sttBatchTimer);
     sttBatchTimer = null;
+    resetJitsiMuteState();
     clearLocalSpeechDraft();
   }
 
@@ -1194,10 +1197,23 @@
 
     jitsiApi.addEventListener('audioMuteStatusChanged', (event) => {
       console.log('[Jitsi] Audio mute:', event.muted);
-      // STT uses its own local mic stream and should not flap just because
-      // Jitsi toggles conference mute state during startup or device changes.
-      // Keep STT lifecycle tied to session/video state, not Jitsi mute events.
+      scheduleJitsiMuteState(event.muted);
     });
+
+    if (typeof jitsiApi.isAudioMuted === "function") {
+      try {
+        const initialMuteState = jitsiApi.isAudioMuted();
+        if (initialMuteState && typeof initialMuteState.then === "function") {
+          initialMuteState
+            .then((muted) => scheduleJitsiMuteState(muted))
+            .catch((error) => console.warn("[Jitsi] Could not read initial audio mute state:", error?.message || error));
+        } else {
+          scheduleJitsiMuteState(initialMuteState);
+        }
+      } catch (error) {
+        console.warn("[Jitsi] Could not read initial audio mute state:", error?.message || error);
+      }
+    }
 
     jitsiApi.addEventListener('errorOccurred', (event) => {
       console.error('[Jitsi] Error:', event);
@@ -1207,9 +1223,46 @@
   }
 
   function destroyJitsi() {
+    resetJitsiMuteState();
     if (jitsiApi) {
       jitsiApi.dispose();
       jitsiApi = null;
+    }
+  }
+
+  function resetJitsiMuteState() {
+    jitsiMicMuted = false;
+    if (jitsiMuteTimer) {
+      clearTimeout(jitsiMuteTimer);
+      jitsiMuteTimer = null;
+    }
+  }
+
+  function isVideoScreenActive() {
+    return !!document.getElementById("video-screen")?.classList.contains("active");
+  }
+
+  function scheduleJitsiMuteState(muted) {
+    if (jitsiMuteTimer) clearTimeout(jitsiMuteTimer);
+    jitsiMuteTimer = setTimeout(() => {
+      applyJitsiMuteState(muted);
+      jitsiMuteTimer = null;
+    }, 180);
+  }
+
+  function applyJitsiMuteState(muted) {
+    jitsiMicMuted = !!muted;
+    if (!isVideoScreenActive()) return;
+
+    if (jitsiMicMuted) {
+      console.log("[STT] Pausing because Jitsi mic is muted");
+      stopSpeechRecognition();
+      return;
+    }
+
+    if (!sttActive && currentSessionId) {
+      console.log("[STT] Resuming because Jitsi mic is unmuted");
+      startSpeechRecognition();
     }
   }
 
@@ -2430,6 +2483,10 @@
   async function startSpeechRecognition() {
     if (sttActive) {
       console.log("[STT] Already active, skipping");
+      return;
+    }
+    if (jitsiMicMuted) {
+      console.log("[STT] Jitsi mic is muted, not starting");
       return;
     }
     // Set flag IMMEDIATELY to prevent race condition with Jitsi's audioMuteStatusChanged event
