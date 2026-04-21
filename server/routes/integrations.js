@@ -587,7 +587,12 @@ router.get('/roadmap', requireAuth, async (_req, res) => {
       { id: 'nrps-sync', title: 'NRPS roster sync into classes and memberships', status: 'in_progress' },
       { id: 'deep-linking', title: 'Deep Linking for placing sessions in LMS courses', status: 'in_progress' },
       { id: 'google-classroom', title: 'Google Classroom importer/add-on', status: 'in_progress' },
-      { id: 'ags-passback', title: 'AGS gradebook passback after scoring policy is finalized', status: 'in_progress' }
+      { id: 'ags-passback', title: 'AGS gradebook passback after scoring policy is finalized', status: 'in_progress' },
+      { id: 'parent-hub', title: 'Parent Hub: family account, child linking, parent-safe progress', status: 'in_progress' },
+      { id: 'parent-scheduling', title: 'Parent-facing scheduling wrapper for cohorts and tutoring', status: 'planned' },
+      { id: 'parent-billing', title: 'Parent billing wrapper: Stripe customer, subscriptions, invoices', status: 'planned' },
+      { id: 'curriculum-library', title: 'Curriculum Library: age-banded Great Books pathways', status: 'planned' },
+      { id: 'curriculum-tech-tree', title: 'Tech-tree progression by age, theme, difficulty, and prerequisites', status: 'planned' }
     ]
   });
 });

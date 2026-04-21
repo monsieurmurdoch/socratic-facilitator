@@ -738,6 +738,90 @@ body {
   font-size: 0.85rem;
 }
 
+.dashboard-grid-two {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 18px;
+}
+
+.workspace-grid.compact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.metric-card {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.82), rgba(248,241,231,0.64)),
+    radial-gradient(circle at top right, rgba(212, 168, 124, 0.18), transparent 42%);
+}
+
+.metric-card strong {
+  display: block;
+  margin: 4px 0;
+  font-size: 1.7rem;
+  color: var(--text);
+}
+
+.metric-card small,
+.metric-label,
+.parent-progress-note {
+  color: var(--text-muted);
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.inline-form.parent-child-form {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(150px, 1.2fr) minmax(100px, 0.8fr) auto;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.parent-child-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.parent-progress-note {
+  margin: 8px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.parent-child-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .dashboard-grid-two,
+  .workspace-grid.compact-grid,
+  .inline-form.parent-child-form,
+  .parent-child-card {
+    grid-template-columns: 1fr;
+  }
+
+  .parent-child-stats {
+    align-items: flex-start;
+  }
+}
+
 /* Materials List */
 
 .materials-list {

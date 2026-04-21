@@ -282,6 +282,53 @@ CREATE TABLE IF NOT EXISTS parent_student_links (
   UNIQUE (class_id, parent_user_id, student_user_id)
 );
 
+ALTER TABLE parent_student_links ALTER COLUMN class_id DROP NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_parent_student_links_family_unique
+  ON parent_student_links(parent_user_id, student_user_id)
+  WHERE class_id IS NULL;
+
+CREATE TABLE IF NOT EXISTS student_profiles (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  grade_level VARCHAR(40),
+  age_band VARCHAR(40),
+  reading_level VARCHAR(80),
+  guardian_notes TEXT,
+  managed_by_parent_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS family_billing_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider VARCHAR(40) NOT NULL DEFAULT 'stripe',
+  external_customer_id TEXT,
+  billing_status VARCHAR(40) NOT NULL DEFAULT 'setup_needed',
+  plan_label VARCHAR(120),
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(parent_user_id, provider)
+);
+
+CREATE TABLE IF NOT EXISTS parent_booking_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  student_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  class_id UUID REFERENCES classes(id) ON DELETE SET NULL,
+  requested_window_start TIMESTAMPTZ,
+  requested_window_end TIMESTAMPTZ,
+  request_type VARCHAR(40) NOT NULL DEFAULT 'seminar',
+  status VARCHAR(30) NOT NULL DEFAULT 'draft',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_parent_booking_requests_parent
+  ON parent_booking_requests(parent_user_id, status, requested_window_start);
+
 -- External OAuth/LMS integrations
 CREATE TABLE IF NOT EXISTS external_integrations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

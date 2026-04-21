@@ -63,4 +63,36 @@ describe('API Endpoints', () => {
       expect(body).toHaveProperty('email');
     });
   });
+
+  describe('GET /api/parents/dashboard', () => {
+    test('returns 401 without auth', async () => {
+      const { status } = await testServer.get('/api/parents/dashboard');
+      expect(status).toBe(401);
+    });
+
+    test('lets a parent create a managed child profile', async () => {
+      const email = `parent-${Date.now()}@example.com`;
+      const { body: regBody } = await testServer.post('/api/auth/register', {
+        name: 'Parent Test',
+        email,
+        password: 'password123',
+        role: 'Parent'
+      });
+
+      const headers = { Authorization: `Bearer ${regBody.token}` };
+      const addResult = await testServer.post('/api/parents/children', {
+        name: 'Child Test',
+        gradeLevel: 'Grade 7'
+      }, headers);
+
+      expect(addResult.status).toBe(201);
+      expect(addResult.body.mode).toBe('created_managed');
+
+      const { status, body } = await testServer.get('/api/parents/dashboard', headers);
+      expect(status).toBe(200);
+      expect(body.children).toHaveLength(1);
+      expect(body.children[0].name).toBe('Child Test');
+      expect(body.billing.billing_status).toBeDefined();
+    });
+  });
 });

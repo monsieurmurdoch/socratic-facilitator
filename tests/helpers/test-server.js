@@ -25,12 +25,14 @@ async function setupTestServer() {
   const sessionsRouter = require('../../server/routes/sessions');
   const adminRouter = require('../../server/routes/admin');
   const integrationsRouter = require('../../server/routes/integrations');
+  const parentsRouter = require('../../server/routes/parents');
 
   app.use('/api/auth', authRouter);
   app.use('/api/classes', classesRouter);
   app.use('/api/sessions', sessionsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/integrations', integrationsRouter);
+  app.use('/api/parents', parentsRouter);
 
   // Health check
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));

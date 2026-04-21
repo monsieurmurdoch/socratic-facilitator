@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Socratic Facilitator</title>
-  <link rel="stylesheet" href="/src/style.css?v=22">
+  <link rel="stylesheet" href="/src/style.css?v=23">
 </head>
 <body>
 
@@ -218,11 +218,37 @@
       <div class="dashboard-section">
         <div class="workspace-card">
           <div class="workspace-header">
-            <h3>Linked Students</h3>
-            <span class="workspace-kicker">Managed by your child's teacher or school admin</span>
+            <h3>Family Hub</h3>
+            <span class="workspace-kicker">Your children's discussions, progress, and upcoming learning</span>
+          </div>
+          <div id="parent-overview-grid" class="workspace-grid compact-grid"></div>
+        </div>
+      </div>
+
+      <div class="dashboard-section dashboard-grid-two">
+        <div class="workspace-card">
+          <div class="workspace-header">
+            <h3>Children</h3>
+            <span class="workspace-kicker">Attach student accounts or create managed child profiles</span>
+          </div>
+          <div class="inline-form parent-child-form">
+            <input id="parent-child-name" type="text" placeholder="Child name">
+            <input id="parent-child-email" type="email" placeholder="Child email, optional">
+            <input id="parent-child-grade" type="text" placeholder="Grade or age">
+            <button id="parent-add-child-btn" class="btn btn-primary btn-small">Add Child</button>
           </div>
           <div id="linked-children-list" class="workspace-list">
             <p class="empty-state">No linked students yet. Ask your child's teacher to link your account.</p>
+          </div>
+        </div>
+
+        <div class="workspace-card">
+          <div class="workspace-header">
+            <h3>Scheduling & Billing</h3>
+            <span class="workspace-kicker">Wrapper ready; Stripe/calendar connection comes next</span>
+          </div>
+          <div id="parent-scheduling-billing" class="workspace-list">
+            <p class="empty-state">No booking or billing setup yet.</p>
           </div>
         </div>
       </div>
@@ -230,8 +256,8 @@
       <div class="dashboard-section">
         <div class="workspace-card">
           <div class="workspace-header">
-            <h3>Session History</h3>
-            <span class="workspace-kicker">Your children's discussions</span>
+            <h3>Progress Timeline</h3>
+            <span class="workspace-kicker">Parent-safe session history and signals</span>
           </div>
           <div id="parent-session-history-list" class="workspace-list">
             <p class="empty-state">No sessions yet.</p>
@@ -492,6 +518,6 @@
     </div>
   </div>
 
-  <script src="/src/app.js?v=12"></script>
+  <script src="/src/app.js?v=13"></script>
 </body>
 </html>

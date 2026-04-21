@@ -20,6 +20,8 @@
   let savedClasses = [];
   let sessionHistory = [];
   let classTimeline = [];
+  let parentDashboard = null;
+  let parentChildrenSessions = [];
   let selectedClassSummary = null;
   let selectedClassLiveSession = null;
   let pendingRoomJoin = null;
@@ -143,6 +145,8 @@
     savedClasses = [];
     sessionHistory = [];
     classTimeline = [];
+    parentDashboard = null;
+    parentChildrenSessions = [];
     selectedClassSummary = null;
     selectedClassLiveSession = null;
     sessionHistoryQuery = "";
@@ -1036,6 +1040,142 @@
     renderSessionHistory();
   }
 
+  async function refreshParentDashboard() {
+    try {
+      parentDashboard = await apiGet("/api/parents/dashboard");
+      const sessions = [];
+      for (const child of parentDashboard.children || []) {
+        try {
+          const childSessions = await apiGet(`/api/parents/children/${child.id}/sessions`);
+          childSessions.forEach(session => {
+            sessions.push({
+              ...session,
+              childName: child.name,
+              childId: child.id
+            });
+          });
+        } catch (error) {
+          console.warn("[Parent] Failed to load child sessions:", error.message);
+        }
+      }
+      parentChildrenSessions = sessions.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    } catch (error) {
+      console.warn("[Parent] Failed to load parent dashboard:", error.message);
+      parentDashboard = { children: [], billing: null, bookings: [] };
+      parentChildrenSessions = [];
+    }
+    renderParentDashboard();
+  }
+
+  function formatChildEmail(email) {
+    const value = String(email || "");
+    return value.endsWith("@socratic.local") ? "Managed profile" : value;
+  }
+
+  function describeProgress(child) {
+    const sessions = Number(child.sessionCount || 0);
+    const avg = Number(child.avgContribution || 0);
+    if (!sessions) return "No discussion history yet. Once they join a session, parent-safe progress will appear here.";
+    if (avg >= 0.7) return "Often contributing load-bearing comments. Keep inviting evidence and callbacks to classmates.";
+    if (avg >= 0.35) return "Participating steadily. A good next goal is more explicit textual grounding.";
+    return "Present but still finding a voice. Smaller prompts or early warmup questions may help.";
+  }
+
+  function renderParentDashboard() {
+    const overview = document.getElementById("parent-overview-grid");
+    const childrenList = document.getElementById("linked-children-list");
+    const sessionList = document.getElementById("parent-session-history-list");
+    const schedulingBilling = document.getElementById("parent-scheduling-billing");
+
+    if (!overview && !childrenList && !sessionList && !schedulingBilling) return;
+
+    const children = parentDashboard?.children || [];
+    const bookings = parentDashboard?.bookings || [];
+    const billing = parentDashboard?.billing || {};
+    const totalSessions = children.reduce((sum, child) => sum + Number(child.sessionCount || 0), 0);
+    const totalSpeaking = children.reduce((sum, child) => sum + Number(child.speakingSeconds || 0), 0);
+
+    if (overview) {
+      overview.innerHTML = `
+        <div class="metric-card">
+          <span class="metric-label">Linked Children</span>
+          <strong>${children.length}</strong>
+          <small>Family-level links, independent of class rooms</small>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Sessions Seen</span>
+          <strong>${totalSessions}</strong>
+          <small>Across all linked student accounts</small>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Speaking Time</span>
+          <strong>${Math.round(totalSpeaking / 60)}m</strong>
+          <small>Approximate child speaking time</small>
+        </div>
+      `;
+    }
+
+    if (childrenList) {
+      if (!children.length) {
+        childrenList.innerHTML = '<p class="empty-state">No linked students yet. Add a child profile above, or attach an existing student email.</p>';
+      } else {
+        childrenList.innerHTML = children.map(child => `
+          <div class="workspace-item parent-child-card">
+            <div class="parent-child-main">
+              <strong>${escapeHtml(child.name)}</strong>
+              <div class="workspace-item-meta">
+                ${escapeHtml(formatChildEmail(child.email))}
+                ${child.grade_level ? ` · ${escapeHtml(child.grade_level)}` : ""}
+                ${child.reading_level ? ` · ${escapeHtml(child.reading_level)}` : ""}
+              </div>
+              <p class="parent-progress-note">${escapeHtml(describeProgress(child))}</p>
+            </div>
+            <div class="parent-child-stats">
+              <span>${Number(child.sessionCount || 0)} sessions</span>
+              <span>${Math.round(Number(child.speakingSeconds || 0) / 60)}m spoke</span>
+              <span>contribution ${Number(child.avgContribution || 0).toFixed(2)}</span>
+            </div>
+          </div>
+        `).join("");
+      }
+    }
+
+    if (schedulingBilling) {
+      const billingStatus = billing.billing_status || "setup_needed";
+      schedulingBilling.innerHTML = `
+        <div class="workspace-item">
+          <strong>Billing</strong>
+          <div class="workspace-item-meta">
+            ${billing.connected ? "Stripe customer connected" : "Stripe not connected yet"} · ${escapeHtml(billingStatus.replace(/_/g, " "))}
+            ${billing.plan_label ? ` · ${escapeHtml(billing.plan_label)}` : ""}
+          </div>
+          <p class="parent-progress-note">Next build step: connect this wrapper to Stripe Checkout and subscriptions without mixing payment state into learning records.</p>
+        </div>
+        <div class="workspace-item">
+          <strong>Scheduling</strong>
+          <div class="workspace-item-meta">${bookings.length ? `${bookings.length} booking request${bookings.length === 1 ? "" : "s"}` : "No booking requests yet"}</div>
+          <p class="parent-progress-note">Next build step: teacher availability blocks, parent booking requests, and calendar reminders.</p>
+        </div>
+      `;
+    }
+
+    if (sessionList) {
+      if (!parentChildrenSessions.length) {
+        sessionList.innerHTML = '<p class="empty-state">No sessions yet. As children participate, their parent-safe timeline appears here.</p>';
+      } else {
+        sessionList.innerHTML = parentChildrenSessions.map(session => `
+          <div class="workspace-item">
+            <strong>${escapeHtml(session.title || "Untitled Session")}</strong>
+            <div class="workspace-item-meta">
+              ${escapeHtml(session.childName || "Student")} · ${formatDateTime(session.created_at)} · ${escapeHtml(session.status || "")}<br>
+              ${Number(session.message_count || 0)} comments · ${Math.round(Number(session.estimated_speaking_seconds || 0) / 60)}m speaking · contribution ${Number(session.contribution_score || 0).toFixed(2)}
+            </div>
+          </div>
+        `).join("");
+      }
+    }
+  }
+
   async function refreshWorkspace() {
     renderAuthState();
 
@@ -1043,25 +1183,47 @@
       savedClasses = [];
       sessionHistory = [];
       classTimeline = [];
+      parentDashboard = null;
+      parentChildrenSessions = [];
       selectedClassSummary = null;
       selectedClassLiveSession = null;
       renderClasses();
       renderSessionHistory();
       renderClassRoomSummary();
+      renderParentDashboard();
       return;
     }
 
     try {
+      const me = await apiGet("/api/auth/me");
+      accountUser = me.user;
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(accountUser));
+
+      if (accountUser.role === "Parent") {
+        savedClasses = [];
+        sessionHistory = [];
+        classTimeline = [];
+        selectedClassId = null;
+        selectedClassSummary = null;
+        selectedClassLiveSession = null;
+        await refreshParentDashboard();
+        renderAuthState();
+        renderClasses();
+        renderSessionHistory();
+        renderClassRoomSummary();
+        renderSetupContext();
+        return;
+      }
+
       const historyPath = `/api/sessions/history${sessionHistoryQuery ? `?q=${encodeURIComponent(sessionHistoryQuery)}` : ''}`;
-      const [me, classes, history] = await Promise.all([
-        apiGet("/api/auth/me"),
+      const [classes, history] = await Promise.all([
         apiGet("/api/classes"),
         apiGet(historyPath)
       ]);
-      accountUser = me.user;
-      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(accountUser));
       savedClasses = classes;
       sessionHistory = history;
+      parentDashboard = null;
+      parentChildrenSessions = [];
       if (selectedClassId && !savedClasses.some(cls => cls.id === selectedClassId)) {
         selectedClassId = null;
       }
@@ -1071,6 +1233,7 @@
       renderAuthState();
       renderClasses();
       renderSessionHistory();
+      renderParentDashboard();
       loadSelectedClassTimeline();
       renderSetupContext();
     } catch (error) {
@@ -1080,6 +1243,7 @@
       renderClasses();
       renderSessionHistory();
       renderClassRoomSummary();
+      renderParentDashboard();
       renderSetupContext();
     }
   }
@@ -2092,6 +2256,43 @@
     }
   }
 
+  async function handleParentAddChild() {
+    const nameInput = document.getElementById("parent-child-name");
+    const emailInput = document.getElementById("parent-child-email");
+    const gradeInput = document.getElementById("parent-child-grade");
+    const btn = document.getElementById("parent-add-child-btn");
+    const name = nameInput?.value.trim() || "";
+    const email = emailInput?.value.trim() || "";
+    const gradeLevel = gradeInput?.value.trim() || "";
+
+    if (!name && !email) {
+      alert("Enter a child name, or enter an existing student email to attach.");
+      return;
+    }
+    if (email && !EMAIL_RE.test(email)) {
+      alert("Enter a valid child email, or leave it blank for a managed child profile.");
+      return;
+    }
+
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = "Adding..."; }
+      await apiPost("/api/parents/children", {
+        name,
+        email,
+        gradeLevel,
+        ageBand: gradeLevel
+      });
+      if (nameInput) nameInput.value = "";
+      if (emailInput) emailInput.value = "";
+      if (gradeInput) gradeInput.value = "";
+      await refreshParentDashboard();
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "Add Child"; }
+    }
+  }
+
   async function handleCreateClass() {
     if (!accountUser || !canManageClasses()) {
       alert("Only teachers and admins can create classes.");
@@ -2136,6 +2337,7 @@
   document.getElementById("login-btn").addEventListener("click", handleLogin);
   document.getElementById("demo-login-btn")?.addEventListener("click", handleDemoTeacherLogin);
   document.getElementById("create-class-btn").addEventListener("click", handleCreateClass);
+  document.getElementById("parent-add-child-btn")?.addEventListener("click", handleParentAddChild);
 
   // Create class modal
   function openCreateClassModal() {
