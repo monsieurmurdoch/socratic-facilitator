@@ -111,6 +111,28 @@ class ContentExtractor {
   }
 
   /**
+   * Extract text from XML by stripping tags and decoding common entities.
+   * No schema awareness — just enough to make element text readable to Plato.
+   */
+  async extractXML(buffer) {
+    const raw = buffer.toString('utf-8');
+    const text = raw
+      .replace(/<\?xml[^?]*\?>/gi, '')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;|&apos;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
+    return { text, metadata: { extractionMethod: 'xml-stripped' } };
+  }
+
+  /**
    * Extract text based on file type
    */
   async extract(buffer, type, metadata = {}) {
@@ -123,6 +145,9 @@ class ContentExtractor {
 
       case 'txt':
         return this.extractText(buffer);
+
+      case 'xml':
+        return this.extractXML(buffer);
 
       case 'docx':
         // Would need mammoth package for DOCX
@@ -186,6 +211,9 @@ class ContentExtractor {
     }
     if (mimeType === 'text/plain' || filename?.endsWith('.txt')) {
       return 'txt';
+    }
+    if (filename?.endsWith('.xml') || mimeType === 'application/xml' || mimeType === 'text/xml') {
+      return 'xml';
     }
     if (filename?.endsWith('.docx') || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       return 'docx';

@@ -69,15 +69,26 @@ app.use("/api/parents", parentsRouter);
 app.use("/api/integrations", integrationsRouter);
 app.use("/", miscRouter);
 
-// Jitsi bot launcher (for video mode)
-// Disabled on Railway — Puppeteer/Chrome can't run in Alpine containers.
-// STT is handled client-side via Web Speech API instead.
+// Jitsi bot launcher — QUARANTINED / EXPERIMENTAL.
+// See server/jitsi-bot/EXPERIMENTAL.md for context. Production STT runs
+// client-side via the per-browser Deepgram relay in
+// server/websocket/handlers.js, not via this bot.
 let jitsiLauncher = null;
 if (process.env.ENABLE_JITSI_BOT === 'true') {
-  try {
-    jitsiLauncher = require("./jitsi-bot/start-session");
-  } catch (e) {
-    console.log("Jitsi bot module not available:", e.message);
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowedInProd = process.env.JITSI_BOT_ALLOW_IN_PRODUCTION === 'true';
+  if (isProduction && !allowedInProd) {
+    console.warn(
+      '[Jitsi] ENABLE_JITSI_BOT=true ignored in production. ' +
+      'Set JITSI_BOT_ALLOW_IN_PRODUCTION=true to override (read server/jitsi-bot/EXPERIMENTAL.md first).'
+    );
+  } else {
+    console.warn('[Jitsi] Loading EXPERIMENTAL bot launcher. See server/jitsi-bot/EXPERIMENTAL.md.');
+    try {
+      jitsiLauncher = require("./jitsi-bot/start-session");
+    } catch (e) {
+      console.log("Jitsi bot module not available:", e.message);
+    }
   }
 }
 
@@ -89,6 +100,26 @@ async function initialize() {
   } catch (error) {
     console.error('Database initialization error:', error);
     throw error; // Re-throw to prevent server from starting
+  }
+
+  // Sweep sessions left in 'waiting' / 'active' from a previous run that
+  // crashed or was killed before end_discussion fired. Without this sweep,
+  // the dashboard keeps showing those classes as having a live session.
+  // A session is "stale" if its last message (or started_at, or created_at)
+  // is older than STALE_SESSION_MINUTES (default 30) — short enough to
+  // self-heal after a crash, long enough that a quick redeploy won't kill
+  // a real in-progress discussion.
+  try {
+    const sessionsRepo = require("./db/repositories/sessions");
+    const staleAfterMinutes = Number(process.env.STALE_SESSION_MINUTES || 30);
+    const swept = await sessionsRepo.markStaleActiveSessionsEnded(staleAfterMinutes);
+    if (swept.length > 0) {
+      console.warn(`[boot] Swept ${swept.length} stale active session(s) — older than ${staleAfterMinutes} min:`,
+        swept.map(s => `${s.short_code}${s.class_id ? ` (class ${s.class_id})` : ''}`).join(', '));
+    }
+  } catch (err) {
+    console.error('[boot] Failed to sweep stale active sessions:', err.message);
+    // Non-fatal — keep booting.
   }
 
   // Initialize engine and services
@@ -126,6 +157,7 @@ async function initialize() {
     useEnhancedSystem: USE_ENHANCED_SYSTEM,
     FACILITATION_PARAMS,
     sessionsRepo: require("./db/repositories/sessions"),
+    reportBuilder: require("./reportBuilder"),
     jitsiLauncher,
     // TTS (if needed in future)
     generateTTS: require("./voice/tts").generateTTS

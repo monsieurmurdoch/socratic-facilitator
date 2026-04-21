@@ -117,6 +117,46 @@ function verifyToken(token) {
   return jwt.verify(token, JWT_SECRET);
 }
 
+/**
+ * Issue a short-lived participant token for an anonymous (or signed-in) WS
+ * joiner. Scoped to a single session — read access only — so anonymous
+ * participants can hit session-scoped HTTP endpoints (currently just
+ * /source-text) without needing a full user account.
+ *
+ * Distinct `type: 'participant'` so it can never be confused for a user JWT.
+ */
+function issueParticipantToken({ sessionShortCode, sessionId, participantId, name }, { expiresIn = '12h' } = {}) {
+  if (!sessionShortCode || !sessionId) {
+    throw new Error('issueParticipantToken requires sessionShortCode and sessionId');
+  }
+  return jwt.sign(
+    {
+      type: 'participant',
+      sessionShortCode,
+      sessionId,
+      participantId: participantId || null,
+      name: name || null
+    },
+    JWT_SECRET,
+    { expiresIn }
+  );
+}
+
+/**
+ * Verify a participant token. Returns payload on success, null on
+ * invalid/expired/wrong-type. Never throws.
+ */
+function verifyParticipantToken(token) {
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.type !== 'participant') return null;
+    return payload;
+  } catch (_error) {
+    return null;
+  }
+}
+
 async function attachUser(req, _res, next) {
   const authHeader = req.headers.authorization || '';
   if (!authHeader.startsWith('Bearer ')) {
@@ -175,5 +215,7 @@ module.exports = {
   verifyToken,
   attachUser,
   requireAuth,
-  requireAnyRole
+  requireAnyRole,
+  issueParticipantToken,
+  verifyParticipantToken
 };

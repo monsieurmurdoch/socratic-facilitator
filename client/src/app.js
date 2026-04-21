@@ -16,6 +16,7 @@
   let materials = [];
   let materialsClassId = null;
   let authToken = null;
+  let participantToken = null; // session-scoped, issued at WS join, used for /source-text
   let accountUser = null;
   let savedClasses = [];
   let sessionHistory = [];
@@ -93,6 +94,10 @@
     clearTimeout(sttBatchTimer);
     sttBatchTimer = null;
     clearLocalSpeechDraft();
+    // Drop the session-scoped participant token — it's only valid for the
+    // session we're leaving.
+    participantToken = null;
+    try { sessionStorage.removeItem("participantToken"); } catch (_) {}
   }
 
   function resetConversationFeed() {
@@ -124,6 +129,13 @@
     } catch (e) {
       authToken = null;
       accountUser = null;
+    }
+    // Restore the session-scoped participant token so /source-text keeps
+    // working across page refreshes until WS rejoin issues a fresh one.
+    try {
+      participantToken = sessionStorage.getItem("participantToken") || null;
+    } catch (_) {
+      participantToken = null;
     }
   }
 
@@ -217,6 +229,12 @@
     const headers = { ...extra };
     if (authToken) {
       headers.Authorization = `Bearer ${authToken}`;
+    }
+    // Always include the participant token if present — it's harmless on
+    // endpoints that ignore it, and required for anonymous joiners hitting
+    // the session-scoped endpoints (/source-text).
+    if (participantToken) {
+      headers["X-Participant-Token"] = participantToken;
     }
     return headers;
   }
@@ -973,6 +991,7 @@
             ` : ""}
             <div class="timeline-actions">
               <button class="btn btn-secondary btn-small timeline-open-btn" data-shortcode="${escapeAttribute(session.shortCode)}">Open Analytics</button>
+              <button class="btn btn-secondary btn-small timeline-report-btn" data-shortcode="${escapeAttribute(session.shortCode)}">View Report</button>
               <span class="workspace-item-tag code-badge code-badge-session">${escapeHtml(session.shortCode)}</span>
             </div>
           </div>
@@ -998,6 +1017,13 @@
       btn.addEventListener('click', (event) => {
         event.stopPropagation();
         showSessionAnalytics(btn.dataset.shortcode);
+      });
+    });
+
+    document.querySelectorAll('.timeline-report-btn').forEach(btn => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        showSessionReport(btn.dataset.shortcode, { autoRetry: true });
       });
     });
   }
@@ -1194,9 +1220,13 @@
 
     jitsiApi.addEventListener('audioMuteStatusChanged', (event) => {
       console.log('[Jitsi] Audio mute:', event.muted);
-      // STT uses its own local mic stream and should not flap just because
-      // Jitsi toggles conference mute state during startup or device changes.
-      // Keep STT lifecycle tied to session/video state, not Jitsi mute events.
+      // Sync browser STT with Jitsi mute so the AI actually stops listening
+      // when a participant mutes. Without this, Jitsi mute only stops the
+      // audio stream to other participants — the browser's own mic stream
+      // (which we relay to Deepgram) keeps running, so the AI still "hears"
+      // them. Debounce because Jitsi emits mute events during init / device
+      // changes that we shouldn't react to immediately.
+      scheduleJitsiMuteState(event.muted);
     });
 
     jitsiApi.addEventListener('errorOccurred', (event) => {
@@ -1211,6 +1241,9 @@
       jitsiApi.dispose();
       jitsiApi = null;
     }
+    // Clear mute-sync state so a fresh Jitsi launch doesn't inherit stale
+    // mute bookkeeping from the previous session.
+    resetJitsiMuteState();
   }
 
   // ---- Share Link ----
@@ -1300,9 +1333,26 @@
         break;
       }
 
+      case "room_not_live":
+        clearState();
+        clearSessionUrlState();
+        showRoomWaitScreen({
+          roomCode: msg.roomCode,
+          classId: msg.classId,
+          className: msg.className,
+          classDescription: msg.classDescription
+        });
+        break;
+
       case "session_joined": {
         const isRejoin = currentSessionId === msg.sessionId && myId === msg.yourId;
         currentSessionId = msg.sessionId;
+        // Stash the session-scoped participant token so anonymous joiners can
+        // hit /source-text and other participant-facing endpoints.
+        if (msg.participantToken) {
+          participantToken = msg.participantToken;
+          try { sessionStorage.setItem("participantToken", participantToken); } catch (_) {}
+        }
         discussionActive = false;
         applyTeacherParams(msg.currentParams || {});
         // Only reset feed on fresh join — preserve transcript on reconnect
@@ -1359,6 +1409,7 @@
           startSpeechRecognition();
         }
         document.getElementById("start-discussion-btn").style.display = isHost ? "" : "none";
+        refreshViewSourceButton(currentSessionId);
         saveState();
         break;
 
@@ -1373,6 +1424,7 @@
           startSpeechRecognition();
         }
         document.getElementById("start-discussion-btn").style.display = "none";
+        refreshViewSourceButton(currentSessionId);
         saveState();
         break;
 
@@ -1429,14 +1481,20 @@
         flushSttBatch();
         break;
 
-      case "discussion_ended":
+      case "discussion_ended": {
+        const endedShortCode = currentSessionId;
+        const wasHost = isHost;
         discussionActive = false;
         destroySttStream();
         destroyJitsi();
         clearState();
         showScreen("welcome");
         refreshWorkspace();
+        if (wasHost && endedShortCode && accountUser) {
+          showSessionReport(endedShortCode, { autoRetry: true });
+        }
         break;
+      }
 
       case "error":
         console.error("[Server] Error:", msg.text);
@@ -2387,6 +2445,42 @@
   let sttNode = null;    // AudioWorklet or ScriptProcessor
   let sttContext = null;  // AudioContext
   let sttActive = false;
+  // Tracks whether Jitsi thinks the participant is muted. Drives pause/resume
+  // of the browser STT stream so "mute in Jitsi" actually stops the AI from
+  // hearing the participant.
+  let jitsiMicMuted = false;
+  let jitsiMuteTimer = null;
+
+  function scheduleJitsiMuteState(muted) {
+    if (jitsiMuteTimer) clearTimeout(jitsiMuteTimer);
+    jitsiMuteTimer = setTimeout(() => {
+      applyJitsiMuteState(muted);
+      jitsiMuteTimer = null;
+    }, 180);
+  }
+
+  function applyJitsiMuteState(muted) {
+    jitsiMicMuted = !!muted;
+    // Only drive STT lifecycle while the user is actually in the video
+    // screen. Mute events that fire during Jitsi init or device changes
+    // on other screens shouldn't flap the STT pipeline.
+    if (currentScreen !== "video") return;
+    if (jitsiMicMuted) {
+      console.log("[STT] Jitsi mic muted — stopping browser STT");
+      stopSpeechRecognition();
+    } else if (!sttActive && currentSessionId) {
+      console.log("[STT] Jitsi mic unmuted — resuming browser STT");
+      startSpeechRecognition();
+    }
+  }
+
+  function resetJitsiMuteState() {
+    if (jitsiMuteTimer) {
+      clearTimeout(jitsiMuteTimer);
+      jitsiMuteTimer = null;
+    }
+    jitsiMicMuted = false;
+  }
 
   /**
    * Pre-acquire camera+mic in a single getUserMedia call so Safari only
@@ -2419,6 +2513,14 @@
   async function startSpeechRecognition() {
     if (sttActive) {
       console.log("[STT] Already active, skipping");
+      return;
+    }
+    // Respect Jitsi mute: if the participant muted before we tried to start
+    // STT (e.g. session start kicks STT while they're still muted), don't
+    // open the mic. The audioMuteStatusChanged handler will call this again
+    // when they unmute.
+    if (jitsiMicMuted) {
+      console.log("[STT] Jitsi mic is muted — not starting");
       return;
     }
     // Set flag IMMEDIATELY to prevent race condition with Jitsi's audioMuteStatusChanged event
@@ -2599,6 +2701,8 @@
   // Initialize collapsible sections
   initCollapsibleSections();
   initAnalyticsModal();
+  initReportModal();
+  initSourceTextModal();
 
   function initCollapsibleSections() {
     // Recent Sessions toggle
@@ -2676,6 +2780,262 @@
     const modal = document.getElementById('session-analytics-modal');
     modal.classList.remove('active');
     modal.style.display = 'none';
+  }
+
+  function initSourceTextModal() {
+    const modal = document.getElementById('source-text-modal');
+    if (!modal) return;
+    const backdrop = document.getElementById('source-text-backdrop');
+    const closeBtn = document.getElementById('source-text-close');
+    if (backdrop) backdrop.addEventListener('click', hideSourceTextModal);
+    if (closeBtn) closeBtn.addEventListener('click', hideSourceTextModal);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modal.classList.contains('active')) hideSourceTextModal();
+    });
+    const btn = document.getElementById('view-source-btn');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        if (currentSessionId) showSourceText(currentSessionId);
+      });
+    }
+  }
+
+  function hideSourceTextModal() {
+    const modal = document.getElementById('source-text-modal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+
+  async function showSourceText(shortCode) {
+    const modal = document.getElementById('source-text-modal');
+    const title = document.getElementById('source-text-title');
+    const content = document.getElementById('source-text-content');
+    if (!modal || !content) return;
+
+    title.textContent = 'Source Text';
+    content.innerHTML = `<div class="analytics-loading"><div class="spinner"></div><p>Loading source text…</p></div>`;
+    modal.style.display = '';
+    modal.classList.add('active');
+
+    try {
+      const data = await apiGet(`/api/sessions/${shortCode}/source-text`);
+      renderSourceTextContent(data);
+    } catch (err) {
+      content.innerHTML = `<div class="analytics-section"><p style="color: var(--text-secondary); text-align:center; padding:40px;">Couldn't load source text: ${escapeHtml(err.message)}</p></div>`;
+    }
+  }
+
+  function renderSourceTextContent(data) {
+    const title = document.getElementById('source-text-title');
+    const content = document.getElementById('source-text-content');
+    const materials = Array.isArray(data?.materials) ? data.materials : [];
+    if (data?.sessionTitle && title) {
+      title.textContent = `Source Text · ${data.sessionTitle}`;
+    }
+    if (materials.length === 0) {
+      content.innerHTML = `<div class="analytics-section"><p style="text-align:center; padding:40px; color: var(--text-secondary);">No source text was shared for this discussion.</p></div>`;
+      return;
+    }
+    content.innerHTML = materials.map((m) => {
+      const body = (m.chunks || [])
+        .map(c => escapeHtml(c.content || '').replace(/\n/g, '<br>'))
+        .join('<br><br>');
+      return `
+        <div class="analytics-section">
+          <h3>${escapeHtml(m.title || 'Shared Source Text')}</h3>
+          <div style="line-height:1.6; white-space: normal; max-height: 60vh; overflow-y: auto; padding: 8px 4px;">
+            ${body || '<em style="color: var(--text-secondary);">(empty)</em>'}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function refreshViewSourceButton(shortCode) {
+    const btn = document.getElementById('view-source-btn');
+    if (!btn || !shortCode) return;
+    try {
+      const data = await apiGet(`/api/sessions/${shortCode}/source-text`);
+      const has = Array.isArray(data?.materials) && data.materials.length > 0;
+      btn.style.display = has ? '' : 'none';
+    } catch {
+      btn.style.display = 'none';
+    }
+  }
+
+  function initReportModal() {
+    const modal = document.getElementById('session-report-modal');
+    if (!modal) return;
+    const backdrop = document.getElementById('session-report-backdrop');
+    const closeBtn = document.getElementById('report-close');
+    if (backdrop) backdrop.addEventListener('click', hideReportModal);
+    if (closeBtn) closeBtn.addEventListener('click', hideReportModal);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modal.classList.contains('active')) hideReportModal();
+    });
+  }
+
+  function hideReportModal() {
+    const modal = document.getElementById('session-report-modal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+
+  async function showSessionReport(shortCode, opts = {}) {
+    const { autoRetry = false } = opts;
+    if (!accountUser) {
+      console.warn('[Report] Requires sign-in');
+      return;
+    }
+    const modal = document.getElementById('session-report-modal');
+    const title = document.getElementById('report-title');
+    const content = document.getElementById('report-content');
+    if (!modal || !content) return;
+
+    title.textContent = `Session ${shortCode} — Report`;
+    content.innerHTML = `<div class="analytics-loading"><div class="spinner"></div><p>${autoRetry ? 'Generating report — this can take a few seconds…' : 'Loading report…'}</p></div>`;
+    modal.style.display = '';
+    modal.classList.add('active');
+
+    const fetchOnce = async () => apiGet(`/api/sessions/${shortCode}/report`);
+    const start = Date.now();
+    const maxWaitMs = autoRetry ? 25000 : 0;
+    let attempt = 0;
+    while (true) {
+      try {
+        const data = await fetchOnce();
+        renderReportContent(data.report, data.generatedAt);
+        return;
+      } catch (err) {
+        const stillWaiting = autoRetry && /not yet available/i.test(err.message) && (Date.now() - start) < maxWaitMs;
+        if (!stillWaiting) {
+          content.innerHTML = `<div class="analytics-section"><p style="color: var(--text-secondary); text-align:center; padding:40px;">Couldn't load report: ${escapeHtml(err.message)}</p></div>`;
+          return;
+        }
+        attempt += 1;
+        await new Promise(r => setTimeout(r, Math.min(1500 + attempt * 500, 4000)));
+      }
+    }
+  }
+
+  function renderReportContent(report, generatedAt) {
+    const content = document.getElementById('report-content');
+    if (!report) {
+      content.innerHTML = `<p style="padding:40px; text-align:center;">No report available.</p>`;
+      return;
+    }
+    const fmtDate = (s) => s ? new Date(s).toLocaleString() : '';
+    const fmtDuration = (seconds) => {
+      if (seconds == null) return '—';
+      const m = Math.floor(seconds / 60);
+      const s = Math.round(seconds % 60);
+      return `${m}m ${s}s`;
+    };
+
+    const metrics = report.metrics || {};
+    const overview = Array.isArray(report.overview) ? report.overview : [];
+    const top = Array.isArray(report.topContributors) ? report.topContributors : [];
+    const quiet = Array.isArray(report.quieterVoices) ? report.quieterVoices : [];
+    const moments = Array.isArray(report.strongestMoments) ? report.strongestMoments : [];
+    const tensions = Array.isArray(report.unexploredTensions) ? report.unexploredTensions : [];
+    const moves = report.whatPlatoDid?.byMove || {};
+    const moveTotal = report.whatPlatoDid?.totalInterventions || 0;
+
+    content.innerHTML = `
+      <div class="analytics-section">
+        <div style="background: var(--surface-alt); padding: 12px 16px; border-radius: 10px; font-size: 0.85rem;">
+          <strong>${escapeHtml(report.session?.title || 'Discussion')}</strong>
+          ${report.session?.className ? ` · ${escapeHtml(report.session.className)}` : ''}
+          · ${fmtDate(report.session?.endedAt || report.generatedAt)}
+          · duration ${fmtDuration(metrics.durationSeconds)}
+          · ${metrics.participantCount || 0} participants
+        </div>
+      </div>
+
+      ${overview.length ? `
+        <div class="analytics-section">
+          <h3>TL;DR</h3>
+          ${overview.map(s => `<p style="margin: 4px 0;">${escapeHtml(s)}</p>`).join('')}
+        </div>
+      ` : ''}
+
+      <div class="analytics-section">
+        <h3>By the numbers</h3>
+        <div class="analytics-grid">
+          <div class="analytics-metric"><span class="metric-value">${metrics.participantCommentCount || 0}</span><span class="metric-label">Student comments</span></div>
+          <div class="analytics-metric"><span class="metric-value">${metrics.facilitatorCommentCount || 0}</span><span class="metric-label">Plato interventions</span></div>
+          <div class="analytics-metric"><span class="metric-value">${(metrics.avgCoherence || 0).toFixed(2)}</span><span class="metric-label">Avg coherence</span></div>
+          <div class="analytics-metric"><span class="metric-value">${Math.round((metrics.peerBuildRate || 0) * 100)}%</span><span class="metric-label">Built on peers</span></div>
+          <div class="analytics-metric"><span class="metric-value">${Math.round((metrics.anchorRate || 0) * 100)}%</span><span class="metric-label">Anchor rate</span></div>
+        </div>
+      </div>
+
+      ${top.length ? `
+        <div class="analytics-section">
+          <h3>Top contributors</h3>
+          <table class="participants-table">
+            <thead><tr><th>Name</th><th>Messages</th><th>Speaking</th><th>Contribution</th></tr></thead>
+            <tbody>
+              ${top.map(c => `<tr>
+                <td><span class="participant-name">${escapeHtml(c.name || '')}</span></td>
+                <td>${c.messageCount || 0}</td>
+                <td>${Math.round(c.estimatedSpeakingSeconds || 0)}s</td>
+                <td>${(c.contributionScore || 0).toFixed(2)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+          ${quiet.length ? `<p style="margin-top:12px; color: var(--text-secondary);"><strong>Quieter voices:</strong> ${quiet.map(escapeHtml).join(', ')}</p>` : ''}
+        </div>
+      ` : ''}
+
+      ${moments.length ? `
+        <div class="analytics-section">
+          <h3>Strongest moments</h3>
+          ${moments.map(m => `
+            <div style="border-left: 3px solid var(--accent, #5a67d8); padding: 8px 12px; margin: 8px 0; background: var(--surface-alt); border-radius: 6px;">
+              <div style="font-weight: 600;">${escapeHtml(m.participant || '')}</div>
+              <div style="font-style: italic; margin: 4px 0;">"${escapeHtml(m.quote || '')}"</div>
+              ${m.whyItMattered ? `<div style="font-size: 0.85rem; color: var(--text-secondary);">${escapeHtml(m.whyItMattered)}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      ${tensions.length ? `
+        <div class="analytics-section">
+          <h3>Unexplored tensions</h3>
+          ${tensions.map(t => `
+            <div style="padding: 8px 12px; margin: 8px 0; background: var(--surface-alt); border-radius: 6px;">
+              <div><strong>${escapeHtml(t.summary || '')}</strong></div>
+              ${t.betweenWhom ? `<div style="font-size: 0.85rem; color: var(--text-secondary);">Between: ${escapeHtml(t.betweenWhom)}</div>` : ''}
+              ${t.suggestedFollowUp ? `<div style="font-size: 0.85rem; margin-top: 4px;">Try next: ${escapeHtml(t.suggestedFollowUp)}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      ${report.suggestedNextPrompt ? `
+        <div class="analytics-section">
+          <h3>Suggested next prompt</h3>
+          <p style="font-size: 1.05rem; padding: 12px; background: var(--surface-alt); border-radius: 6px;">${escapeHtml(report.suggestedNextPrompt)}</p>
+        </div>
+      ` : ''}
+
+      ${moveTotal ? `
+        <div class="analytics-section">
+          <h3>What Plato did</h3>
+          <p style="color: var(--text-secondary);">${moveTotal} intervention${moveTotal === 1 ? '' : 's'}: ${
+            Object.entries(moves).map(([k, v]) => `${escapeHtml(k)} (${v})`).join(', ')
+          }</p>
+        </div>
+      ` : ''}
+
+      <div class="analytics-section" style="font-size: 0.8rem; color: var(--text-muted, #888);">
+        Generated ${fmtDate(generatedAt)}
+      </div>
+    `;
   }
 
   function renderAnalyticsContent(data) {

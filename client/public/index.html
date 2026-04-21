@@ -307,9 +307,9 @@
           <div id="upload-area" class="upload-area">
             <div class="upload-icon">+</div>
             <p>Drop files here or click to upload</p>
-            <p class="upload-hint">PDF, TXT, DOCX — up to 5 files</p>
+            <p class="upload-hint">PDF, TXT, XML, DOCX — up to 5 files</p>
           </div>
-          <input type="file" id="file-input" accept=".pdf,.txt,.docx,.doc" multiple hidden>
+          <input type="file" id="file-input" accept=".pdf,.txt,.xml,.docx,.doc" multiple hidden>
 
           <div class="url-input-row">
             <input type="text" id="url-input" placeholder="https://example.com/article">
@@ -416,7 +416,10 @@
         </div>
 
         <div class="sidebar-transcript">
-          <h4>Conversation</h4>
+          <div class="sidebar-transcript-header">
+            <h4>Conversation</h4>
+            <button id="view-source-btn" class="btn btn-secondary btn-small" style="display:none;" title="View the source text shared in this discussion">View Source</button>
+          </div>
           <div id="conversation-feed" class="conversation-feed"></div>
         </div>
 
@@ -482,6 +485,40 @@
      </div>
    </div>
 
+   <!-- Source Text Viewer Modal (for participants in live discussion) -->
+   <div id="source-text-modal" class="modal" style="display:none">
+     <div class="modal-backdrop" id="source-text-backdrop"></div>
+     <div class="modal-content analytics-modal">
+       <div class="modal-header">
+         <h2 id="source-text-title">Source Text</h2>
+         <button class="modal-close" id="source-text-close">&times;</button>
+       </div>
+       <div class="modal-body" id="source-text-content">
+         <div class="analytics-loading">
+           <div class="spinner"></div>
+           <p>Loading source text…</p>
+         </div>
+       </div>
+     </div>
+   </div>
+
+   <!-- Post-Session Report Modal -->
+   <div id="session-report-modal" class="modal" style="display:none">
+     <div class="modal-backdrop" id="session-report-backdrop"></div>
+     <div class="modal-content analytics-modal">
+       <div class="modal-header">
+         <h2 id="report-title">Session Report</h2>
+         <button class="modal-close" id="report-close">&times;</button>
+       </div>
+       <div class="modal-body" id="report-content">
+         <div class="analytics-loading">
+           <div class="spinner"></div>
+           <p>Generating report…</p>
+         </div>
+       </div>
+     </div>
+   </div>
+
   <!-- Read-only transcript overlay for ended sessions -->
   <div id="readonly-overlay" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center;">
     <div class="readonly-card">
@@ -492,6 +529,6 @@
     </div>
   </div>
 
-  <script src="/src/app.js?v=11"></script>
+  <script src="/src/app.js?v=15"></script>
 </body>
 </html>

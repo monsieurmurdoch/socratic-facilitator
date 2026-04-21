@@ -354,6 +354,39 @@ async function userWasParticipant(sessionId, userId) {
   return result.rowCount > 0;
 }
 
+/**
+ * Sweep sessions stuck in 'waiting' / 'active' after a server crash or
+ * abnormal exit. A session is considered stale if its most recent message
+ * is older than `staleAfterMinutes` (or it has no messages at all and was
+ * created more than that long ago). Marks stale rows as 'ended' so the
+ * dashboard stops showing them as live.
+ *
+ * Returns the array of sessions that were marked ended (id + short_code +
+ * class_id), so the caller can log them.
+ */
+async function markStaleActiveSessionsEnded(staleAfterMinutes = 30) {
+  const result = await db.query(
+    `WITH stale AS (
+       SELECT s.id
+       FROM sessions s
+       LEFT JOIN LATERAL (
+         SELECT MAX(m.created_at) AS last_msg_at
+         FROM messages m
+         WHERE m.session_id = s.id
+       ) m ON true
+       WHERE s.status IN ('waiting', 'active')
+         AND COALESCE(m.last_msg_at, s.started_at, s.created_at)
+             < NOW() - ($1 || ' minutes')::interval
+     )
+     UPDATE sessions
+     SET status = 'ended', ended_at = NOW()
+     WHERE id IN (SELECT id FROM stale)
+     RETURNING id, short_code, class_id`,
+    [String(staleAfterMinutes)]
+  );
+  return result.rows;
+}
+
 module.exports = {
   create,
   findById,
@@ -368,7 +401,8 @@ module.exports = {
   userInClass,
   userWasParticipant,
   generateShortCode,
-  findLatestWithMaterials
+  findLatestWithMaterials,
+  markStaleActiveSessionsEnded
 };
 
 /**

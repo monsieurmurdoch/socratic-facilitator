@@ -455,6 +455,29 @@ CREATE TABLE IF NOT EXISTS learner_profiles (
 -- Index for learner profiles
 CREATE INDEX IF NOT EXISTS idx_learner_profiles_user ON learner_profiles(user_id, updated_at DESC);
 
+-- pgvector extension for semantic search (fails gracefully if not installed)
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Embedding columns on material_chunks for semantic retrieval
+ALTER TABLE material_chunks
+  ADD COLUMN IF NOT EXISTS embedding vector(512);
+
+ALTER TABLE material_chunks
+  ADD COLUMN IF NOT EXISTS embedding_json TEXT;
+
+-- Coverage tracking: which chunks were referenced during discussion
+CREATE TABLE IF NOT EXISTS chunk_coverage (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  chunk_id UUID NOT NULL REFERENCES material_chunks(id) ON DELETE CASCADE,
+  first_referenced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reference_count INTEGER NOT NULL DEFAULT 1,
+  sample_message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
+  UNIQUE(session_id, chunk_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunk_coverage_session ON chunk_coverage(session_id);
+
 -- Robust fixes for schema warnings and missing columns (user_id, is_anchor, etc.)
 -- This ensures the DB is always consistent even if the $ splitter fails on functions
 ALTER TABLE IF EXISTS session_memberships ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;

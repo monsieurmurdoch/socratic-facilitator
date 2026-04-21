@@ -24,4 +24,9 @@ const fastLlmBreaker = new CircuitBreaker('fast-llm', {
   resetTimeoutMs: parseInt(process.env.FAST_LLM_CB_RESET_MS) || 60000,
 });
 
-module.exports = { claudeBreaker, elevenLabsBreaker, deepgramBreaker, fastLlmBreaker };
+const voyageBreaker = new CircuitBreaker('voyage-embeddings', {
+  failureThreshold: parseInt(process.env.VOYAGE_CB_FAILURES) || 3,
+  resetTimeoutMs: parseInt(process.env.VOYAGE_CB_RESET_MS) || 30000,
+});
+
+module.exports = { claudeBreaker, elevenLabsBreaker, deepgramBreaker, fastLlmBreaker, voyageBreaker };
