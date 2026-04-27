@@ -43,6 +43,8 @@
   const WS_RECONNECT_MAX = 30000; // cap at 30s
   let jitsiMicMuted = false;
   let jitsiMuteTimer = null;
+  let jitsiLaunchingRoom = null;
+  let activeJitsiRoom = null;
 
   const SPEECH_PATIENCE_PRESETS = {
     quick: { warmup: 260, discussion: 220, vadFlush: 110 },
@@ -1271,19 +1273,28 @@
   }
 
   async function launchJitsi(roomName, displayName) {
+    const fullRoomName = `${JAAS_APP_ID}/socratic-${roomName}`;
+    if ((jitsiApi && activeJitsiRoom === fullRoomName) || jitsiLaunchingRoom === fullRoomName) {
+      console.log("[Jitsi] Already launched or launching room:", roomName);
+      return;
+    }
+    jitsiLaunchingRoom = fullRoomName;
+
     try {
       await loadJitsiScript();
     } catch (e) {
       console.error("[Jitsi] Failed to load script:", e);
       alert("Failed to load video call. Check your connection and try again.");
+      jitsiLaunchingRoom = null;
       return;
     }
 
+    const container = document.getElementById("jitsi-container");
     if (jitsiApi) {
       jitsiApi.dispose();
+      jitsiApi = null;
     }
-
-    const container = document.getElementById("jitsi-container");
+    if (container) container.replaceChildren();
 
     // Fetch JWT from server for authenticated access
     let jwt = null;
@@ -1296,7 +1307,7 @@
     }
 
     const options = {
-      roomName: `${JAAS_APP_ID}/socratic-${roomName}`,
+      roomName: fullRoomName,
       parentNode: container,
       userInfo: {
         displayName: displayName
@@ -1334,6 +1345,8 @@
     }
 
     jitsiApi = new JitsiMeetExternalAPI("8x8.vc", options);
+    activeJitsiRoom = fullRoomName;
+    jitsiLaunchingRoom = null;
 
     // Ensure iframe has audio/video permissions (Safari requires this)
     const iframe = jitsiApi.getIFrame();
@@ -1392,6 +1405,9 @@
       jitsiApi.dispose();
       jitsiApi = null;
     }
+    activeJitsiRoom = null;
+    jitsiLaunchingRoom = null;
+    document.getElementById("jitsi-container")?.replaceChildren();
   }
 
   function resetJitsiMuteState() {
@@ -1420,7 +1436,7 @@
 
     if (jitsiMicMuted) {
       console.log("[STT] Pausing because Jitsi mic is muted");
-      stopSpeechRecognition();
+      stopSpeechRecognition({ flush: false, releaseStream: true });
       return;
     }
 
@@ -2111,6 +2127,14 @@
     console.log("[STT] Batched final:", text);
   }
 
+  function discardSttBatch() {
+    clearTimeout(sttBatchTimer);
+    sttBatchTimer = null;
+    sttBatchBuffer = '';
+    lastInterimTranscript = "";
+    clearLocalSpeechDraft();
+  }
+
   function scheduleSttFlush(delayOverride = null) {
     clearTimeout(sttBatchTimer);
     sttBatchTimer = setTimeout(() => {
@@ -2759,8 +2783,13 @@
     sttNode.connect(mutedSink);
   }
 
-  function stopSpeechRecognition() {
-    flushSttBatch();
+  function stopSpeechRecognition(options = {}) {
+    const { flush = true, releaseStream = false } = options;
+    if (flush) {
+      flushSttBatch();
+    } else {
+      discardSttBatch();
+    }
     if (sttNode) {
       try { sttNode.disconnect(); } catch (e) {}
       sttNode = null;
@@ -2773,9 +2802,13 @@
     if (sttActive) {
       send({ type: "stt_stop" });
     }
+    if (releaseStream && sttStream) {
+      sttStream.getTracks().forEach(t => t.stop());
+      sttStream = null;
+    }
     // Always reset flag so reconnect can re-establish the Deepgram relay
     sttActive = false;
-    console.log("[STT] Stopped (stream kept for reuse)");
+    console.log(`[STT] Stopped (${releaseStream ? "stream released" : "stream kept for reuse"})`);
   }
 
   function destroySttStream() {
