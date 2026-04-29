@@ -20,4 +20,13 @@ describe('client Jitsi smoke guards', () => {
     expect(appSource).toContain('function discardSttBatch()');
     expect(appSource).toContain('sttStream.getTracks().forEach(t => t.stop())');
   });
+
+  test('Plato mic is the app-owned STT gate rather than the Jitsi mirror flag', () => {
+    expect(appSource).toContain('let platoMicMuted = false;');
+    expect(appSource).toContain('function isPlatoInputMuted()');
+    expect(appSource).toContain('document.getElementById("plato-mic-toggle")');
+    expect(appSource).toContain('jitsiApi.executeCommand("toggleAudio")');
+    expect(appSource).toContain('if (!isPlatoInputMuted() && sttActive && ws && ws.readyState === 1)');
+    expect(appSource).not.toContain('if (!jitsiMicMuted && sttActive && ws && ws.readyState === 1)');
+  });
 });

@@ -4,7 +4,7 @@
  * Manages WebSocket connection, message sending, and message routing.
  */
 
-import { state, loadState, shouldAutoRestore, getAge } from './state.js';
+import { state, loadState, shouldAutoRestore, getAge, getSessionAccessToken } from './state.js';
 
 let messageHandler = null;
 
@@ -34,7 +34,8 @@ export function connect() {
         type: "rejoin_session",
         sessionId: saved.currentSessionId,
         oldClientId: saved.myId,
-        authToken: state.authToken
+        authToken: state.authToken,
+        sessionAccessToken: getSessionAccessToken(saved.currentSessionId)
       });
       return;
     }
@@ -43,7 +44,7 @@ export function connect() {
     const params = new URLSearchParams(window.location.search);
     const joinCode = params.get("join");
     if (joinCode && state.myName) {
-      send({ type: "join_session", sessionId: joinCode, name: state.myName, age: getAge(), authToken: state.authToken });
+      send({ type: "join_session", sessionId: joinCode, name: state.myName, age: getAge(), authToken: state.authToken, sessionAccessToken: getSessionAccessToken(joinCode) });
     }
   };
 

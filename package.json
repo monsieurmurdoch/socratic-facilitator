@@ -11,11 +11,20 @@
     "jitsi:start": "bash ./jitsi/setup.sh && cd .local/jitsi/docker-jitsi-meet && docker compose up -d",
     "jitsi:stop": "cd .local/jitsi/docker-jitsi-meet && docker compose down",
     "jitsi:logs": "cd .local/jitsi/docker-jitsi-meet && docker compose logs -f",
+    "db:local:up": "docker compose -f docker-compose.local.yml up -d postgres",
+    "db:local:down": "docker compose -f docker-compose.local.yml down",
+    "db:local:logs": "docker compose -f docker-compose.local.yml logs -f postgres",
+    "db:init": "node -e \"require('dotenv').config({ path: '.env.test' }); require('./server/db').initializeSchema().then(() => require('./server/db').end()).catch((err) => { console.error(err); process.exit(1); })\"",
     "setup": "bash ./jitsi/setup.sh && npm install",
     "local": "bash ./start-local.sh",
     "test": "jest --runInBand --forceExit",
     "test:watch": "jest --watch",
-    "test:review": "node scripts/run-human-review.mjs"
+    "test:review": "node scripts/run-human-review.mjs",
+    "eval:facilitation": "node scripts/run-facilitation-eval.mjs",
+    "smoke:jitsi-mute": "node scripts/smoke-jitsi-mute.cjs",
+    "status:sync": "node scripts/sync-obsidian-status.mjs",
+    "status:push-update": "node scripts/sync-obsidian-status.mjs --push-update",
+    "hooks:install": "cp scripts/hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

@@ -5,7 +5,7 @@
  * This module avoids circular dependencies by being the central router.
  */
 
-import { state, getAge, clearState, saveState } from './state.js';
+import { state, getAge, clearState, saveState, setSessionAccessToken, getSessionAccessToken } from './state.js';
 import { send } from './websocket.js';
 import {
   resetConversationFeed,
@@ -40,13 +40,15 @@ export async function handleServerMessage(msg) {
 
     case "session_created":
       state.currentSessionId = msg.sessionId;
-      send({ type: "join_session", sessionId: msg.sessionId, name: state.myName, age: getAge(), authToken: state.authToken });
+      setSessionAccessToken(msg.sessionId, msg.sessionAccessToken);
+      send({ type: "join_session", sessionId: msg.sessionId, name: state.myName, age: getAge(), authToken: state.authToken, sessionAccessToken: getSessionAccessToken(msg.sessionId) });
       state.isHost = true;
       break;
 
     case "session_joined": {
       const isRejoin = state.currentSessionId === msg.sessionId && state.myId === msg.yourId;
       state.currentSessionId = msg.sessionId;
+      setSessionAccessToken(msg.sessionId, msg.sessionAccessToken);
       state.discussionActive = false;
       // Only reset feed on fresh join — preserve transcript on reconnect
       if (!isRejoin) {
@@ -78,6 +80,7 @@ export async function handleServerMessage(msg) {
     case "session_restored": {
       console.log("[WS] Session restored from DB:", msg.sessionStatus, "readOnly:", msg.readOnly);
       state.currentSessionId = msg.sessionId;
+      setSessionAccessToken(msg.sessionId, msg.sessionAccessToken);
       state.myId = msg.yourId;
       state.discussionActive = msg.sessionStatus === 'active';
       state.readOnly = msg.readOnly;
@@ -125,13 +128,19 @@ export async function handleServerMessage(msg) {
     }
 
     case "participant_joined":
-      state.participants.push({ name: msg.name });
+      if (msg.participantId
+        ? !state.participants.some(p => p.id === msg.participantId)
+        : !state.participants.some(p => p.name === msg.name)) {
+        state.participants.push({ name: msg.name, id: msg.participantId || null });
+      }
       updateParticipantList();
       document.getElementById("participant-count").textContent = `${msg.participantCount} participants`;
       break;
 
     case "participant_left":
-      state.participants = state.participants.filter(p => p.name !== msg.name);
+      state.participants = msg.participantId
+        ? state.participants.filter(p => p.id !== msg.participantId)
+        : state.participants.filter(p => p.name !== msg.name);
       updateParticipantList();
       addTranscriptEntry("system", `${msg.name} left the discussion`);
       break;

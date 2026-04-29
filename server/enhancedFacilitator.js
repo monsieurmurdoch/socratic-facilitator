@@ -375,9 +375,10 @@ class EnhancedFacilitationEngine {
     const turnText = String(latestTurn?.text || message.text || "").trim();
     const wordCount = turnText ? turnText.split(/\s+/).length : 0;
     const llmAssessment = message.llmAssessment || {};
+    const engagementAssessment = llmAssessment.engagement || llmAssessment;
 
-    const specificity = Number(llmAssessment.specificity ?? this._estimateSpecificity(turnText));
-    const coherence = Number(llmAssessment.coherence ?? 0.5);
+    const specificity = Number(engagementAssessment.specificity ?? this._estimateSpecificity(turnText));
+    const coherence = Number(engagementAssessment.coherence ?? 0.5);
     const evidenceSignal = this._computeEvidenceSignal(turnText);
     const uncertaintySignal = this._computeUncertaintySignal(turnText);
     const interpretiveSignal = this._computeInterpretiveSignal(turnText);

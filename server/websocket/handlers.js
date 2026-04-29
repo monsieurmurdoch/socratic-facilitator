@@ -6,7 +6,85 @@
 const WebSocket = require("ws");
 const { DISCUSSION_TOPICS } = require("../config");
 const { authenticateToken } = require("../auth");
+const { issueSessionAccessToken, verifySessionAccessToken } = require("../sessionAccess");
 const { v4: uuidv4 } = require("uuid");
+
+function isAdminRole(role) {
+  return role === 'Admin' || role === 'SuperAdmin';
+}
+
+function isOwnerlessSession(session) {
+  return !session?.dbSession?.owner_user_id && !session?.dbSession?.class_id;
+}
+
+async function getSessionRole(session, authUser, clientId, sessionAccessToken = null) {
+  if (!session) return 'participant';
+  const signedAccess = verifySessionAccessToken(sessionAccessToken, session);
+  if (signedAccess?.scope === 'manage' || signedAccess?.sessionRole === 'teacher') return 'teacher';
+  if (signedAccess) return 'participant';
+
+  if (isAdminRole(authUser?.role)) return 'teacher';
+  if (authUser?.id && session.dbSession?.owner_user_id === authUser.id) return 'teacher';
+
+  if (authUser?.id && session.dbSession?.class_id) {
+    const classesRepo = require("../db/repositories/classes");
+    const classMembershipsRepo = require("../db/repositories/classMemberships");
+    const cls = await classesRepo.findById(session.dbSession.class_id);
+    if (cls?.owner_user_id === authUser.id) return 'teacher';
+
+    const membership = await classMembershipsRepo.findByClassAndUser(session.dbSession.class_id, authUser.id);
+    if (membership?.role === 'Teacher' || membership?.role === 'Admin') return 'teacher';
+    if (membership) return 'participant';
+  }
+
+  if (isOwnerlessSession(session)) {
+    if (!session.hostClientId) session.hostClientId = clientId;
+    if (session.hostClientId === clientId) return 'teacher';
+  }
+
+  return 'participant';
+}
+
+async function canReadEndedSession(dbSession, authUser, sessionAccessToken, sessionsRepo) {
+  if (verifySessionAccessToken(sessionAccessToken, dbSession)) return true;
+  if (!authUser) return false;
+  if (isAdminRole(authUser.role)) return true;
+  if (dbSession.owner_user_id === authUser.id) return true;
+
+  if (dbSession.class_id) {
+    const classesRepo = require("../db/repositories/classes");
+    const classMembershipsRepo = require("../db/repositories/classMemberships");
+    const cls = await classesRepo.findById(dbSession.class_id);
+    if (cls?.owner_user_id === authUser.id) return true;
+    if (await classMembershipsRepo.findByClassAndUser(dbSession.class_id, authUser.id)) return true;
+  }
+
+  return !!(await sessionsRepo.userWasParticipant?.(dbSession.id, authUser.id));
+}
+
+function isTeacherClient(ctx, session) {
+  if (!session || !ctx.clientId) return false;
+  if (session.hostClientId && session.hostClientId === ctx.clientId) return true;
+  return session.clients?.some(client =>
+    client.clientId === ctx.clientId &&
+    client.sessionRole === 'teacher'
+  );
+}
+
+function requireTeacher(ws, ctx, actionName) {
+  const session = ctx.sessionManager.get(ctx.currentSessionShortCode);
+  if (!session) return null;
+  if (isTeacherClient(ctx, session)) return session;
+  ws.send(JSON.stringify({ type: "error", text: `${actionName || 'Teacher action'} requires teacher access` }));
+  return null;
+}
+
+function cancelDisconnectTimer(session, clientId) {
+  const timer = session?.disconnectTimers?.get(clientId);
+  if (!timer) return;
+  clearTimeout(timer);
+  session.disconnectTimers.delete(clientId);
+}
 
 /**
  * Handler: create_session
@@ -38,12 +116,17 @@ async function handleCreateSession(ws, msg, ctx) {
     clients: [],
     active: false,
     topic,
-    mode: "video"
+    mode: "video",
+    disconnectTimers: new Map()
   });
 
   ws.send(JSON.stringify({
     type: "session_created",
     sessionId: shortCode,
+    sessionAccessToken: issueSessionAccessToken(session, {
+      sessionRole: 'teacher',
+      scope: 'manage'
+    }),
     topicTitle: title,
     mode: "video"
   }));
@@ -54,15 +137,38 @@ async function handleCreateSession(ws, msg, ctx) {
  * Teacher dashboard connection
  */
 async function handleJoinDashboard(ws, msg, ctx) {
-  const { sessionId } = msg;
+  const { sessionId, authToken, sessionAccessToken } = msg;
   const session = ctx.sessionManager.get(sessionId);
   if (!session) {
     ws.send(JSON.stringify({ type: "error", text: "Session not found" }));
     return;
   }
 
+  let authUser = null;
+  if (authToken) {
+    try {
+      const auth = await authenticateToken(authToken, { touch: false });
+      authUser = auth?.user || null;
+    } catch (error) {
+      console.warn("[join_dashboard] Invalid auth token:", error.message);
+    }
+  }
+
+  const sessionRole = await getSessionRole(session, authUser, ctx.clientId, sessionAccessToken);
+  if (sessionRole !== 'teacher') {
+    ws.send(JSON.stringify({ type: "error", text: "Teacher dashboard requires teacher access" }));
+    return;
+  }
+
   ctx.currentSessionShortCode = sessionId;
-  session.clients.push({ ws, clientId: ctx.clientId, role: "teacher", clientKind: "dashboard" });
+  session.clients.push({
+    ws,
+    clientId: ctx.clientId,
+    userId: authUser?.id || null,
+    role: authUser?.role || null,
+    sessionRole: "teacher",
+    clientKind: "dashboard"
+  });
 
   const snapshot = await session.stateTracker.getStateSnapshot();
   const analyzerState = ctx.deps.enhancedEngine.getAnalyzerState?.(sessionId) || null;
@@ -103,7 +209,7 @@ async function handleJoinDashboard(ws, msg, ctx) {
  * Handler: teacher_pause
  */
 async function handleTeacherPause(ws, msg, ctx) {
-  const session = ctx.sessionManager.get(ctx.currentSessionShortCode);
+  const session = requireTeacher(ws, ctx, "Pause");
   if (!session) return;
   session.paused = true;
   console.log(`[${ctx.currentSessionShortCode}] Teacher PAUSED Plato`);
@@ -116,7 +222,7 @@ async function handleTeacherPause(ws, msg, ctx) {
  * Handler: teacher_resume
  */
 async function handleTeacherResume(ws, msg, ctx) {
-  const session = ctx.sessionManager.get(ctx.currentSessionShortCode);
+  const session = requireTeacher(ws, ctx, "Resume");
   if (!session) return;
   session.paused = false;
   console.log(`[${ctx.currentSessionShortCode}] Teacher RESUMED Plato`);
@@ -129,7 +235,7 @@ async function handleTeacherResume(ws, msg, ctx) {
  * Handler: teacher_force_speak
  */
 async function handleTeacherForceSpeak(ws, msg, ctx) {
-  const session = ctx.sessionManager.get(ctx.currentSessionShortCode);
+  const session = requireTeacher(ws, ctx, "Force intervention");
   if (!session || !session.active) return;
   console.log(`[${ctx.currentSessionShortCode}] Teacher FORCED Plato to speak`);
   const decision = await ctx.deps.enhancedEngine.decide(session.stateTracker);
@@ -148,7 +254,7 @@ async function handleTeacherForceSpeak(ws, msg, ctx) {
  * Handler: teacher_set_goal
  */
 async function handleTeacherSetGoal(ws, msg, ctx) {
-  const session = ctx.sessionManager.get(ctx.currentSessionShortCode);
+  const session = requireTeacher(ws, ctx, "Set goal");
   if (!session) return;
   const { goal } = msg;
   if (goal) {
@@ -161,7 +267,7 @@ async function handleTeacherSetGoal(ws, msg, ctx) {
  * Handler: teacher_adjust_params
  */
 async function handleTeacherAdjustParams(ws, msg, ctx) {
-  const session = ctx.sessionManager.get(ctx.currentSessionShortCode);
+  const session = requireTeacher(ws, ctx, "Adjust parameters");
   if (!session) return;
   // Apply overrides to the session's stateTracker params
   const overrides = msg.params || {};
@@ -178,7 +284,7 @@ async function handleTeacherAdjustParams(ws, msg, ctx) {
  * Handler: join_session
  */
 async function handleJoinSession(ws, msg, ctx) {
-  const { sessionId, name, age, authToken } = msg;
+  const { sessionId, name, age, authToken, sessionAccessToken } = msg;
   let requestedCode = sessionId;
   console.log(`[join_session] Looking up session: ${requestedCode}`);
   let authUser = null;
@@ -221,6 +327,10 @@ async function handleJoinSession(ws, msg, ctx) {
       if (dbSession) {
         // If session has ended, send the transcript as read-only instead of live join
         if (dbSession.status === 'ended') {
+          if (!(await canReadEndedSession(dbSession, authUser, sessionAccessToken, ctx.deps.sessionsRepo))) {
+            ws.send(JSON.stringify({ type: "error", text: "This session has ended. Sign in or use your original session link to view the transcript." }));
+            return;
+          }
           console.log(`[join_session] Session ${requestedCode} has ended — sending read-only transcript`);
           const messagesRepo = require("../db/repositories/messages");
           const msgs = await messagesRepo.getBySession(dbSession.id, { limit: 500 });
@@ -263,7 +373,8 @@ async function handleJoinSession(ws, msg, ctx) {
           stateTracker,
           clients: [],
           active: dbSession.status === 'active',
-          topic
+          topic,
+          disconnectTimers: new Map()
         };
         ctx.sessionManager.set(requestedCode, session);
       }
@@ -278,31 +389,17 @@ async function handleJoinSession(ws, msg, ctx) {
     return;
   }
 
-  // Check for duplicate name (e.g. same user in two tabs)
-  const existingByName = Array.from(session.stateTracker.participants.values())
-    .find(p => p.name.toLowerCase() === name.toLowerCase());
-  let joinedParticipantId = ctx.clientId;
-  let isFreshParticipant = false;
-  if (existingByName) {
-    // Reuse the existing participant identity instead of creating a duplicate
-    console.log(`[join_session] Duplicate name "${name}" — reusing existing participant ${existingByName.id}`);
-    ctx.clientId = existingByName.id;
-    joinedParticipantId = existingByName.id;
-    // Remove stale client entry if any
-    session.clients = session.clients.filter(c => c.clientId !== ctx.clientId);
-  } else {
-    console.log(`[join_session] Adding participant: ${name}`);
-    const sessionRole = authUser?.role === 'Teacher' || authUser?.role === 'Admin' || authUser?.role === 'SuperAdmin'
-      ? 'teacher'
-      : 'participant';
-    await session.stateTracker.addParticipant(ctx.clientId, name, age || 12, {
-      userId: authUser?.id || null,
-      accountRole: authUser?.role || null,
-      sessionRole
-    });
-    joinedParticipantId = ctx.clientId;
-    isFreshParticipant = true;
-  }
+  if (!session.disconnectTimers) session.disconnectTimers = new Map();
+  cancelDisconnectTimer(session, ctx.clientId);
+
+  console.log(`[join_session] Adding participant: ${name}`);
+  const sessionRole = await getSessionRole(session, authUser, ctx.clientId, sessionAccessToken);
+  await session.stateTracker.addParticipant(ctx.clientId, name, age || 12, {
+    userId: authUser?.id || null,
+    accountRole: authUser?.role || null,
+    sessionRole
+  });
+  const joinedParticipantId = ctx.clientId;
 
   ctx.currentSessionShortCode = requestedCode;
   // Cancel cleanup grace period if someone joins
@@ -316,18 +413,17 @@ async function handleJoinSession(ws, msg, ctx) {
     name,
     userId: authUser?.id || null,
     role: authUser?.role || null,
+    sessionRole,
     clientKind: "session"
   });
   console.log(`[join_session] Sending session_joined response`);
 
-  if (isFreshParticipant) {
-    ctx.sessionManager.broadcast(requestedCode, {
-      type: "participant_joined",
-      name,
-      participantId: joinedParticipantId,
-      participantCount: session.stateTracker.participants.size
-    });
-  }
+  ctx.sessionManager.broadcast(requestedCode, {
+    type: "participant_joined",
+    name,
+    participantId: joinedParticipantId,
+    participantCount: session.stateTracker.participants.size
+  });
 
   // Note: STT is handled by the Jitsi bot (Deepgram) in video mode.
   // Text messages from the WebSocket "message" handler still work for
@@ -344,16 +440,36 @@ async function handleJoinSession(ws, msg, ctx) {
     currentParams: session.paramOverrides || {},
     participants,
     yourId: ctx.clientId,
-    yourRole: authUser?.role || null
+    yourRole: authUser?.role || null,
+    sessionRole,
+    sessionAccessToken: issueSessionAccessToken(session.dbSession, {
+      participantId: ctx.clientId,
+      sessionRole
+    })
   }));
+
+  if (session.active) {
+    ws.send(JSON.stringify({ type: "discussion_started", mode: "video" }));
+  } else if (session.inVideoRoom) {
+    ws.send(JSON.stringify({ type: "enter_video" }));
+  }
 }
 
 /**
  * Handler: rejoin_session
  */
 async function handleRejoinSession(ws, msg, ctx) {
-  const { sessionId, oldClientId } = msg;
+  const { sessionId, oldClientId, authToken, sessionAccessToken } = msg;
   let session = ctx.sessionManager.get(sessionId);
+  let authUser = null;
+  if (authToken) {
+    try {
+      const auth = await authenticateToken(authToken, { touch: false });
+      authUser = auth?.user || null;
+    } catch (error) {
+      console.warn("[rejoin_session] Invalid auth token:", error.message);
+    }
+  }
 
   // If session not in memory, try reconstructing from database
   if (!session) {
@@ -397,11 +513,15 @@ async function handleRejoinSession(ws, msg, ctx) {
         active: dbSession.status === 'active',
         paused: false,
         topic,
-        readOnly: isReadOnly
+        readOnly: isReadOnly,
+        disconnectTimers: new Map()
       };
       ctx.sessionManager.set(sessionId, session);
 
       console.log(`[rejoin_session] Session reconstructed successfully (readOnly=${isReadOnly})`);
+      ctx.clientId = oldClientId;
+      ctx.currentSessionShortCode = sessionId;
+      const sessionRole = await getSessionRole(session, authUser, ctx.clientId, sessionAccessToken);
 
       // Send session_restored message with full history
       const messages = stateTracker.messages.map(m => ({
@@ -413,6 +533,8 @@ async function handleRejoinSession(ws, msg, ctx) {
         targetParticipantId: m.targetParticipantId || null,
         timestamp: m.timestamp
       }));
+      const participants = Array.from(stateTracker.participants.values())
+        .map(p => ({ name: p.name, id: p.id, role: p.accountRole }));
 
       ws.send(JSON.stringify({
         type: "session_restored",
@@ -422,13 +544,25 @@ async function handleRejoinSession(ws, msg, ctx) {
         sessionId,
         topicTitle: topic.title,
         passage: topic.passage,
-        yourId: oldClientId
+        participants,
+        yourId: oldClientId,
+        sessionRole,
+        sessionAccessToken: issueSessionAccessToken(dbSession, {
+          participantId: oldClientId,
+          sessionRole
+        })
       }));
 
       // Add client to session
-      ctx.clientId = oldClientId;
-      ctx.currentSessionShortCode = sessionId;
-      session.clients.push({ ws, clientId: ctx.clientId, name: participant.name, clientKind: "session" });
+      session.clients.push({
+        ws,
+        clientId: ctx.clientId,
+        name: participant.name,
+        userId: authUser?.id || participant.userId || null,
+        role: authUser?.role || participant.accountRole || null,
+        sessionRole,
+        clientKind: "session"
+      });
 
       return;
     } catch (err) {
@@ -447,6 +581,8 @@ async function handleRejoinSession(ws, msg, ctx) {
 
   ctx.clientId = oldClientId;
   ctx.currentSessionShortCode = sessionId;
+  if (!session.disconnectTimers) session.disconnectTimers = new Map();
+  cancelDisconnectTimer(session, ctx.clientId);
 
   // Cancel cleanup grace period if we're reconnecting
   if (session._cleanupTimer) {
@@ -456,7 +592,16 @@ async function handleRejoinSession(ws, msg, ctx) {
   }
 
   session.clients = session.clients.filter(c => c.clientId !== ctx.clientId);
-  session.clients.push({ ws, clientId: ctx.clientId, name: participant.name, clientKind: "session" });
+  const sessionRole = await getSessionRole(session, authUser, ctx.clientId, sessionAccessToken);
+  session.clients.push({
+    ws,
+    clientId: ctx.clientId,
+    name: participant.name,
+    userId: authUser?.id || participant.userId || null,
+    role: authUser?.role || participant.accountRole || null,
+    sessionRole,
+    clientKind: "session"
+  });
 
   const participants = Array.from(session.stateTracker.participants.values())
     .map(p => ({ name: p.name, id: p.id }));
@@ -467,7 +612,12 @@ async function handleRejoinSession(ws, msg, ctx) {
     topicTitle: session.topic.title,
     passage: session.topic.passage,
     participants,
-    yourId: ctx.clientId
+    yourId: ctx.clientId,
+    sessionRole,
+    sessionAccessToken: issueSessionAccessToken(session.dbSession, {
+      participantId: ctx.clientId,
+      sessionRole
+    })
   }));
 
   if (session.active) {
@@ -482,7 +632,7 @@ async function handleRejoinSession(ws, msg, ctx) {
  */
 async function handleEnterVideo(ws, msg, ctx) {
   // Move everyone into the video room in warmup mode (session.active stays false)
-  const session = ctx.sessionManager.get(ctx.currentSessionShortCode);
+  const session = requireTeacher(ws, ctx, "Enter video");
   if (!session) return;
 
   session.inVideoRoom = true;
@@ -496,7 +646,7 @@ async function handleEnterVideo(ws, msg, ctx) {
  * Handler: start_discussion
  */
 async function handleStartDiscussion(ws, msg, ctx) {
-  const session = ctx.sessionManager.get(ctx.currentSessionShortCode);
+  const session = requireTeacher(ws, ctx, "Start discussion");
   if (!session) return;
   if (session.active) return; // guard against double-click
 
@@ -655,8 +805,10 @@ async function handleSttStop(ws, msg, ctx) {
  * Handler: end_discussion
  */
 async function handleEndDiscussion(ws, msg, ctx) {
-  const session = ctx.sessionManager.get(ctx.currentSessionShortCode);
+  const session = requireTeacher(ws, ctx, "End discussion");
   if (!session) return;
+
+  await ctx.sessionManager.flushPendingWarmupTurns?.(ctx.currentSessionShortCode, { respond: false });
 
   session.active = false;
   await ctx.deps.sessionsRepo.updateStatus(session.dbSession.id, 'ended');

@@ -6,6 +6,9 @@
 const { DISCUSSION_TOPICS, FACILITATION_PARAMS, getAgeCalibration, getFacilitationParams } = require("../config");
 const { createStore } = require("./store-factory");
 const profileBuilder = require("../analysis/profileBuilder");
+const messageAnalyticsRepo = require("../db/repositories/messageAnalytics");
+const sessionMembershipsRepo = require("../db/repositories/sessionMemberships");
+const { computeMessageMetrics } = require("../analysis/scoring");
 const { getSpeechPatiencePreset, normalizeSpeechPatienceMode } = require("../speech-patience");
 const WARMUP_REPLY_BASE_DELAY_MS = Number(process.env.WARMUP_REPLY_BASE_DELAY_MS || 250);
 const WARMUP_REPLY_JITTER_MS = Number(process.env.WARMUP_REPLY_JITTER_MS || 450);
@@ -119,6 +122,69 @@ class SessionManager {
     return getSpeechPatiencePreset(mode);
   }
 
+  countWords(text) {
+    return String(text || "").trim().split(/\s+/).filter(Boolean).length;
+  }
+
+  estimateSpeakingSeconds(text) {
+    const words = this.countWords(text);
+    if (!words) return 0;
+    return Math.max(1, Math.round((words / 150) * 60));
+  }
+
+  async assessParticipantText(sessionShortCode, session, participant, text, previousMessage, options = {}) {
+    if (!this.deps.messageAssessor?.assess) return null;
+    return this.deps.messageAssessor.assess({
+      text,
+      participantName: participant.name,
+      previousText: previousMessage?.text,
+      topicTitle: session.topic?.title,
+      openingQuestion: session.topic?.openingQuestion,
+      recentAnchors: this.deps.enhancedEngine?.getOrchestrator?.(sessionShortCode)?.anchorTracker?.getTopAnchors(3) || []
+    }, options);
+  }
+
+  async persistParticipantAnalytics(session, participant, recordedMessage, assessment = null) {
+    if (!recordedMessage) return;
+
+    const dbParticipantId = recordedMessage.dbParticipantId || participant.dbId || participant.id;
+    const metrics = computeMessageMetrics(assessment || {});
+
+    try {
+      await sessionMembershipsRepo.recordMessage(dbParticipantId, {
+        wordCount: this.countWords(recordedMessage.text),
+        estimatedSpeakingSeconds: this.estimateSpeakingSeconds(recordedMessage.text),
+        contributionScore: metrics.contributionWeight,
+        engagementScore: metrics.engagementEstimate
+      });
+    } catch (error) {
+      console.error("[analytics] Failed to update session membership metrics:", error.message);
+    }
+
+    if (!recordedMessage.dbId) return;
+
+    try {
+      await messageAnalyticsRepo.save({
+        sessionId: session.stateTracker.sessionId,
+        messageId: recordedMessage.dbId,
+        participantId: dbParticipantId,
+        specificity: metrics.specificity,
+        profoundness: metrics.profoundness,
+        coherence: metrics.coherence,
+        discussionValue: metrics.discussionValue,
+        contributionWeight: metrics.contributionWeight,
+        engagementEstimate: metrics.engagementEstimate,
+        respondedToPeer: metrics.respondedToPeer,
+        referencedAnchor: metrics.referencedAnchor,
+        isAnchor: !!assessment?.anchor?.isAnchor,
+        reasoning: assessment?.briefReasoning || null,
+        rawPayload: assessment || {}
+      });
+    } catch (error) {
+      console.error("[analytics] Failed to save message analytics:", error.message);
+    }
+  }
+
   /**
    * Mark speech activity for warmup
    */
@@ -134,13 +200,16 @@ class SessionManager {
   /**
    * Finalize warmup turn and generate AI response
    */
-  async finalizeWarmupTurn(sessionShortCode, clientId) {
+  async finalizeWarmupTurn(sessionShortCode, clientId, options = {}) {
     const session = this.activeSessions.get(sessionShortCode);
     if (!session || session.active) return;
 
     this.ensureWarmupState(session);
     const pendingTurn = session.pendingWarmupTurns.get(clientId);
     if (!pendingTurn) return;
+    if (pendingTurn.timer) {
+      clearTimeout(pendingTurn.timer);
+    }
 
     session.pendingWarmupTurns.delete(clientId);
     const participant = session.stateTracker.participants.get(clientId);
@@ -151,6 +220,12 @@ class SessionManager {
       .trim();
     if (!text) return;
     const expectedSpeechVersion = session.warmupSpeechVersions.get(clientId) || 0;
+    const previousMessage = session.stateTracker.messages?.at(-1) || null;
+    const assessment = await this.assessParticipantText(sessionShortCode, session, participant, text, previousMessage, {
+      strategy: 'heuristic_only'
+    });
+    const recordedMessage = await session.stateTracker.recordMessage(clientId, text);
+    await this.persistParticipantAnalytics(session, participant, recordedMessage, assessment);
 
     this.broadcast(sessionShortCode, {
       type: "participant_message",
@@ -159,6 +234,10 @@ class SessionManager {
       text,
       timestamp: Date.now()
     });
+
+    if (options.respond === false) {
+      return;
+    }
 
     const names = Array.from(session.stateTracker.participants.values()).map(p => p.name);
     const ages = Array.from(session.stateTracker.participants.values()).map(p => p.age);
@@ -196,6 +275,7 @@ class SessionManager {
         if (!stillActiveSession || stillActiveSession.active) return;
         const newestSpeechVersion = stillActiveSession.warmupSpeechVersions?.get(clientId) || 0;
         if (newestSpeechVersion !== expectedSpeechVersion) return;
+        await session.stateTracker.recordAIMessage?.(reply, "warmup");
         this.broadcast(sessionShortCode, {
           type: "facilitator_message",
           text: reply,
@@ -216,6 +296,17 @@ class SessionManager {
     }
 
     await generateReply();
+  }
+
+  async flushPendingWarmupTurns(sessionShortCode, options = {}) {
+    const session = this.activeSessions.get(sessionShortCode);
+    if (!session || session.active) return;
+    this.ensureWarmupState(session);
+
+    const pendingClientIds = Array.from(session.pendingWarmupTurns.keys());
+    for (const clientId of pendingClientIds) {
+      await this.finalizeWarmupTurn(sessionShortCode, clientId, options);
+    }
   }
 
   /**
@@ -384,7 +475,18 @@ class SessionManager {
     }
 
     // ── Active discussion: full pedagogical pipeline ──
-    await session.stateTracker.recordMessage(clientId, text);
+    const previousMessage = session.stateTracker.messages?.at(-1) || null;
+    let llmAssessment = null;
+    if (this.deps.useEnhancedSystem) {
+      // Run assessment with heuristic fallback on timeout for speed.
+      // The fast LLM gets 1500ms; if it misses, heuristics are instant.
+      llmAssessment = await this.assessParticipantText(sessionShortCode, session, participant, text, previousMessage, {
+        strategy: 'fast_only'  // Use fastLLM only, no Claude fallback for speed
+      });
+    }
+
+    const recordedMessage = await session.stateTracker.recordMessage(clientId, text);
+    await this.persistParticipantAnalytics(session, participant, recordedMessage, llmAssessment);
 
     this.broadcast(sessionShortCode, {
       type: "participant_message",
@@ -408,23 +510,6 @@ class SessionManager {
     const pipelineStart = Date.now();
 
     if (this.deps.useEnhancedSystem) {
-      // Run assessment with heuristic fallback on timeout for speed.
-      // The fast LLM gets 1500ms; if it misses, heuristics are instant.
-      const previousMessage = session.stateTracker.messages.length > 1
-        ? session.stateTracker.messages[session.stateTracker.messages.length - 2]
-        : null;
-
-      const llmAssessment = await this.deps.messageAssessor.assess({
-        text,
-        participantName: participant.name,
-        previousText: previousMessage?.text,
-        topicTitle: session.topic?.title,
-        openingQuestion: session.topic?.openingQuestion,
-        recentAnchors: this.deps.enhancedEngine.getOrchestrator(sessionShortCode)?.anchorTracker?.getTopAnchors(3) || []
-      }, {
-        strategy: 'fast_only'  // Use fastLLM only, no Claude fallback for speed
-      });
-
       // Process through enhanced engine (neuron decision + message generation if needed)
       decision = await this.deps.enhancedEngine.processMessage(session.stateTracker, {
         participantName: participant.name,

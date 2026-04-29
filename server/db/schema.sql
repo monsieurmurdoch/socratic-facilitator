@@ -84,9 +84,10 @@ CREATE TABLE IF NOT EXISTS participants (
   age INTEGER,
   role VARCHAR(20) DEFAULT 'participant' CHECK (role IN ('participant', 'teacher', 'observer')),
   joined_at TIMESTAMPTZ DEFAULT NOW(),
-  left_at TIMESTAMPTZ,
-  UNIQUE(session_id, name)
+  left_at TIMESTAMPTZ
 );
+
+ALTER TABLE IF EXISTS participants DROP CONSTRAINT IF EXISTS participants_session_id_name_key;
 
 -- Class memberships (students, teachers, parents, etc.)
 CREATE TABLE IF NOT EXISTS class_memberships (

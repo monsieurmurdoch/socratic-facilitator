@@ -19,10 +19,55 @@ const sessionPrimer = require('../content/primer');
 const { DISCUSSION_TOPICS } = require('../config');
 const { requireAuth } = require('../auth');
 const { apiLimiter } = require('../middleware/rate-limit');
+const { issueSessionAccessToken, getSessionAccessFromRequest } = require('../sessionAccess');
 
 // Enable JSON body parsing
 router.use(express.json({ limit: '10mb' }));
 router.use(express.urlencoded({ extended: true }));
+
+async function getSessionAccess(session, user) {
+  if (!user) return { canView: false, canManage: false };
+  if (user.role === 'Admin' || user.role === 'SuperAdmin') {
+    return { canView: true, canManage: true };
+  }
+
+  if (session.owner_user_id === user.id) {
+    return { canView: true, canManage: true };
+  }
+
+  if (session.class_id) {
+    const cls = await classesRepo.findById(session.class_id);
+    if (cls?.owner_user_id === user.id) {
+      return { canView: true, canManage: true };
+    }
+
+    const membership = await classMembershipsRepo.findByClassAndUser(session.class_id, user.id);
+    if (membership) {
+      const canManage = membership.role === 'Teacher' || membership.role === 'Admin';
+      return { canView: true, canManage };
+    }
+  }
+
+  if (await sessionsRepo.userWasParticipant(session.id, user.id)) {
+    return { canView: true, canManage: false };
+  }
+
+  return { canView: false, canManage: false };
+}
+
+async function requireSessionAccess(req, res, session, { manage = false } = {}) {
+  const signedAccess = getSessionAccessFromRequest(req, session);
+  if (signedAccess.canView && (!manage || signedAccess.canManage)) {
+    return signedAccess;
+  }
+
+  const access = await getSessionAccess(session, req.user);
+  if (manage ? !access.canManage : !access.canView) {
+    res.status(req.user ? 403 : 401).json({ error: req.user ? 'Access denied' : 'Authentication or session access required' });
+    return null;
+  }
+  return access;
+}
 
 /**
  * Create a new session
@@ -73,6 +118,10 @@ router.post('/', apiLimiter, async (req, res) => {
     res.status(201).json({
       id: session.id,
       shortCode: session.short_code,
+      sessionAccessToken: issueSessionAccessToken(session, {
+        sessionRole: 'teacher',
+        scope: 'manage'
+      }),
       title: session.title,
       openingQuestion: session.opening_question,
       conversationGoal: session.conversation_goal,
@@ -166,6 +215,20 @@ router.get('/ocr/status', async (_req, res) => {
   }
 });
 
+/**
+ * Get available topics
+ * GET /api/sessions/topics
+ */
+router.get('/topics', (req, res) => {
+  res.json(DISCUSSION_TOPICS.map(t => ({
+    id: t.id,
+    title: t.title,
+    passage: t.passage,
+    ageRange: t.ageRange,
+    openingQuestion: t.openingQuestion
+  })));
+});
+
 // Get detailed analytics for a specific session
 router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
   try {
@@ -178,17 +241,14 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // Check if user is the owner, in the class, or was a participant
-    const hasAccess = session.owner_user_id === userId ||
-      (session.class_id && await sessionsRepo.userInClass(session.class_id, userId)) ||
-      await sessionsRepo.userWasParticipant(session.id, userId);
-
-    if (!hasAccess) {
+    const access = await getSessionAccess(session, req.user);
+    if (!access.canView) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
     // Get detailed session analytics
     const analytics = await sessionsRepo.getDetailedAnalytics(session.id, userId);
+    const messages = await messagesRepo.getBySession(session.id, { limit: 500 });
 
     res.json({
       session: {
@@ -199,7 +259,16 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
         createdAt: session.created_at,
         endedAt: session.ended_at
       },
-      analytics
+      analytics,
+      messages: messages.map(m => ({
+        id: m.id,
+        senderType: m.sender_type,
+        senderName: m.sender_name || m.participant_name,
+        content: m.content,
+        moveType: m.move_type,
+        targetParticipantName: m.target_participant_name,
+        createdAt: m.created_at
+      }))
     });
   } catch (error) {
     console.error('Session analytics error:', error);
@@ -213,6 +282,7 @@ router.get('/:code/source-text', async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
+    if (!(await requireSessionAccess(req, res, session))) return;
 
     const materials = await materialChunksRepo.getViewerBySession(session.id);
     res.json({
@@ -236,6 +306,7 @@ router.get('/:code', async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
+    if (!(await requireSessionAccess(req, res, session))) return;
 
     const participants = await participantsRepo.getBySession(session.id);
     const materials = await materialsRepo.getBySession(session.id);
@@ -286,6 +357,7 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
+    if (!(await requireSessionAccess(req, res, session, { manage: true }))) return;
 
     const { type, url, text, filename: bodyFilename } = req.body;
     let extractedText = '';
@@ -314,12 +386,6 @@ router.post('/:code/materials', storage.upload.single('file'), async (req, res) 
       extractionMetadata = extracted.metadata || {};
     } else {
       return res.status(400).json({ error: 'Either file or URL is required' });
-    }
-
-    // Basic auth/ownership check (enhance with full requireAuth if needed)
-    if (!req.user && process.env.NODE_ENV === 'production') {
-      console.warn(`[Upload] Unauthenticated upload to session ${req.params.code}`);
-      // In prod, could reject or require join token; for now log
     }
 
     // Note: Full text stored for analysis; truncation happens only in LLM prompt construction (see enhancedFacilitator + primer)
@@ -365,6 +431,7 @@ router.post('/:code/prime', async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
+    if (!(await requireSessionAccess(req, res, session, { manage: true }))) return;
 
     let primedContext = await primedContextRepo.getBySession(session.id);
     if (primedContext?.comprehension_status === 'complete') {
@@ -442,6 +509,7 @@ router.get('/:code/messages', async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
+    if (!(await requireSessionAccess(req, res, session))) return;
 
     const limit = parseInt(req.query.limit) || 100;
     const offset = parseInt(req.query.offset) || 0;
@@ -468,8 +536,17 @@ router.get('/:code/messages', async (req, res) => {
  */
 router.delete('/:code/materials/:materialId', async (req, res) => {
   try {
+    const session = await sessionsRepo.findByShortCode(req.params.code);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    if (!(await requireSessionAccess(req, res, session, { manage: true }))) return;
+
     const material = await materialsRepo.findById(req.params.materialId);
     if (!material) {
+      return res.status(404).json({ error: 'Material not found' });
+    }
+    if (material.session_id !== session.id) {
       return res.status(404).json({ error: 'Material not found' });
     }
 
@@ -483,20 +560,6 @@ router.delete('/:code/materials/:materialId', async (req, res) => {
     console.error('Delete material error:', error);
     res.status(500).json({ error: 'Failed to delete material' });
   }
-});
-
-/**
- * Get available topics
- * GET /api/topics
- */
-router.get('/topics', (req, res) => {
-  res.json(DISCUSSION_TOPICS.map(t => ({
-    id: t.id,
-    title: t.title,
-    passage: t.passage,
-    ageRange: t.ageRange,
-    openingQuestion: t.openingQuestion
-  })));
 });
 
 module.exports = router;

@@ -41,6 +41,14 @@ body {
   padding: 20px;
 }
 
+body.video-active {
+  align-items: stretch;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: 0;
+}
+
 /* ---- Screens ---- */
 
 .screen {
@@ -976,24 +984,29 @@ body {
 /* ---- Video Screen ---- */
 
 #video-screen {
-  max-width: 100%;
+  max-width: none;
   width: 100%;
-  height: 100vh;
-  max-height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   padding: 0;
   gap: 0;
+  margin: 0;
 }
 
 .video-layout {
   display: flex;
   width: 100%;
-  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .video-main {
   flex: 1;
   background: #1a1a1a;
   min-width: 0;
+  min-height: 0;
   position: relative;
   overflow: hidden;
 }
@@ -1165,14 +1178,17 @@ body {
   flex-direction: column;
   background: var(--surface);
   border-left: 1.5px solid var(--border);
-  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 20px;
+  padding: 12px 18px;
   border-bottom: 1.5px solid var(--border);
   flex-shrink: 0;
 }
@@ -1220,6 +1236,11 @@ body {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+.status-badge.muted {
+  background: #f7e9e2;
+  color: #a0522d;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
@@ -1228,9 +1249,9 @@ body {
 /* Unified conversation feed */
 
 .sidebar-transcript {
-  flex: 1;
+  flex: 1 1 0;
   overflow-y: auto;
-  padding: 12px 20px;
+  padding: 10px 18px;
   border-top: 1px solid var(--border);
   min-height: 0;
   display: flex;
@@ -1254,7 +1275,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .facilitator-bubble {
@@ -1387,18 +1408,48 @@ body {
 }
 
 .sidebar-voice-tools {
-  padding: 10px 20px 12px;
+  padding: 8px 12px;
   border-top: 1px solid rgba(139, 69, 19, 0.08);
   flex-shrink: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-mic-toggle {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.btn-mic-toggle:hover {
+  border-color: var(--accent);
+}
+
+.btn-mic-toggle.muted {
+  background: #f7e9e2;
+  border-color: #a0522d;
+  color: #a0522d;
 }
 
 .voice-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--text);
-  font-size: 0.86rem;
+  font-size: 0.8rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .voice-toggle input {
@@ -1406,22 +1457,15 @@ body {
   height: 16px;
 }
 
-.voice-toggle-help {
-  margin: 6px 0 0;
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  line-height: 1.45;
-}
-
 /* Sidebar controls */
 
 .sidebar-controls {
-  padding: 12px 20px;
+  padding: 8px 12px 10px;
   border-top: 1.5px solid var(--border);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 .sidebar-controls-top {
@@ -1432,7 +1476,7 @@ body {
 
 .btn-end {
   width: 100%;
-  padding: 10px 16px;
+  padding: 9px 14px;
   background: none;
   color: #A0522D;
   border: 1.5px solid #A0522D;
@@ -1454,7 +1498,7 @@ body {
   justify-content: center;
   gap: 6px;
   width: 100%;
-  padding: 10px 16px;
+  padding: 9px 14px;
   background: #2a7d4f;
   color: #fff;
   border: none;
@@ -1609,6 +1653,12 @@ body {
     padding: 12px;
   }
 
+  body.video-active {
+    height: 100dvh;
+    min-height: 100dvh;
+    padding: 0;
+  }
+
   #welcome-screen,
   #lobby-screen {
     padding: 40px 20px;
@@ -1664,11 +1714,13 @@ body {
   /* Video layout goes vertical on mobile */
   .video-layout {
     flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
   }
 
   .video-sidebar {
     width: 100%;
-    height: auto;
+    height: 40dvh;
     max-height: 40vh;
     border-left: none;
     border-top: 1.5px solid var(--border);

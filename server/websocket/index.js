@@ -105,17 +105,30 @@ function setupWebSocket(wss, deps) {
         if (session) {
           session.clients = session.clients.filter(c => c.ws !== ws);
 
-          const participant = session.stateTracker.participants.get(clientId);
           const hasRemainingConnection = session.clients.some(c => c.clientId === clientId);
+          const participant = session.stateTracker.participants.get(clientId);
           if (participant && !hasRemainingConnection) {
-            session.stateTracker.removeParticipant(clientId).catch((error) => {
-              console.error('[session] Failed to remove participant on disconnect:', error.message);
-            });
-            deps.sessionManager.broadcast(currentSessionShortCode, {
-              type: "participant_left",
-              name: participant.name,
-              participantCount: session.stateTracker.participants.size
-            });
+            if (!session.disconnectTimers) session.disconnectTimers = new Map();
+            if (session.disconnectTimers.has(clientId)) {
+              clearTimeout(session.disconnectTimers.get(clientId));
+            }
+            session.disconnectTimers.set(clientId, setTimeout(async () => {
+              const latestSession = deps.sessionManager.get(currentSessionShortCode);
+              if (!latestSession) return;
+              const stillDisconnected = !latestSession.clients.some(c => c.clientId === clientId);
+              const stillParticipant = latestSession.stateTracker.participants.get(clientId);
+              if (!stillDisconnected || !stillParticipant) return;
+              await latestSession.stateTracker.removeParticipant(clientId).catch((error) => {
+                console.error('[session] Failed to remove participant on disconnect:', error.message);
+              });
+              latestSession.disconnectTimers?.delete(clientId);
+              deps.sessionManager.broadcast(currentSessionShortCode, {
+                type: "participant_left",
+                participantId: clientId,
+                name: stillParticipant.name,
+                participantCount: latestSession.stateTracker.participants.size
+              });
+            }, 30000));
           }
 
           const liveSessionClients = session.clients.filter(c => c.clientKind !== 'dashboard');
@@ -146,6 +159,11 @@ function setupWebSocket(wss, deps) {
                 const checker = deps.sessionManager.silenceCheckers.get(shortCode);
                 if (checker) clearInterval(checker);
                 deps.sessionManager.silenceCheckers.delete(shortCode);
+
+                if (s.disconnectTimers) {
+                  for (const timer of s.disconnectTimers.values()) clearTimeout(timer);
+                  s.disconnectTimers.clear();
+                }
 
                 // Clean up facilitation engine state
                 if (s.stateTracker?.sessionId) {

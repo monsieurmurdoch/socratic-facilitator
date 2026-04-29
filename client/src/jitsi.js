@@ -81,7 +81,7 @@ export async function launchJitsi(roomName, displayName) {
       disableDeepLinking: true,
       enableInsecureRoomNameWarning: false,
       toolbarButtons: [
-        'microphone', 'camera', 'desktop', 'fullscreen',
+        'camera', 'desktop', 'fullscreen',
         'raisehand', 'tileview', 'participants-pane',
         'toggle-camera'
       ],
@@ -115,15 +115,40 @@ export async function launchJitsi(roomName, displayName) {
   }
 
   // Import speech functions for event handlers
-  import('./speech.js').then(({ startSpeechRecognition, stopSpeechRecognition }) => {
+  import('./speech.js').then(({ setPlatoMicMuted }) => {
+    function applyJitsiMuteState(muted) {
+      state.jitsiMicMuted = !!muted;
+      setPlatoMicMuted(state.jitsiMicMuted);
+    }
+
+    function syncJitsiMuteState() {
+      if (!state.jitsiApi || typeof state.jitsiApi.isAudioMuted !== "function") return;
+      try {
+        const muteState = state.jitsiApi.isAudioMuted();
+        if (muteState && typeof muteState.then === "function") {
+          muteState.then(applyJitsiMuteState).catch((error) => {
+            console.warn("[Jitsi] Could not read audio mute state:", error?.message || error);
+          });
+        } else {
+          applyJitsiMuteState(muteState);
+        }
+      } catch (error) {
+        console.warn("[Jitsi] Could not read audio mute state:", error?.message || error);
+      }
+    }
+
     state.jitsiApi.addEventListener('audioMuteStatusChanged', (event) => {
       console.log('[Jitsi] Audio mute:', event.muted);
-      if (event.muted) {
-        stopSpeechRecognition();
-      } else {
-        startSpeechRecognition();
+      applyJitsiMuteState(event.muted);
+    });
+    state.jitsiApi.addEventListener('toolbarButtonClicked', (event) => {
+      if (event.key === 'microphone') {
+        setTimeout(syncJitsiMuteState, 80);
       }
     });
+    syncJitsiMuteState();
+    if (state.jitsiMutePoller) clearInterval(state.jitsiMutePoller);
+    state.jitsiMutePoller = setInterval(syncJitsiMuteState, 750);
   });
 
   state.jitsiApi.addEventListener('participantJoined', (event) => {
@@ -136,7 +161,6 @@ export async function launchJitsi(roomName, displayName) {
 
   state.jitsiApi.addEventListener('readyToClose', () => {
     console.log('[Jitsi] Conference ended');
-    send({ type: "end_discussion" });
   });
 
   state.jitsiApi.addEventListener('videoConferenceLeft', () => {
@@ -153,6 +177,11 @@ export async function launchJitsi(roomName, displayName) {
 // ---- Destroy Jitsi ----
 
 export function destroyJitsi() {
+  if (state.jitsiMutePoller) {
+    clearInterval(state.jitsiMutePoller);
+    state.jitsiMutePoller = null;
+  }
+  state.jitsiMicMuted = false;
   if (state.jitsiApi) {
     state.jitsiApi.dispose();
     state.jitsiApi = null;

@@ -117,13 +117,14 @@ class FacilitationOrchestrator {
     this._checkAnchorReferences(text, messageIndex, participantName);
 
     // If LLM identified this as anchor-worthy, add it
-    if (llmAssessment?.isAnchor) {
+    const anchorAssessment = llmAssessment?.anchor || {};
+    if (anchorAssessment.isAnchor || llmAssessment?.isAnchor) {
       this.anchorTracker.addAnchor({
         messageIndex,
         participantName,
         text,
-        profoundness: llmAssessment.anchorProfundness || 0.6,
-        summary: llmAssessment.anchorSummary || text.substring(0, 100)
+        profoundness: anchorAssessment.profundness || llmAssessment.anchorProfundness || 0.6,
+        summary: anchorAssessment.summary || llmAssessment.anchorSummary || text.substring(0, 100)
       });
     }
 
@@ -310,11 +311,12 @@ class FacilitationOrchestrator {
    */
   _assessEngagement(message, messageIndex, llmAssessment) {
     if (llmAssessment) {
+      const engagement = llmAssessment.engagement || llmAssessment;
       return {
-        specificity: llmAssessment.specificity ?? 0.5,
-        profoundness: llmAssessment.profoundness ?? 0.5,
-        coherence: llmAssessment.coherence ?? 0.5,
-        responseLatencyMs: llmAssessment.responseLatencyMs ?? null
+        specificity: engagement.specificity ?? 0.5,
+        profoundness: engagement.profoundness ?? 0.5,
+        coherence: engagement.coherence ?? 0.5,
+        responseLatencyMs: engagement.responseLatencyMs ?? llmAssessment.responseLatencyMs ?? null
       };
     }
 

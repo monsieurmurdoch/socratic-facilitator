@@ -11,6 +11,9 @@ const path = require('path');
  * monolith. Mounts Express routes and returns a server for testing.
  */
 async function setupTestServer() {
+  const db = require('../../server/db');
+  await db.initializeSchema();
+
   const app = express();
   app.use(express.json({ limit: '1mb' }));
   app.use(express.static(path.join(__dirname, '../../client/public')));
@@ -39,6 +42,27 @@ async function setupTestServer() {
 
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
+  const { setupWebSocket } = require('../../server/websocket');
+  const SessionManager = require('../../server/sessions');
+  const sessionsRepo = require('../../server/db/repositories/sessions');
+  const enhancedEngine = {
+    warmupChat: async () => null,
+    clearWarmupHistory: () => {},
+    getAnalyzerState: () => null,
+    cleanupSession: () => {},
+    generateOpening: async () => 'Opening question',
+    generateClosing: async () => 'Closing thought',
+    decide: async () => ({ message: null })
+  };
+  const sessionManager = new SessionManager({
+    enhancedEngine,
+    messageAssessor: { assess: async () => null }
+  });
+  setupWebSocket(wss, {
+    sessionManager,
+    sessionsRepo,
+    enhancedEngine
+  });
 
   // Listen on random port
   await new Promise(resolve => server.listen(0, resolve));
@@ -50,14 +74,37 @@ async function setupTestServer() {
     app,
     server,
     wss,
+    sessionManager,
     url,
     wsUrl,
     port,
     async close() {
+      for (const session of sessionManager.activeSessions.values()) {
+        if (session._cleanupTimer) clearTimeout(session._cleanupTimer);
+        if (session.disconnectTimers) {
+          for (const timer of session.disconnectTimers.values()) clearTimeout(timer);
+          session.disconnectTimers.clear();
+        }
+        if (session.pendingWarmupTurns) {
+          for (const turn of session.pendingWarmupTurns.values()) {
+            if (turn.timer) clearTimeout(turn.timer);
+          }
+          session.pendingWarmupTurns.clear();
+        }
+        if (session.pendingWarmupReplies) {
+          for (const reply of session.pendingWarmupReplies.values()) {
+            if (reply.timer) clearTimeout(reply.timer);
+          }
+          session.pendingWarmupReplies.clear();
+        }
+      }
+      for (const checker of sessionManager.silenceCheckers.values()) clearInterval(checker);
+      sessionManager.silenceCheckers.clear();
       wss.clients.forEach(ws => {
         if (ws.readyState === 1) ws.close();
       });
       await new Promise(resolve => server.close(resolve));
+      await db.end();
     },
     /**
      * Helper for HTTP requests to the test server.

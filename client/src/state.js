@@ -4,6 +4,16 @@
  * Central state object and persistence functions for the Socratic Facilitator client.
  */
 
+// ---- Constants ----
+export const MAX_MATERIALS = 5;
+export const STT_FLUSH_MS_WARMUP = 1200;
+export const STT_FLUSH_MS_DISCUSSION = 800;
+export const STORAGE_KEY = "socratic_state";
+export const AUTH_TOKEN_KEY = "socratic_auth_token";
+export const AUTH_USER_KEY = "socratic_auth_user";
+export const SESSION_ACCESS_TOKEN_KEY = "socratic_session_access_tokens";
+export const JAAS_APP_ID = "vpaas-magic-cookie-44bf27b66fab458bae6a8c271ea52a82";
+
 // ---- State ----
 export const state = {
   ws: null,
@@ -14,6 +24,7 @@ export const state = {
   isHost: false,
   jitsiApi: null,
   materials: [],
+  sessionAccessTokens: loadSessionAccessTokens(),
   authToken: null,
   accountUser: null,
   savedClasses: [],
@@ -29,6 +40,9 @@ export const state = {
   currentScreen: "welcome",
   wsConnectedToServer: false,
   jitsiScriptLoaded: false,
+  jitsiMicMuted: false,
+  platoMicMuted: false,
+  jitsiMutePoller: null,
   sttStream: null,
   sttNode: null,
   sttContext: null,
@@ -37,15 +51,6 @@ export const state = {
   serverTTSReceived: false,
   platoSpeakingTimer: null
 };
-
-// ---- Constants ----
-export const MAX_MATERIALS = 5;
-export const STT_FLUSH_MS_WARMUP = 1200;
-export const STT_FLUSH_MS_DISCUSSION = 800;
-export const STORAGE_KEY = "socratic_state";
-export const AUTH_TOKEN_KEY = "socratic_auth_token";
-export const AUTH_USER_KEY = "socratic_auth_user";
-export const JAAS_APP_ID = "vpaas-magic-cookie-44bf27b66fab458bae6a8c271ea52a82";
 
 // ---- State Persistence ----
 
@@ -126,6 +131,30 @@ export function clearAuthState() {
 
 // ---- Utility Functions ----
 
+export function loadSessionAccessTokens() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_ACCESS_TOKEN_KEY) || "{}");
+  } catch (_error) {
+    return {};
+  }
+}
+
+export function saveSessionAccessTokens() {
+  try {
+    localStorage.setItem(SESSION_ACCESS_TOKEN_KEY, JSON.stringify(state.sessionAccessTokens));
+  } catch (_error) { /* storage unavailable */ }
+}
+
+export function setSessionAccessToken(sessionId, token) {
+  if (!sessionId || !token) return;
+  state.sessionAccessTokens[sessionId] = token;
+  saveSessionAccessTokens();
+}
+
+export function getSessionAccessToken(sessionId = state.currentSessionId) {
+  return sessionId ? state.sessionAccessTokens[sessionId] || null : null;
+}
+
 export function getAge() {
   return 25; // Default age — age input removed from UI
 }
@@ -134,6 +163,10 @@ export function getAuthHeaders(extra = {}) {
   const headers = { ...extra };
   if (state.authToken) {
     headers.Authorization = `Bearer ${state.authToken}`;
+  }
+  const sessionAccessToken = getSessionAccessToken();
+  if (sessionAccessToken) {
+    headers["X-Session-Access"] = sessionAccessToken;
   }
   return headers;
 }

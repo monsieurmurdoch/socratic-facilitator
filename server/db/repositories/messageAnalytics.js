@@ -13,6 +13,7 @@ async function save({
   engagementEstimate,
   respondedToPeer,
   referencedAnchor,
+  isAnchor = false,
   reasoning,
   rawPayload
 }) {
@@ -21,8 +22,8 @@ async function save({
       session_id, message_id, participant_id, analytics_version,
       specificity, profoundness, coherence, discussion_value,
       contribution_weight, engagement_estimate, responded_to_peer,
-      referenced_anchor, reasoning, raw_payload
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      referenced_anchor, is_anchor, reasoning, raw_payload
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     ON CONFLICT (message_id) DO UPDATE SET
       specificity = EXCLUDED.specificity,
       profoundness = EXCLUDED.profoundness,
@@ -32,6 +33,7 @@ async function save({
       engagement_estimate = EXCLUDED.engagement_estimate,
       responded_to_peer = EXCLUDED.responded_to_peer,
       referenced_anchor = EXCLUDED.referenced_anchor,
+      is_anchor = EXCLUDED.is_anchor,
       reasoning = EXCLUDED.reasoning,
       raw_payload = EXCLUDED.raw_payload
     RETURNING *`,
@@ -48,6 +50,7 @@ async function save({
       engagementEstimate,
       respondedToPeer,
       referencedAnchor,
+      isAnchor,
       reasoning,
       JSON.stringify(rawPayload || {})
     ]

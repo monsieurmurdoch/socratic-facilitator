@@ -6,7 +6,32 @@
 
 import { state } from './state.js';
 import { send, sendBinary } from './websocket.js';
-import { flushSttBatch, clearLocalSpeechDraft, addTranscriptEntry } from './ui.js';
+import { flushSttBatch, clearLocalSpeechDraft, addTranscriptEntry, renderPlatoMicState } from './ui.js';
+
+function isVideoScreenActive() {
+  return !!document.getElementById("video-screen")?.classList.contains("active");
+}
+
+export function isPlatoInputMuted() {
+  return state.platoMicMuted;
+}
+
+export function setPlatoMicMuted(muted) {
+  state.platoMicMuted = !!muted;
+  applyPlatoMicGate();
+}
+
+export function applyPlatoMicGate() {
+  renderPlatoMicState();
+  if (!isVideoScreenActive()) return;
+  if (isPlatoInputMuted()) {
+    stopSpeechRecognition({ flush: false, releaseStream: true });
+    return;
+  }
+  if (!state.sttActive && state.currentSessionId) {
+    startSpeechRecognition();
+  }
+}
 
 /**
  * Pre-acquire camera+mic in a single getUserMedia call so Safari only
@@ -41,7 +66,11 @@ export async function startSpeechRecognition() {
     console.log("[STT] Already active, skipping");
     return;
   }
-  // Set flag IMMEDIATELY to prevent race condition with Jitsi's audioMuteStatusChanged event
+  if (isPlatoInputMuted()) {
+    console.log("[STT] Plato mic is muted, not starting");
+    return;
+  }
+  // Set flag immediately so duplicate start calls cannot open parallel STT streams.
   state.sttActive = true;
 
   try {
@@ -59,6 +88,11 @@ export async function startSpeechRecognition() {
     state.sttActive = false; // Reset on failure
     return;
   }
+  if (isPlatoInputMuted()) {
+    console.log("[STT] Plato mic muted during startup, aborting stream");
+    stopSpeechRecognition({ flush: false, releaseStream: true });
+    return;
+  }
 
   state.sttContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
   const source = state.sttContext.createMediaStreamSource(state.sttStream);
@@ -73,9 +107,13 @@ export async function startSpeechRecognition() {
   if (window.AudioWorkletNode) {
     try {
       await state.sttContext.audioWorklet.addModule('/src/audio-processor.js');
+      if (isPlatoInputMuted()) {
+        stopSpeechRecognition({ flush: false, releaseStream: true });
+        return;
+      }
       state.sttNode = new AudioWorkletNode(state.sttContext, 'pcm-processor');
       state.sttNode.port.onmessage = (e) => {
-        if (state.ws && state.ws.readyState === 1) {
+        if (!isPlatoInputMuted() && state.sttActive && state.ws && state.ws.readyState === 1) {
           sendBinary(e.data); // send raw Int16 PCM buffer
         }
       };
@@ -95,7 +133,7 @@ export async function startSpeechRecognition() {
 function setupScriptProcessor(source, mutedSink) {
   state.sttNode = state.sttContext.createScriptProcessor(2048, 1, 1);
   state.sttNode.onaudioprocess = (e) => {
-    if (state.ws && state.ws.readyState === 1) {
+    if (!isPlatoInputMuted() && state.sttActive && state.ws && state.ws.readyState === 1) {
       const float32 = e.inputBuffer.getChannelData(0);
       const int16 = new Int16Array(float32.length);
       for (let i = 0; i < float32.length; i++) {
@@ -109,8 +147,18 @@ function setupScriptProcessor(source, mutedSink) {
   state.sttNode.connect(mutedSink);
 }
 
-export function stopSpeechRecognition() {
-  flushSttBatch();
+export function stopSpeechRecognition(options = {}) {
+  const { flush = true, releaseStream = false } = options;
+  if (flush) {
+    flushSttBatch();
+  } else {
+    clearLocalSpeechDraft();
+  }
+  if (releaseStream && state.sttStream) {
+    state.sttStream.getAudioTracks().forEach(track => {
+      track.enabled = false;
+    });
+  }
   if (state.sttNode) {
     try { state.sttNode.disconnect(); } catch (e) {}
     state.sttNode = null;
@@ -125,7 +173,11 @@ export function stopSpeechRecognition() {
   }
   // Always reset flag so reconnect can re-establish the Deepgram relay
   state.sttActive = false;
-  console.log("[STT] Stopped (stream kept for reuse)");
+  if (releaseStream && state.sttStream) {
+    state.sttStream.getTracks().forEach(t => t.stop());
+    state.sttStream = null;
+  }
+  console.log(`[STT] Stopped (${releaseStream ? "stream released" : "stream kept for reuse"})`);
 }
 
 export function destroySttStream() {

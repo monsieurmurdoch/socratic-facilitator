@@ -81,6 +81,16 @@ createdb socratic_facilitator
 docker run -d --name postgres -e POSTGRES_DB=socratic_facilitator -p 5432:5432 postgres:15
 ```
 
+For local tests, use the checked-in Postgres service and `.env.test` secrets:
+
+```bash
+npm run db:local:up
+npm run db:init
+npm test
+```
+
+The local test database URL is `postgresql://postgres:postgres@localhost:5432/socratic_facilitator_test`.
+
 3. **Configure environment**
 ```bash
 cp .env.example .env
@@ -206,6 +216,10 @@ Edit `server/config.js` to adjust:
 |----------|-------------|----------|
 | `DATABASE_URL` | PostgreSQL connection string | Yes |
 | `ANTHROPIC_API_KEY` | Anthropic API key | Yes |
+| `JWT_SECRET` | Auth token signing secret | Yes |
+| `SESSION_ACCESS_SECRET` | Signed guest/session access token secret | Yes |
+| `ENCRYPTION_MASTER_KEY` | Encryption secret for integrations | Required for integrations/tests |
+| `OAUTH_STATE_SECRET` | OAuth state signing secret | Required for integrations/tests |
 | `PORT` | Server port | No (default: 3000) |
 | `NODE_ENV` | Environment | No (default: development) |
 | `STORAGE_PATH` | File upload directory | No (default: ./uploads) |

@@ -14,6 +14,7 @@
   let isHost = false;
   let jitsiApi = null;
   let materials = [];
+  let sessionAccessTokens = loadSessionAccessTokens();
   let materialsClassId = null;
   let authToken = null;
   let accountUser = null;
@@ -42,7 +43,9 @@
   let wsReconnectDelay = 1000; // exponential backoff starting at 1s
   const WS_RECONNECT_MAX = 30000; // cap at 30s
   let jitsiMicMuted = false;
+  let platoMicMuted = false;
   let jitsiMuteTimer = null;
+  let jitsiMutePoller = null;
   let jitsiLaunchingRoom = null;
   let activeJitsiRoom = null;
 
@@ -56,6 +59,31 @@
   const STORAGE_KEY = "socratic_state";
   const AUTH_TOKEN_KEY = "socratic_auth_token";
   const AUTH_USER_KEY = "socratic_auth_user";
+  const SESSION_ACCESS_TOKEN_KEY = "socratic_session_access_tokens";
+
+  function loadSessionAccessTokens() {
+    try {
+      return JSON.parse(localStorage.getItem(SESSION_ACCESS_TOKEN_KEY) || "{}");
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  function saveSessionAccessTokens() {
+    try {
+      localStorage.setItem(SESSION_ACCESS_TOKEN_KEY, JSON.stringify(sessionAccessTokens));
+    } catch (_error) { /* storage unavailable */ }
+  }
+
+  function setSessionAccessToken(sessionId, token) {
+    if (!sessionId || !token) return;
+    sessionAccessTokens[sessionId] = token;
+    saveSessionAccessTokens();
+  }
+
+  function getSessionAccessToken(sessionId = currentSessionId) {
+    return sessionId ? sessionAccessTokens[sessionId] || null : null;
+  }
 
   function saveState() {
     try {
@@ -170,6 +198,7 @@
     currentScreen = name;
     Object.values(screens).forEach(s => s && s.classList.remove("active"));
     if (screens[name]) screens[name].classList.add("active");
+    document.body.classList.toggle("video-active", name === "video");
   }
 
   // Navigate to a screen and push browser history so the back button works
@@ -227,6 +256,10 @@
     if (authToken) {
       headers.Authorization = `Bearer ${authToken}`;
     }
+    const sessionAccessToken = getSessionAccessToken();
+    if (sessionAccessToken) {
+      headers["X-Session-Access"] = sessionAccessToken;
+    }
     return headers;
   }
 
@@ -279,7 +312,8 @@
           type: "rejoin_session",
           sessionId: saved.currentSessionId,
           oldClientId: saved.myId,
-          authToken
+          authToken,
+          sessionAccessToken: getSessionAccessToken(saved.currentSessionId)
         });
         return;
       }
@@ -288,7 +322,7 @@
       const params = new URLSearchParams(window.location.search);
       const joinCode = params.get("join");
       if (joinCode && myName) {
-        send({ type: "join_session", sessionId: joinCode, name: myName, age: getAge(), authToken });
+        send({ type: "join_session", sessionId: joinCode, name: myName, age: getAge(), authToken, sessionAccessToken: getSessionAccessToken(joinCode) });
       }
     };
     ws.onmessage = (event) => {
@@ -870,6 +904,7 @@
         if (!session.shortCode) {
           throw new Error("Server returned session without shortCode");
         }
+        setSessionAccessToken(session.shortCode, session.sessionAccessToken);
         currentSessionId = session.shortCode;
         isHost = true;
         materialsClassId = cls.id;
@@ -879,7 +914,8 @@
           sessionId: session.shortCode,
           name: myName,
           age: getAge(),
-          authToken
+          authToken,
+          sessionAccessToken: getSessionAccessToken(session.shortCode)
         });
       } catch (error) {
         console.error("[Session] Creation error:", error);
@@ -891,7 +927,7 @@
       e.stopPropagation();
       if (!liveSession?.shortCode) return;
       myName = accountUser?.name || "";
-      send({ type: "join_session", sessionId: liveSession.shortCode, name: myName, age: getAge(), authToken });
+      send({ type: "join_session", sessionId: liveSession.shortCode, name: myName, age: getAge(), authToken, sessionAccessToken: getSessionAccessToken(liveSession.shortCode) });
     });
     document.getElementById("expanded-clear-materials-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1320,7 +1356,7 @@
         disableDeepLinking: true,
         enableInsecureRoomNameWarning: false,
         toolbarButtons: [
-          'microphone', 'camera', 'desktop', 'fullscreen',
+          'camera', 'desktop', 'fullscreen',
           'raisehand', 'tileview', 'participants-pane',
           'toggle-camera'
         ],
@@ -1365,7 +1401,6 @@
 
     jitsiApi.addEventListener('readyToClose', () => {
       console.log('[Jitsi] Conference ended');
-      send({ type: "end_discussion" });
     });
 
     jitsiApi.addEventListener('videoConferenceLeft', () => {
@@ -1376,21 +1411,14 @@
       console.log('[Jitsi] Audio mute:', event.muted);
       scheduleJitsiMuteState(event.muted);
     });
-
-    if (typeof jitsiApi.isAudioMuted === "function") {
-      try {
-        const initialMuteState = jitsiApi.isAudioMuted();
-        if (initialMuteState && typeof initialMuteState.then === "function") {
-          initialMuteState
-            .then((muted) => scheduleJitsiMuteState(muted))
-            .catch((error) => console.warn("[Jitsi] Could not read initial audio mute state:", error?.message || error));
-        } else {
-          scheduleJitsiMuteState(initialMuteState);
-        }
-      } catch (error) {
-        console.warn("[Jitsi] Could not read initial audio mute state:", error?.message || error);
+    jitsiApi.addEventListener('toolbarButtonClicked', (event) => {
+      if (event.key === 'microphone') {
+        setTimeout(syncJitsiMuteState, 80);
       }
-    }
+    });
+
+    syncJitsiMuteState();
+    startJitsiMutePolling();
 
     jitsiApi.addEventListener('errorOccurred', (event) => {
       console.error('[Jitsi] Error:', event);
@@ -1400,6 +1428,7 @@
   }
 
   function destroyJitsi() {
+    stopJitsiMutePolling();
     resetJitsiMuteState();
     if (jitsiApi) {
       jitsiApi.dispose();
@@ -1422,28 +1451,118 @@
     return !!document.getElementById("video-screen")?.classList.contains("active");
   }
 
+  function isPlatoInputMuted() {
+    return platoMicMuted;
+  }
+
+  function setPlatoMicMuted(muted, options = {}) {
+    const { syncJitsi = true, source = "app" } = options;
+    platoMicMuted = !!muted;
+    renderPlatoMicState();
+    applyPlatoMicGate(source);
+    if (syncJitsi) {
+      setJitsiAudioMuted(platoMicMuted);
+    }
+  }
+
+  function applyPlatoMicGate(source = "app") {
+    renderPlatoMicState();
+    if (!isVideoScreenActive()) return;
+
+    if (isPlatoInputMuted()) {
+      console.log(`[STT] Pausing because Plato mic is muted (${source})`);
+      stopSpeechRecognition({ flush: false, releaseStream: true });
+      return;
+    }
+
+    if (!sttActive && currentSessionId) {
+      console.log(`[STT] Resuming because Plato mic is unmuted (${source})`);
+      startSpeechRecognition();
+    }
+  }
+
+  function renderPlatoMicState() {
+    const muted = isPlatoInputMuted();
+    const button = document.getElementById("plato-mic-toggle");
+    if (button) {
+      button.classList.toggle("muted", muted);
+      button.setAttribute("aria-pressed", String(muted));
+      button.textContent = muted ? "Unmute Mic" : "Mute Mic";
+    }
+
+    const tileStatus = document.getElementById("plato-tile-status");
+    if (tileStatus && muted && !document.getElementById("plato-tile")?.classList.contains("speaking")) {
+      tileStatus.textContent = "Muted";
+    } else if (tileStatus && !muted && tileStatus.textContent === "Muted") {
+      tileStatus.textContent = "Listening";
+    }
+
+    if (muted) {
+      setFacilitatorStatus("muted");
+    } else if (document.getElementById("facilitator-status")?.textContent === "Muted") {
+      setFacilitatorStatus("listening");
+    }
+  }
+
+  async function setJitsiAudioMuted(shouldMute) {
+    if (!jitsiApi || typeof jitsiApi.executeCommand !== "function") return;
+    try {
+      let currentMuted = jitsiMicMuted;
+      if (typeof jitsiApi.isAudioMuted === "function") {
+        currentMuted = await jitsiApi.isAudioMuted();
+      }
+      if (!!currentMuted !== !!shouldMute) {
+        jitsiApi.executeCommand("toggleAudio");
+      }
+    } catch (error) {
+      console.warn("[Jitsi] Could not sync Jitsi mic with Plato mic:", error?.message || error);
+    }
+  }
+
   function scheduleJitsiMuteState(muted) {
     if (jitsiMuteTimer) clearTimeout(jitsiMuteTimer);
+    if (muted) {
+      applyJitsiMuteState(true);
+      jitsiMuteTimer = null;
+      return;
+    }
     jitsiMuteTimer = setTimeout(() => {
       applyJitsiMuteState(muted);
       jitsiMuteTimer = null;
     }, 180);
   }
 
+  function startJitsiMutePolling() {
+    stopJitsiMutePolling();
+    jitsiMutePoller = setInterval(syncJitsiMuteState, 750);
+  }
+
+  function stopJitsiMutePolling() {
+    if (jitsiMutePoller) {
+      clearInterval(jitsiMutePoller);
+      jitsiMutePoller = null;
+    }
+  }
+
+  function syncJitsiMuteState() {
+    if (!jitsiApi || typeof jitsiApi.isAudioMuted !== "function") return;
+    try {
+      const muteState = jitsiApi.isAudioMuted();
+      if (muteState && typeof muteState.then === "function") {
+        muteState
+          .then((muted) => scheduleJitsiMuteState(muted))
+          .catch((error) => console.warn("[Jitsi] Could not read audio mute state:", error?.message || error));
+      } else {
+        scheduleJitsiMuteState(muteState);
+      }
+    } catch (error) {
+      console.warn("[Jitsi] Could not read audio mute state:", error?.message || error);
+    }
+  }
+
   function applyJitsiMuteState(muted) {
     jitsiMicMuted = !!muted;
-    if (!isVideoScreenActive()) return;
-
-    if (jitsiMicMuted) {
-      console.log("[STT] Pausing because Jitsi mic is muted");
-      stopSpeechRecognition({ flush: false, releaseStream: true });
-      return;
-    }
-
-    if (!sttActive && currentSessionId) {
-      console.log("[STT] Resuming because Jitsi mic is unmuted");
-      startSpeechRecognition();
-    }
+    setPlatoMicMuted(jitsiMicMuted, { syncJitsi: false, source: "jitsi" });
   }
 
   // ---- Share Link ----
@@ -1507,7 +1626,8 @@
 
       case "session_created":
         currentSessionId = msg.sessionId;
-        send({ type: "join_session", sessionId: msg.sessionId, name: myName, age: getAge(), authToken });
+        setSessionAccessToken(msg.sessionId, msg.sessionAccessToken);
+        send({ type: "join_session", sessionId: msg.sessionId, name: myName, age: getAge(), authToken, sessionAccessToken: getSessionAccessToken(msg.sessionId) });
         isHost = true;
         break;
 
@@ -1544,10 +1664,48 @@
         });
         break;
 
+      case "session_restored": {
+        currentSessionId = msg.sessionId;
+        setSessionAccessToken(msg.sessionId, msg.sessionAccessToken);
+        myId = msg.yourId;
+        participants = msg.participants || [];
+        discussionActive = msg.sessionStatus === "active";
+        if (msg.sessionRole === "teacher") {
+          isHost = true;
+        }
+        resetConversationFeed();
+        for (const restored of msg.messages || []) {
+          if (restored.type === "facilitator_message") {
+            addFacilitatorMessage(restored.text, restored.move);
+          } else {
+            addTranscriptEntry(restored.participantName || "Participant", restored.text, restored.participantId === myId, false);
+          }
+        }
+        updateParticipantList();
+        showShareInfo(msg.sessionId);
+        if (msg.topicTitle) {
+          document.getElementById("lobby-topic").textContent = msg.topicTitle;
+          document.getElementById("lobby-topic-section").style.display = "block";
+        }
+        navigateTo(discussionActive ? "video" : "lobby");
+        if (discussionActive) {
+          await preAcquireMedia();
+          launchJitsi(currentSessionId, myName);
+          startSpeechRecognition();
+          document.getElementById("start-discussion-btn").style.display = "none";
+        }
+        saveState();
+        break;
+      }
+
       case "session_joined": {
         const isRejoin = currentSessionId === msg.sessionId && myId === msg.yourId;
         currentSessionId = msg.sessionId;
+        setSessionAccessToken(msg.sessionId, msg.sessionAccessToken);
         discussionActive = false;
+        if (msg.sessionRole === "teacher") {
+          isHost = true;
+        }
         applyTeacherParams(msg.currentParams || {});
         // Only reset feed on fresh join — preserve transcript on reconnect
         if (!isRejoin) {
@@ -1579,7 +1737,9 @@
         break;
 
       case "participant_joined":
-        if (!participants.some(p => (msg.participantId && p.id === msg.participantId) || p.name === msg.name)) {
+        if (msg.participantId
+          ? !participants.some(p => p.id === msg.participantId)
+          : !participants.some(p => p.name === msg.name)) {
           participants.push({ name: msg.name, id: msg.participantId || null });
         }
         updateParticipantList();
@@ -1587,7 +1747,9 @@
         break;
 
       case "participant_left":
-        participants = participants.filter(p => p.name !== msg.name);
+        participants = msg.participantId
+          ? participants.filter(p => p.id !== msg.participantId)
+          : participants.filter(p => p.name !== msg.name);
         updateParticipantList();
         addTranscriptEntry("system", `${msg.name} left the discussion`);
         break;
@@ -1716,11 +1878,15 @@
         } else if (m.type === "file") {
           const formData = new FormData();
           formData.append("file", m.file);
-          await fetch(`/api/sessions/${currentSessionId}/materials`, {
+          const response = await fetch(`/api/sessions/${currentSessionId}/materials`, {
             method: "POST",
             headers: getAuthHeaders(),
             body: formData
           });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || `Upload failed ${response.status}`);
+          }
         } else if (m.type === "url") {
           await apiPost(`/api/sessions/${currentSessionId}/materials`, { url: m.url });
         } else if (m.type === "text") {
@@ -1952,7 +2118,7 @@
     try {
       const resolved = await apiGet(`/api/sessions/resolve/${encodeURIComponent(pendingRoomJoin.roomCode)}`);
       if (resolved.type === "room" && resolved.hasLiveSession && resolved.sessionShortCode) {
-        send({ type: "join_session", sessionId: resolved.sessionShortCode, name: myName, age: getAge(), authToken });
+        send({ type: "join_session", sessionId: resolved.sessionShortCode, name: myName, age: getAge(), authToken, sessionAccessToken: getSessionAccessToken(resolved.sessionShortCode) });
         return;
       }
       showRoomWaitScreen(resolved);
@@ -2161,8 +2327,13 @@
   function setFacilitatorStatus(status) {
     const badge = document.getElementById("facilitator-status");
     if (!badge) return;
+    if (isPlatoInputMuted() && status !== "speaking") {
+      badge.className = "status-badge muted";
+      badge.textContent = "Muted";
+      return;
+    }
     badge.className = `status-badge ${status}`;
-    badge.textContent = status === "speaking" ? "Speaking" : "Listening";
+    badge.textContent = status === "speaking" ? "Speaking" : status === "muted" ? "Muted" : "Listening";
   }
 
   function setPlatoTileSpeaking(text) {
@@ -2188,7 +2359,7 @@
 
     platoSpeakingTimer = setTimeout(() => {
       tile.classList.remove("speaking");
-      if (tileStatus) tileStatus.textContent = "Listening";
+      if (tileStatus) tileStatus.textContent = isPlatoInputMuted() ? "Muted" : "Listening";
       if (tileText) tileText.textContent = "";
       setFacilitatorStatus("listening");
     }, speakingMs);
@@ -2596,6 +2767,7 @@
       if (!session.shortCode) {
         throw new Error("Server returned session without shortCode");
       }
+      setSessionAccessToken(session.shortCode, session.sessionAccessToken);
       refreshWorkspace();
       currentSessionId = session.shortCode;
       isHost = true;
@@ -2604,7 +2776,8 @@
         sessionId: session.shortCode,
         name: myName,
         age: getAge(),
-        authToken
+        authToken,
+        sessionAccessToken: getSessionAccessToken(session.shortCode)
       });
     }).catch(error => {
       console.error("[Session] Creation error:", error);
@@ -2630,7 +2803,7 @@
         return;
       }
       const joinCode = resolved.sessionShortCode || code;
-      send({ type: "join_session", sessionId: joinCode, name: myName, age: getAge(), authToken });
+      send({ type: "join_session", sessionId: joinCode, name: myName, age: getAge(), authToken, sessionAccessToken: getSessionAccessToken(joinCode) });
     } catch (error) {
       alert(error.message);
     }
@@ -2666,8 +2839,14 @@
     slowSpeakerMode = !!e.target.checked;
   });
 
+  document.getElementById("plato-mic-toggle")?.addEventListener("click", () => {
+    setPlatoMicMuted(!platoMicMuted, { syncJitsi: true, source: "app" });
+  });
+  renderPlatoMicState();
+
   document.getElementById("video-end-btn").addEventListener("click", () => {
     if (confirm("End the discussion for everyone?")) {
+      flushSttBatch();
       send({ type: "end_discussion" });
     }
   });
@@ -2711,11 +2890,11 @@
       console.log("[STT] Already active, skipping");
       return;
     }
-    if (jitsiMicMuted) {
-      console.log("[STT] Jitsi mic is muted, not starting");
+    if (isPlatoInputMuted()) {
+      console.log("[STT] Plato mic is muted, not starting");
       return;
     }
-    // Set flag IMMEDIATELY to prevent race condition with Jitsi's audioMuteStatusChanged event
+    // Set flag immediately so duplicate start calls cannot open parallel STT streams.
     sttActive = true;
 
     try {
@@ -2733,6 +2912,11 @@
       sttActive = false; // Reset on failure
       return;
     }
+    if (isPlatoInputMuted()) {
+      console.log("[STT] Plato mic muted during startup, aborting stream");
+      stopSpeechRecognition({ flush: false, releaseStream: true });
+      return;
+    }
 
     sttContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     const source = sttContext.createMediaStreamSource(sttStream);
@@ -2747,9 +2931,13 @@
     if (window.AudioWorkletNode) {
       try {
         await sttContext.audioWorklet.addModule('/src/audio-processor.js');
+        if (isPlatoInputMuted()) {
+          stopSpeechRecognition({ flush: false, releaseStream: true });
+          return;
+        }
         sttNode = new AudioWorkletNode(sttContext, 'pcm-processor');
         sttNode.port.onmessage = (e) => {
-          if (ws && ws.readyState === 1) {
+          if (!isPlatoInputMuted() && sttActive && ws && ws.readyState === 1) {
             ws.send(e.data); // send raw Int16 PCM buffer
           }
         };
@@ -2769,7 +2957,7 @@
   function setupScriptProcessor(source, mutedSink) {
     sttNode = sttContext.createScriptProcessor(2048, 1, 1);
     sttNode.onaudioprocess = (e) => {
-      if (ws && ws.readyState === 1) {
+      if (!isPlatoInputMuted() && sttActive && ws && ws.readyState === 1) {
         const float32 = e.inputBuffer.getChannelData(0);
         const int16 = new Int16Array(float32.length);
         for (let i = 0; i < float32.length; i++) {
@@ -2789,6 +2977,11 @@
       flushSttBatch();
     } else {
       discardSttBatch();
+    }
+    if (releaseStream && sttStream) {
+      sttStream.getAudioTracks().forEach(track => {
+        track.enabled = false;
+      });
     }
     if (sttNode) {
       try { sttNode.disconnect(); } catch (e) {}
@@ -2982,7 +3175,7 @@
   }
 
   function renderAnalyticsContent(data) {
-    const { session, analytics } = data;
+    const { session, analytics, messages = [] } = data;
     const content = document.getElementById('analytics-content');
 
     const formatDuration = (seconds) => {
@@ -2994,6 +3187,29 @@
     const formatDateTime = (dateString) => {
       return new Date(dateString).toLocaleString();
     };
+
+    const formatTime = (dateString) => {
+      if (!dateString) return '';
+      return new Date(dateString).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    };
+
+    const transcriptHtml = messages.length
+      ? messages.map(msg => {
+          const isFacilitator = msg.senderType === 'facilitator';
+          const sender = isFacilitator ? 'Plato' : (msg.senderName || 'Unknown');
+          const move = msg.moveType ? ` <span class="transcript-move">${escapeHtml(msg.moveType)}</span>` : '';
+          const target = msg.targetParticipantName ? ` <span class="transcript-time">to ${escapeHtml(msg.targetParticipantName)}</span>` : '';
+          return `
+            <div class="transcript-msg ${isFacilitator ? 'transcript-facilitator' : 'transcript-participant'}">
+              <div class="transcript-msg-header">
+                <span class="transcript-sender">${escapeHtml(sender)}</span>${move}${target}
+                <span class="transcript-time">${formatTime(msg.createdAt)}</span>
+              </div>
+              <div class="transcript-msg-text">${escapeHtml(msg.content || '')}</div>
+            </div>
+          `;
+        }).join('')
+      : '<p class="empty-state">No transcript messages were saved for this session.</p>';
 
     content.innerHTML = `
       <!-- Session Overview -->
@@ -3083,6 +3299,14 @@
             `).join('')}
           </tbody>
         </table>
+      </div>
+
+      <!-- Transcript -->
+      <div class="analytics-section">
+        <h3>Transcript</h3>
+        <div class="transcript-feed">
+          ${transcriptHtml}
+        </div>
       </div>
 
       <!-- Session Details -->

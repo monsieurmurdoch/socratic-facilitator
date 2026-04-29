@@ -8,6 +8,7 @@
 const messagesRepo = require('./db/repositories/messages');
 const participantsRepo = require('./db/repositories/participants');
 const conversationStateRepo = require('./db/repositories/conversationState');
+const sessionMembershipsRepo = require('./db/repositories/sessionMemberships');
 const { FACILITATION_PARAMS, getFacilitationParams } = require('./config');
 
 class ParticipantState {
@@ -210,6 +211,13 @@ class SessionStateTracker {
         userId: opts.userId || null
       });
       participant.dbId = dbParticipant.id;
+      await sessionMembershipsRepo.recordJoin({
+        sessionId: this.sessionId,
+        participantId: dbParticipant.id,
+        userId: opts.userId || null,
+        name,
+        roleSnapshot: opts.sessionRole || opts.accountRole || 'participant'
+      });
     } catch (error) {
       console.error('Error adding participant to database:', error);
     }
@@ -224,7 +232,9 @@ class SessionStateTracker {
     this.participants.delete(id);
 
     try {
-      await participantsRepo.markLeft(participant.dbId || id);
+      const dbParticipantId = participant.dbId || id;
+      await participantsRepo.markLeft(dbParticipantId);
+      await sessionMembershipsRepo.recordLeave(dbParticipantId);
     } catch (error) {
       console.error('Error marking participant left in database:', error);
     }
@@ -282,7 +292,9 @@ class SessionStateTracker {
     // Persist to database using DB-generated participant ID
     try {
       const dbParticipantId = participant.dbId || participantId;
-      await messagesRepo.addParticipantMessage(this.sessionId, dbParticipantId, text);
+      const dbMessage = await messagesRepo.addParticipantMessage(this.sessionId, dbParticipantId, text);
+      message.dbId = dbMessage.id;
+      message.dbParticipantId = dbParticipantId;
     } catch (error) {
       console.error('Error saving message to database:', error);
     }

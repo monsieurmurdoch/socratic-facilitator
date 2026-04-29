@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Keep the project operating note fresh before every push.
+node scripts/sync-obsidian-status.mjs --push-update "$1" "$2"

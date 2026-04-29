@@ -19,6 +19,7 @@ export function showScreen(name) {
   };
   Object.values(screens).forEach(s => s && s.classList.remove("active"));
   if (screens[name]) screens[name].classList.add("active");
+  document.body.classList.toggle("video-active", name === "video");
 }
 
 // ---- Security: Escape HTML ----
@@ -122,8 +123,35 @@ export function updateParticipantList() {
 export function setFacilitatorStatus(status) {
   const badge = document.getElementById("facilitator-status");
   if (!badge) return;
+  if (state.platoMicMuted && status !== "speaking") {
+    badge.className = "status-badge muted";
+    badge.textContent = "Muted";
+    return;
+  }
   badge.className = `status-badge ${status}`;
-  badge.textContent = status === "speaking" ? "Speaking" : "Listening";
+  badge.textContent = status === "speaking" ? "Speaking" : status === "muted" ? "Muted" : "Listening";
+}
+
+export function renderPlatoMicState() {
+  const button = document.getElementById("plato-mic-toggle");
+  if (button) {
+    button.classList.toggle("muted", state.platoMicMuted);
+    button.setAttribute("aria-pressed", String(state.platoMicMuted));
+    button.textContent = state.platoMicMuted ? "Unmute Mic" : "Mute Mic";
+  }
+
+  const tile = document.getElementById("plato-tile");
+  const tileStatus = document.getElementById("plato-tile-status");
+  if (state.platoMicMuted && tileStatus && !tile?.classList.contains("speaking")) {
+    tileStatus.textContent = "Muted";
+  } else if (!state.platoMicMuted && tileStatus?.textContent === "Muted") {
+    tileStatus.textContent = "Listening";
+  }
+  if (state.platoMicMuted) {
+    setFacilitatorStatus("muted");
+  } else if (document.getElementById("facilitator-status")?.textContent === "Muted") {
+    setFacilitatorStatus("listening");
+  }
 }
 
 export function setPlatoTileSpeaking(text) {
@@ -149,7 +177,7 @@ export function setPlatoTileSpeaking(text) {
 
   state.platoSpeakingTimer = setTimeout(() => {
     tile.classList.remove("speaking");
-    if (tileStatus) tileStatus.textContent = "Listening";
+    if (tileStatus) tileStatus.textContent = state.platoMicMuted ? "Muted" : "Listening";
     if (tileText) tileText.textContent = "";
     setFacilitatorStatus("listening");
   }, speakingMs);

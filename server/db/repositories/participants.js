@@ -14,7 +14,6 @@ async function add(sessionId, { name, age, role = 'participant', userId = null }
     const result = await db.query(
       `INSERT INTO participants (session_id, name, age, role, user_id)
        VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (session_id, name) DO UPDATE SET left_at = NULL, user_id = COALESCE(EXCLUDED.user_id, participants.user_id)
        RETURNING *`,
       [sessionId, name, age || null, role, userId]
     );
@@ -25,7 +24,6 @@ async function add(sessionId, { name, age, role = 'participant', userId = null }
     const legacyResult = await db.query(
       `INSERT INTO participants (session_id, name, age, role)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (session_id, name) DO UPDATE SET left_at = NULL
        RETURNING *`,
       [sessionId, name, age || null, role]
     );

@@ -4,11 +4,12 @@
  * Initializes all event listeners for the application.
  */
 
-import { state, MAX_MATERIALS, clearState, saveState, getAge, saveAuthState, clearAuthState, abandonDraftSession, canManageClasses } from './state.js';
+import { state, MAX_MATERIALS, clearState, saveState, getAge, saveAuthState, clearAuthState, abandonDraftSession, canManageClasses, setSessionAccessToken, getSessionAccessToken } from './state.js';
 import { send } from './websocket.js';
-import { showScreen, resetConversationFeed, clearLocalSpeechDraft, addTranscriptEntry } from './ui.js';
+import { showScreen, resetConversationFeed, clearLocalSpeechDraft, addTranscriptEntry, flushSttBatch } from './ui.js';
 import { primeMaterials, renderMaterials } from './materials.js';
 import { handleRegister, handleLogin, handleDemoTeacherLogin, handleCreateClass, handleLogout, refreshWorkspace, renderAuthState, renderClasses, renderSessionHistory, apiPost, showAuthCard } from './auth.js';
+import { setPlatoMicMuted } from './speech.js';
 
 // Re-export apiPost for use in event handlers
 export { apiPost };
@@ -203,6 +204,7 @@ export function initEventListeners() {
       if (!session.shortCode) {
         throw new Error("Server returned session without shortCode");
       }
+      setSessionAccessToken(session.shortCode, session.sessionAccessToken);
       refreshWorkspace();
       state.currentSessionId = session.shortCode;
       state.isHost = true;
@@ -211,7 +213,8 @@ export function initEventListeners() {
         sessionId: session.shortCode,
         name: state.myName,
         age: getAge(),
-        authToken: state.authToken
+        authToken: state.authToken,
+        sessionAccessToken: getSessionAccessToken(session.shortCode)
       });
     }).catch(error => {
       console.error("[Session] Creation error:", error);
@@ -227,7 +230,7 @@ export function initEventListeners() {
     const code = document.getElementById("join-code-input").value.trim().toLowerCase();
     if (!state.myName) { alert("Enter your name"); return; }
     if (!code) { alert("Enter a session code"); return; }
-    send({ type: "join_session", sessionId: code, name: state.myName, age: getAge(), authToken: state.authToken });
+    send({ type: "join_session", sessionId: code, name: state.myName, age: getAge(), authToken: state.authToken, sessionAccessToken: getSessionAccessToken(code) });
   });
 
   // ---- Student Dashboard Buttons ----
@@ -238,7 +241,7 @@ export function initEventListeners() {
     state.myName = state.accountUser.name;
     const code = document.getElementById("join-code-input-student")?.value.trim().toLowerCase();
     if (!code) { alert("Enter a session code"); return; }
-    send({ type: "join_session", sessionId: code, name: state.myName, age: getAge(), authToken: state.authToken });
+    send({ type: "join_session", sessionId: code, name: state.myName, age: getAge(), authToken: state.authToken, sessionAccessToken: getSessionAccessToken(code) });
   });
 
   // ---- Parent Dashboard Buttons ----
@@ -257,7 +260,25 @@ export function initEventListeners() {
   // End discussion
   on("video-end-btn", "click", () => {
     if (confirm("End the discussion for everyone?")) {
+      flushSttBatch();
       send({ type: "end_discussion" });
+    }
+  });
+
+  on("plato-mic-toggle", "click", async () => {
+    const nextMuted = !state.platoMicMuted;
+    setPlatoMicMuted(nextMuted);
+    if (!state.jitsiApi || typeof state.jitsiApi.executeCommand !== "function") return;
+    try {
+      let currentMuted = state.jitsiMicMuted;
+      if (typeof state.jitsiApi.isAudioMuted === "function") {
+        currentMuted = await state.jitsiApi.isAudioMuted();
+      }
+      if (!!currentMuted !== nextMuted) {
+        state.jitsiApi.executeCommand("toggleAudio");
+      }
+    } catch (error) {
+      console.warn("[Jitsi] Could not sync Jitsi mic with Plato mic:", error?.message || error);
     }
   });
 

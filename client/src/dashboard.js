@@ -13,6 +13,29 @@
   let participantCount = 0;
   let sourceReloadScheduled = false;
   let applyingRemoteParams = false;
+  const AUTH_TOKEN_KEY = "socratic_auth_token";
+  const SESSION_ACCESS_TOKEN_KEY = "socratic_session_access_tokens";
+
+  function getAuthToken() {
+    try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch (_error) { return null; }
+  }
+
+  function getAuthHeaders(extra = {}) {
+    const token = getAuthToken();
+    const headers = token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
+    const sessionToken = getSessionAccessToken(sessionId);
+    if (sessionToken) headers["X-Session-Access"] = sessionToken;
+    return headers;
+  }
+
+  function getSessionAccessToken(code) {
+    try {
+      const tokens = JSON.parse(localStorage.getItem(SESSION_ACCESS_TOKEN_KEY) || "{}");
+      return code ? tokens[code] || null : null;
+    } catch (_error) {
+      return null;
+    }
+  }
 
   // --- DOM refs ---
   const $ = (id) => document.getElementById(id);
@@ -68,7 +91,12 @@
     ws = new WebSocket(`${protocol}//${location.host}`);
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "join_dashboard", sessionId: code }));
+      ws.send(JSON.stringify({
+        type: "join_dashboard",
+        sessionId: code,
+        authToken: getAuthToken(),
+        sessionAccessToken: getSessionAccessToken(code)
+      }));
     };
 
     ws.onmessage = (event) => {
@@ -295,7 +323,9 @@
     }
 
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/source-text`);
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/source-text`, {
+        headers: getAuthHeaders()
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
       sourceMaterials = payload.materials || [];

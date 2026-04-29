@@ -35,11 +35,15 @@ export async function primeMaterials() {
       if (m.type === "file") {
         const formData = new FormData();
         formData.append("file", m.file);
-        await fetch(`/api/sessions/${state.currentSessionId}/materials`, {
+        const response = await fetch(`/api/sessions/${state.currentSessionId}/materials`, {
           method: "POST",
           headers: getAuthHeaders(),
           body: formData
         });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || `Upload failed ${response.status}`);
+        }
       } else if (m.type === "url") {
         await apiPost(`/api/sessions/${state.currentSessionId}/materials`, { url: m.url });
       }
