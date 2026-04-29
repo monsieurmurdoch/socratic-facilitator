@@ -524,7 +524,8 @@ class SessionManager {
 
     const pipelineLatencyMs = Date.now() - pipelineStart;
 
-    if (decision.shouldSpeak && !hardConstraints.canSpeak && !decision.forced) {
+    const forcedSoloReply = decision.forced || decision.forcedBySoloCadence;
+    if (decision.shouldSpeak && !hardConstraints.canSpeak && !forcedSoloReply) {
       decision = {
         ...decision,
         shouldSpeak: false,

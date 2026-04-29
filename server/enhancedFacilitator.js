@@ -110,11 +110,17 @@ class EnhancedFacilitationEngine {
       ageCalibration
     });
 
-    if (isSolo && !decision.shouldSpeak && !decision.deferred) {
+    if (isSolo && !decision.shouldSpeak) {
       decision.shouldSpeak = true;
+      decision.deferred = false;
       decision.reason = `${decision.reason || 'solo_dialogue'}; solo_turn_response`;
       decision.activation = Math.max(Number(decision.activation || 0), responsePolicy.minimumActivation);
       decision.forcedBySoloCadence = true;
+    }
+
+    if (isSolo && decision.shouldSpeak) {
+      decision.forcedBySoloCadence = true;
+      decision.forced = true;
     }
 
     // If we should speak, generate the message
@@ -134,6 +140,8 @@ class EnhancedFacilitationEngine {
         targetParticipantName: generatedMessage.targetParticipantName,
         reasoning: decision.reason,
         activation: decision.activation,
+        forced: !!decision.forced,
+        forcedBySoloCadence: !!decision.forcedBySoloCadence,
         analysis
       };
     }
@@ -143,6 +151,8 @@ class EnhancedFacilitationEngine {
       shouldSpeak: false,
       reasoning: decision.reason,
       activation: decision.activation,
+      forced: !!decision.forced,
+      forcedBySoloCadence: !!decision.forcedBySoloCadence,
       analysis,
       responsePolicy
     };
@@ -180,6 +190,8 @@ class EnhancedFacilitationEngine {
       move: result.move || null,
       targetParticipantName: result.targetParticipantName || null,
       message: result.message || null,
+      forced: !!result.forced,
+      forcedBySoloCadence: !!result.forcedBySoloCadence,
       stateUpdates: {},
       _debug: result.analysis  // Include analysis for debugging
     };
