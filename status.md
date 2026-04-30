@@ -98,6 +98,19 @@ Conversation lifecycle categories worth labeling:
 <!-- PUSH-UPDATE:CURRENT:START -->
 ## Current Push Snapshot
 
+- Last updated: 2026-04-30T20:37:43.687Z
+- Branch: feat/semantic-retrieval
+- Commit: 25eda24
+- Push remote: origin
+- Working tree:
+  - Clean working tree
+<!-- PUSH-UPDATE:CURRENT:END -->
+
+## Archived Push Updates
+
+<!-- PUSH-UPDATE:ARCHIVE:START -->
+## Current Push Snapshot
+
 - Last updated: 2026-04-30T20:36:52.958Z
 - Branch: feat/semantic-retrieval
 - Commit: 94b5f50
@@ -115,11 +128,9 @@ Conversation lifecycle categories worth labeling:
   -  M docs/roadmap-bizplan.md
   -  M server/db/repositories/participants.js
   -  M server/db/repositories/sessions.js
-<!-- PUSH-UPDATE:CURRENT:END -->
 
-## Archived Push Updates
+---
 
-<!-- PUSH-UPDATE:ARCHIVE:START -->
 ## Current Push Snapshot
 
 - Last updated: 2026-04-30T05:08:23.971Z
