@@ -862,6 +862,8 @@
       </div>
       <p class="room-code-note">Room codes stay the same for the class. Live session codes change each time you start a new session.</p>`;
 
+    renderMaterials();
+
     // Wire up buttons
     card.querySelector('.class-expanded-edit-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
