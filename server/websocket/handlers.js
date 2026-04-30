@@ -809,6 +809,7 @@ async function handleEndDiscussion(ws, msg, ctx) {
   if (!session) return;
 
   await ctx.sessionManager.flushPendingWarmupTurns?.(ctx.currentSessionShortCode, { respond: false });
+  await ctx.sessionManager.flushPendingActiveTurns?.(ctx.currentSessionShortCode, { respond: false });
 
   session.active = false;
   await ctx.deps.sessionsRepo.updateStatus(session.dbSession.id, 'ended');

@@ -142,6 +142,7 @@ describe("WebSocket room controls", () => {
     const ws = new MockWebSocket();
     const ctx = createContext(session, "teacher-client");
     ctx.sessionManager.flushPendingWarmupTurns = jest.fn(async () => {});
+    ctx.sessionManager.flushPendingActiveTurns = jest.fn(async () => {});
     ctx.deps.sessionsRepo.updateStatus = jest.fn(async () => ({ ...session.dbSession, status: "ended" }));
     ctx.deps.enhancedEngine.cleanupSession = jest.fn();
     ctx.deps.enhancedEngine.generateClosing = jest.fn(async () => "Thanks for the discussion.");
@@ -149,6 +150,7 @@ describe("WebSocket room controls", () => {
     await HANDLERS.end_discussion(ws, { type: "end_discussion" }, ctx);
 
     expect(ctx.sessionManager.flushPendingWarmupTurns).toHaveBeenCalledWith("room1", { respond: false });
+    expect(ctx.sessionManager.flushPendingActiveTurns).toHaveBeenCalledWith("room1", { respond: false });
     expect(ctx.deps.enhancedEngine.generateClosing).toHaveBeenCalledWith(session.stateTracker);
     expect(session.stateTracker.recordAIMessage).toHaveBeenCalledWith("Thanks for the discussion.", "synthesize");
     expect(teacherWs.findSent("discussion_ended")).toBeDefined();

@@ -149,4 +149,135 @@ describe("SessionManager speech patience", () => {
 
     jest.useRealTimers();
   });
+
+  test("batches active STT fragments into one persisted participant turn", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(Date.parse("2026-04-14T19:00:00Z"));
+
+    const mockWs = new MockWebSocket();
+    const deps = {
+      useEnhancedSystem: true,
+      messageAssessor: {
+        assess: jest.fn().mockResolvedValue({
+          engagement: { specificity: 0.7, profoundness: 0.5, coherence: 0.8 },
+          anchor: { isAnchor: false },
+          referencesAnchors: [],
+          briefReasoning: "Participant develops a connected thought."
+        })
+      },
+      enhancedEngine: {
+        processMessage: jest.fn().mockResolvedValue({
+          shouldSpeak: true,
+          message: "What makes that cycle feel surprising?",
+          move: "probe",
+          forced: true
+        })
+      }
+    };
+    const manager = new SessionManager(deps);
+
+    const participant = { id: "p1", dbId: "participant-db-1", name: "Demo Teacher", age: 25 };
+    const session = {
+      active: true,
+      clients: [{ ws: mockWs, clientId: "p1" }],
+      paramOverrides: { speechPatienceMode: "balanced" },
+      stateTracker: {
+        participants: new Map([["p1", participant]]),
+        messages: [],
+        sessionId: "room1-db",
+        recordMessage: jest.fn(async (_clientId, text) => {
+          const recorded = { dbId: "msg-1", dbParticipantId: "participant-db-1", text };
+          session.stateTracker.messages.push({ participantId: "p1", participantName: "Demo Teacher", text });
+          return recorded;
+        }),
+        recordAIMessage: jest.fn(async (text, move) => {
+          session.stateTracker.messages.push({ participantId: "__facilitator__", participantName: "Facilitator", text, move });
+        }),
+        getHardConstraints: jest.fn(async () => ({ canSpeak: true, reasons: [] }))
+      },
+      topic: { title: "Ozymandias", openingQuestion: "What remains?" }
+    };
+
+    manager.set("room1", session);
+
+    await manager.handleParticipantMessage("room1", "p1", "It doesn't seem depressing to me.", { source: "stt" });
+    await manager.handleParticipantMessage("room1", "p1", "I mean, there's something cyclical about civilization.", { source: "stt" });
+
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(session.stateTracker.recordMessage).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(200);
+
+    const expectedText = "It doesn't seem depressing to me. I mean, there's something cyclical about civilization.";
+    expect(session.stateTracker.recordMessage).toHaveBeenCalledTimes(1);
+    expect(session.stateTracker.recordMessage).toHaveBeenCalledWith("p1", expectedText);
+    expect(mockWs.findSent("participant_message")).toEqual(expect.objectContaining({
+      name: "Demo Teacher",
+      senderId: "p1",
+      text: expectedText
+    }));
+    expect(mockWs.findSent("facilitator_message")).toEqual(expect.objectContaining({
+      text: "What makes that cycle feel surprising?",
+      move: "probe"
+    }));
+
+    jest.useRealTimers();
+  });
+
+  test("flushes pending active STT without triggering a new AI response", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(Date.parse("2026-04-14T19:00:00Z"));
+
+    const mockWs = new MockWebSocket();
+    const deps = {
+      useEnhancedSystem: true,
+      messageAssessor: {
+        assess: jest.fn().mockResolvedValue({
+          engagement: { specificity: 0.6, profoundness: 0.4, coherence: 0.7 },
+          anchor: { isAnchor: false },
+          referencesAnchors: [],
+          briefReasoning: "Final participant turn before ending."
+        })
+      },
+      enhancedEngine: {
+        processMessage: jest.fn()
+      }
+    };
+    const manager = new SessionManager(deps);
+
+    const participant = { id: "p1", dbId: "participant-db-1", name: "Demo Teacher", age: 25 };
+    const session = {
+      active: true,
+      clients: [{ ws: mockWs, clientId: "p1" }],
+      stateTracker: {
+        participants: new Map([["p1", participant]]),
+        messages: [],
+        sessionId: "room1-db",
+        recordMessage: jest.fn(async (_clientId, text) => ({ dbId: "msg-2", dbParticipantId: "participant-db-1", text })),
+        getHardConstraints: jest.fn(async () => ({ canSpeak: true, reasons: [] }))
+      },
+      topic: { title: "Ozymandias", openingQuestion: "What remains?" }
+    };
+
+    manager.set("room1", session);
+
+    await manager.handleParticipantMessage("room1", "p1", "but I think it inspires", { source: "stt" });
+    await manager.handleParticipantMessage("room1", "p1", "a surprising feeling.", { source: "stt" });
+
+    await manager.flushPendingActiveTurns("room1", { respond: false });
+
+    expect(session.stateTracker.recordMessage).toHaveBeenCalledTimes(1);
+    expect(session.stateTracker.recordMessage).toHaveBeenCalledWith(
+      "p1",
+      "but I think it inspires a surprising feeling."
+    );
+    expect(deps.enhancedEngine.processMessage).not.toHaveBeenCalled();
+    expect(mockWs.findSent("participant_message")).toBeDefined();
+    expect(mockWs.findSent("facilitator_message")).toBeNull();
+
+    await jest.advanceTimersByTimeAsync(2000);
+    expect(session.stateTracker.recordMessage).toHaveBeenCalledTimes(1);
+
+    jest.useRealTimers();
+  });
 });

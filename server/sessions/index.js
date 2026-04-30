@@ -93,6 +93,9 @@ class SessionManager {
     if (!session.warmupSpeechVersions) {
       session.warmupSpeechVersions = new Map();
     }
+    if (!session.pendingActiveTurns) {
+      session.pendingActiveTurns = new Map();
+    }
   }
 
   /**
@@ -309,6 +312,40 @@ class SessionManager {
     }
   }
 
+  async finalizeActiveTurn(sessionShortCode, clientId, options = {}) {
+    const session = this.activeSessions.get(sessionShortCode);
+    if (!session || !session.active) return;
+
+    this.ensureWarmupState(session);
+    const pendingTurn = session.pendingActiveTurns.get(clientId);
+    if (!pendingTurn) return;
+    if (pendingTurn.timer) {
+      clearTimeout(pendingTurn.timer);
+    }
+
+    session.pendingActiveTurns.delete(clientId);
+    const text = pendingTurn.text
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) return;
+
+    await this.processActiveParticipantMessage(sessionShortCode, clientId, text, {
+      ...options,
+      source: pendingTurn.source || "stt"
+    });
+  }
+
+  async flushPendingActiveTurns(sessionShortCode, options = {}) {
+    const session = this.activeSessions.get(sessionShortCode);
+    if (!session || !session.active) return;
+    this.ensureWarmupState(session);
+
+    const pendingClientIds = Array.from(session.pendingActiveTurns.keys());
+    for (const clientId of pendingClientIds) {
+      await this.finalizeActiveTurn(sessionShortCode, clientId, options);
+    }
+  }
+
   /**
    * Queue warmup turn for processing
    */
@@ -349,6 +386,37 @@ class SessionManager {
     }, delay);
 
     session.pendingWarmupTurns.set(clientId, pendingTurn);
+  }
+
+  queueActiveTurn(sessionShortCode, clientId, text, source = "stt") {
+    const session = this.activeSessions.get(sessionShortCode);
+    if (!session || !session.active) return;
+
+    this.ensureWarmupState(session);
+
+    const normalizedText = String(text || "").trim();
+    if (!normalizedText) return;
+
+    const existing = session.pendingActiveTurns.get(clientId);
+    const pendingTurn = existing || { text: "", source };
+    pendingTurn.text = pendingTurn.text
+      ? `${pendingTurn.text} ${normalizedText}`
+      : normalizedText;
+    pendingTurn.source = source;
+
+    if (pendingTurn.timer) {
+      clearTimeout(pendingTurn.timer);
+    }
+
+    const speechPatience = this.getSpeechPatience(session);
+    const delay = source === "stt" ? speechPatience.warmupMergeMs : 0;
+    pendingTurn.timer = setTimeout(() => {
+      this.finalizeActiveTurn(sessionShortCode, clientId).catch((error) => {
+        console.error("[active-stt] finalize turn error:", error.message);
+      });
+    }, delay);
+
+    session.pendingActiveTurns.set(clientId, pendingTurn);
   }
 
   /**
@@ -474,6 +542,21 @@ class SessionManager {
       return;
     }
 
+    if ((meta.source || "text") === "stt") {
+      this.queueActiveTurn(sessionShortCode, clientId, text, "stt");
+      return;
+    }
+
+    await this.processActiveParticipantMessage(sessionShortCode, clientId, text, meta);
+  }
+
+  async processActiveParticipantMessage(sessionShortCode, clientId, text, meta = {}) {
+    const session = this.activeSessions.get(sessionShortCode);
+    if (!session || !session.active) return;
+
+    const participant = session.stateTracker.participants.get(clientId);
+    if (!participant) return;
+
     // ── Active discussion: full pedagogical pipeline ──
     const previousMessage = session.stateTracker.messages?.at(-1) || null;
     let llmAssessment = null;
@@ -499,6 +582,11 @@ class SessionManager {
     // If teacher paused Plato, skip facilitation pipeline
     if (session.paused) {
       console.log(`[${sessionShortCode}] ${participant.name}: "${text}" [PAUSED — skipping pipeline]`);
+      return;
+    }
+
+    if (meta.respond === false) {
+      console.log(`[${sessionShortCode}] ${participant.name}: "${text}" [recorded without response]`);
       return;
     }
 
