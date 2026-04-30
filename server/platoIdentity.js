@@ -13,7 +13,7 @@ const PLATO_IDENTITY = {
   name: 'Plato',
 
   // Short description for tooltips/info
-  tagline: 'Socratic Facilitator',
+  tagline: 'Expanse',
 
   // For video display - use a static image
   avatar: {
@@ -22,7 +22,7 @@ const PLATO_IDENTITY = {
     src: '/images/plato-statue.jpg',
     // Fallback to a CDN-hosted image if local not available
     fallbackSrc: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Plato_Silanion_Musei_Capitolini_MC1377.jpg/440px-Plato_Silanion_Musei_Capitolini_MC1377.jpg',
-    alt: 'Plato - Socratic Facilitator',
+    alt: 'Plato - Expanse',
     // CSS filter for subtle animation effect
     style: {
       filter: 'sepia(0.2) contrast(1.1)',

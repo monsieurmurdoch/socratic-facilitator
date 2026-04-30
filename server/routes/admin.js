@@ -3,12 +3,14 @@ const router = express.Router();
 const adminRepo = require('../db/repositories/admin');
 const auditLogsRepo = require('../db/repositories/auditLogs');
 const modelEvalRunsRepo = require('../db/repositories/modelEvalRuns');
+const labelQueueRepo = require('../db/repositories/labelQueue');
 const maintenanceRunsRepo = require('../db/repositories/maintenanceRuns');
 const retentionRepo = require('../db/repositories/retention');
 const { requireAnyRole, USER_ROLES } = require('../auth');
 const { logAudit } = require('../audit');
 const { MessageAssessor } = require('../analysis/messageAssessor');
 const { runMessageAssessmentEval, MESSAGE_ASSESSMENT_FIXTURES } = require('../analysis/evals/messageAssessmentEval');
+const { runFacilitationPolicyEval, FACILITATION_POLICY_FIXTURES } = require('../analysis/evals/facilitationPolicyEval');
 const { fastLLM } = require('../analysis/fastLLMProvider');
 const { DEFAULT_ANTHROPIC_MODEL, DEFAULT_FAST_LLM_MODEL } = require('../models');
 
@@ -196,6 +198,101 @@ router.post('/evals/message-assessor/run', async (req, res) => {
   } catch (error) {
     console.error('Admin eval run error:', error);
     res.status(500).json({ error: error.message || 'Failed to run evaluation' });
+  }
+});
+
+router.get('/evals/facilitation-policy', async (req, res) => {
+  try {
+    const evalRuns = await modelEvalRunsRepo.listRecent('facilitation_policy', 12);
+    res.json({
+      fixtureSet: {
+        id: 'bootstrap-v1',
+        caseCount: FACILITATION_POLICY_FIXTURES.length
+      },
+      supportedStrategies: ['plato_policy_vs_baselines'],
+      runs: evalRuns.map(run => ({
+        id: run.id,
+        requestedByName: run.requested_by_name,
+        strategy: run.strategy,
+        fixtureSet: run.fixture_set,
+        modelLabel: run.model_label,
+        totalCases: run.total_cases,
+        completedCases: run.completed_cases,
+        overallScore: run.overall_score == null ? null : Number(run.overall_score),
+        metrics: run.metrics,
+        createdAt: run.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Admin facilitation eval history error:', error);
+    res.status(500).json({ error: 'Failed to load facilitation eval history' });
+  }
+});
+
+router.post('/evals/facilitation-policy/run', async (req, res) => {
+  try {
+    const result = await runFacilitationPolicyEval();
+    const run = await modelEvalRunsRepo.create({
+      requestedByUserId: req.user.id,
+      evalKey: result.evalKey,
+      strategy: 'plato_policy_vs_baselines',
+      fixtureSet: result.fixtureSet,
+      modelLabel: 'Plato policy layer vs prompted baselines',
+      totalCases: result.totalCases,
+      completedCases: result.totalCases,
+      overallScore: result.metrics.platoScore,
+      metrics: result.metrics
+    });
+
+    await logAudit({
+      req,
+      actorUserId: req.user.id,
+      action: 'admin.facilitation_eval_run_created',
+      entityType: 'model_eval_run',
+      entityId: run.id,
+      metadata: result.metrics
+    });
+
+    res.status(201).json({ run, result });
+  } catch (error) {
+    console.error('Admin facilitation eval run error:', error);
+    res.status(500).json({ error: error.message || 'Failed to run facilitation policy eval' });
+  }
+});
+
+router.get('/label-queue', async (req, res) => {
+  try {
+    const requestedStatus = req.query.status ? String(req.query.status) : 'pending';
+    const status = requestedStatus === 'all' ? null : requestedStatus;
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+    const items = await labelQueueRepo.list({ status, limit });
+    res.json({ items });
+  } catch (error) {
+    console.error('Admin label queue list error:', error);
+    res.status(500).json({ error: 'Failed to load label queue' });
+  }
+});
+
+router.patch('/label-queue/:id', async (req, res) => {
+  try {
+    const status = String(req.body.status || 'verified');
+    if (!['pending', 'in_review', 'verified', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid label queue status' });
+    }
+
+    const item = await labelQueueRepo.review(req.params.id, {
+      reviewerUserId: req.user.id,
+      status,
+      humanLabelJson: req.body.humanLabel || {},
+      reviewNotes: req.body.notes || null
+    });
+    if (!item) {
+      return res.status(404).json({ error: 'Label queue item not found' });
+    }
+    res.json({ item });
+  } catch (error) {
+    console.error('Admin label queue review error:', error);
+    res.status(500).json({ error: 'Failed to review label queue item' });
   }
 });
 

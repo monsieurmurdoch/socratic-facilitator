@@ -7,6 +7,7 @@ const { DISCUSSION_TOPICS, FACILITATION_PARAMS, getAgeCalibration, getFacilitati
 const { createStore } = require("./store-factory");
 const profileBuilder = require("../analysis/profileBuilder");
 const messageAnalyticsRepo = require("../db/repositories/messageAnalytics");
+const interventionTelemetryRepo = require("../db/repositories/interventionTelemetry");
 const sessionMembershipsRepo = require("../db/repositories/sessionMemberships");
 const { computeMessageMetrics } = require("../analysis/scoring");
 const { getSpeechPatiencePreset, normalizeSpeechPatienceMode } = require("../speech-patience");
@@ -460,7 +461,32 @@ class SessionManager {
       ? this.findParticipantIdByName(session.stateTracker, decision.targetParticipantName)
       : null;
 
-    await session.stateTracker.recordAIMessage(decision.message, decision.move, targetId);
+    const recordedAIMessage = await session.stateTracker.recordAIMessage(decision.message, decision.move, targetId);
+
+    if (decision.telemetry) {
+      interventionTelemetryRepo.create({
+        sessionId: session.stateTracker.sessionId,
+        triggerMessageId: decision.telemetry.triggerMessageId || null,
+        facilitatorMessageId: recordedAIMessage?.dbId || null,
+        model: decision.telemetry.model || null,
+        promptVersion: decision.telemetry.promptVersion || null,
+        move: decision.move || decision.telemetry.move || null,
+        latencyMs: decision.telemetry.pipelineLatencyMs ?? decision.telemetry.latencyMs ?? null,
+        inputTokens: decision.telemetry.inputTokens ?? null,
+        outputTokens: decision.telemetry.outputTokens ?? null,
+        estimatedCostUsd: decision.telemetry.estimatedCostUsd ?? null,
+        sourceChunkIds: decision.telemetry.sourceChunkIds || [],
+        decisionJson: {
+          ...(decision.telemetry.decisionJson || {}),
+          reasoning: decision.reasoning || decision.reason || null,
+          activation: decision.activation ?? null,
+          forced: !!decision.forced,
+          forcedBySoloCadence: !!decision.forcedBySoloCadence
+        }
+      }).catch(error => {
+        console.warn("[telemetry] Failed to save intervention telemetry:", error.message);
+      });
+    }
 
     this.broadcast(sessionShortCode, {
       type: "facilitator_message",
@@ -603,7 +629,8 @@ class SessionManager {
         participantName: participant.name,
         text,
         timestamp: Date.now(),
-        llmAssessment
+        llmAssessment,
+        dbMessageId: recordedMessage?.dbId || null
       });
     } else {
       // Fallback to legacy decide() path (still uses enhanced engine)

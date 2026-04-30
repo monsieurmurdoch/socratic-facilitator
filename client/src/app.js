@@ -1,5 +1,5 @@
 /**
- * Socratic Facilitator — Client (Video Mode)
+ * Expanse — Client (Video Mode)
  *
  * Flow: Upload materials → Create room → Share link/code → Join Jitsi → Plato facilitates
  */

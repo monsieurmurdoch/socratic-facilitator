@@ -1,4 +1,4 @@
--- Socratic Facilitator Database Schema
+-- Expanse Database Schema
 -- Run this to initialize the database
 
 -- Users table
@@ -88,6 +88,10 @@ CREATE TABLE IF NOT EXISTS participants (
 );
 
 ALTER TABLE IF EXISTS participants DROP CONSTRAINT IF EXISTS participants_session_id_name_key;
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS eval_consent_granted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS consent_status TEXT NOT NULL DEFAULT 'unknown';
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS data_use_mode TEXT NOT NULL DEFAULT 'report_only';
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS allow_eval_export BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Class memberships (students, teachers, parents, etc.)
 CREATE TABLE IF NOT EXISTS class_memberships (
@@ -247,6 +251,41 @@ CREATE INDEX IF NOT EXISTS idx_participants_user ON participants(user_id);
 CREATE INDEX IF NOT EXISTS idx_session_memberships_session ON session_memberships(session_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_session_memberships_user ON session_memberships(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_message_analytics_session ON message_analytics(session_id, created_at);
+
+-- Per-intervention telemetry for model/prompt/cost/source traceability
+CREATE TABLE IF NOT EXISTS intervention_telemetry (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
+  trigger_message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
+  facilitator_message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
+  model TEXT,
+  prompt_version TEXT,
+  move TEXT,
+  latency_ms INTEGER,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  estimated_cost_usd NUMERIC(12, 6),
+  source_chunk_ids UUID[] DEFAULT '{}',
+  decision_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Human-verification queue for LLM-assisted conversation labels
+CREATE TABLE IF NOT EXISTS label_queue_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
+  message_id UUID REFERENCES messages(id) ON DELETE CASCADE,
+  participant_id UUID REFERENCES participants(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_review', 'verified', 'rejected')),
+  source TEXT NOT NULL DEFAULT 'llm_prelabel',
+  prelabel_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  human_label_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  reviewer_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  review_notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ,
+  UNIQUE(message_id)
+);
 
 -- Session debriefs and generated reports
 CREATE TABLE IF NOT EXISTS session_reports (
@@ -471,6 +510,8 @@ CREATE TABLE IF NOT EXISTS maintenance_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_session_reports_session ON session_reports(session_id, generated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_intervention_telemetry_session ON intervention_telemetry(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_label_queue_status ON label_queue_items(status, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_external_integrations_user ON external_integrations(user_id, provider);
 CREATE INDEX IF NOT EXISTS idx_lti_account_links_context ON lti_account_links(registration_id, context_id, last_launched_at DESC);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id, created_at DESC);

@@ -1,7 +1,7 @@
 /**
  * State Management Module
  *
- * Central state object and persistence functions for the Socratic Facilitator client.
+ * Central state object and persistence functions for the Expanse client.
  */
 
 // ---- Constants ----

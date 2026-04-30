@@ -1,5 +1,5 @@
 /**
- * Socratic Facilitator Server
+ * Expanse Server
  *
  * Express server serves the frontend.
  * WebSocket handles real-time multi-party chat.
@@ -150,7 +150,7 @@ async function main() {
     await initialize();
 
     server.listen(PORT, () => {
-      console.log(`\n  Socratic Facilitator running at http://localhost:${PORT}`);
+      console.log(`\n  Expanse running at http://localhost:${PORT}`);
       console.log(`  WebSocket server attached to HTTP server`);
       console.log(`  Ready.\n`);
     });

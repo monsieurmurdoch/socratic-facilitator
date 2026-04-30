@@ -39,6 +39,8 @@ const {
   extractLineReference
 } = require("./content/textGrounding");
 
+const FACILITATION_PROMPT_VERSION = 'facilitation-v1';
+
 class EnhancedFacilitationEngine {
   constructor(apiKey) {
     this.client = new Anthropic({ apiKey });
@@ -78,6 +80,7 @@ class EnhancedFacilitationEngine {
    * @returns {object} Decision with shouldSpeak, message, etc.
    */
   async processMessage(stateTracker, message) {
+    const pipelineStartedAt = Date.now();
     const sessionId = stateTracker.sessionId;
     const ages = Array.from(stateTracker.participants.values()).map(p => p.age);
     const ageCalibration = getAgeCalibration(ages);
@@ -142,6 +145,11 @@ class EnhancedFacilitationEngine {
         activation: decision.activation,
         forced: !!decision.forced,
         forcedBySoloCadence: !!decision.forcedBySoloCadence,
+        telemetry: {
+          ...(generatedMessage.telemetry || {}),
+          triggerMessageId: message.dbMessageId || null,
+          pipelineLatencyMs: Date.now() - pipelineStartedAt
+        },
         analysis
       };
     }
@@ -156,6 +164,14 @@ class EnhancedFacilitationEngine {
       analysis,
       responsePolicy
     };
+  }
+
+  _estimateCostUsd(usage = {}) {
+    const inputTokens = Number(usage.input_tokens || 0);
+    const outputTokens = Number(usage.output_tokens || 0);
+    const inputPerMillion = Number(process.env.ANTHROPIC_INPUT_USD_PER_MILLION || 0.8);
+    const outputPerMillion = Number(process.env.ANTHROPIC_OUTPUT_USD_PER_MILLION || 4);
+    return Math.round(((inputTokens * inputPerMillion) + (outputTokens * outputPerMillion)) / 1000000 * 1000000) / 1000000;
   }
 
   /**
@@ -332,6 +348,7 @@ class EnhancedFacilitationEngine {
       groundingSnippet
     );
 
+    const generationStartedAt = Date.now();
     try {
       const response = await claudeBreaker.execute(() =>
         Promise.race([
@@ -366,7 +383,25 @@ class EnhancedFacilitationEngine {
         text: result.message,
         move: result.move,
         targetParticipantName: result.targetParticipantName,
-        isAnchor: result.isAnchor || false
+        isAnchor: result.isAnchor || false,
+        telemetry: {
+          model: this.model,
+          promptVersion: FACILITATION_PROMPT_VERSION,
+          move: result.move,
+          latencyMs: Date.now() - generationStartedAt,
+          inputTokens: Number(response.usage?.input_tokens || 0),
+          outputTokens: Number(response.usage?.output_tokens || 0),
+          estimatedCostUsd: this._estimateCostUsd(response.usage || {}),
+          sourceChunkIds: groundingChunkIds,
+          decisionJson: {
+            interventionType,
+            targetParticipantName: result.targetParticipantName || null,
+            isAnchor: !!result.isAnchor,
+            responsePolicy,
+            steeringEligible,
+            steeringChunkId: steeringChunk?.id || null
+          }
+        }
       };
     } catch (error) {
       console.error("Message generation error:", error.message);
@@ -374,7 +409,15 @@ class EnhancedFacilitationEngine {
         text: "Can you say more about that?",
         move: "deepen",
         targetParticipantName: null,
-        isAnchor: false
+        isAnchor: false,
+        telemetry: {
+          model: this.model,
+          promptVersion: FACILITATION_PROMPT_VERSION,
+          move: "deepen",
+          latencyMs: Date.now() - generationStartedAt,
+          sourceChunkIds: groundingChunkIds,
+          decisionJson: { error: error.message, fallback: true }
+        }
       };
     }
   }

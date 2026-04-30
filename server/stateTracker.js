@@ -368,7 +368,8 @@ class SessionStateTracker {
 
     // Persist to database
     try {
-      await messagesRepo.addFacilitatorMessage(this.sessionId, text, move, targetParticipantId);
+      const dbMessage = await messagesRepo.addFacilitatorMessage(this.sessionId, text, move, targetParticipantId);
+      message.dbId = dbMessage.id;
     } catch (error) {
       console.error('Error saving AI message to database:', error);
     }

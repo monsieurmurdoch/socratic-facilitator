@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Socratic Facilitator</title>
+  <title>Expanse</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/images/expanse-icon.png">
   <link rel="stylesheet" href="/src/style.css?v=23">
 </head>
 <body>
@@ -13,14 +15,18 @@
 
     <!-- Signed-out header -->
     <div id="unsigned-header" class="welcome-header">
-      <span class="welcome-badge">Seminar Rooms For Real Discussion</span>
-      <h1>Socratic Facilitator</h1>
+      <img class="welcome-mark" src="/images/expanse-icon.png" srcset="/images/expanse-icon.png 1x, /images/expanse-icon@2x.png 2x, /images/expanse-icon@3x.png 3x" alt="">
+      <span class="welcome-badge">Expand Every Conversation</span>
+      <h1>Expanse</h1>
       <p>Give every class a stable room, preserve the memory of each session, and let Plato push thinking forward without taking the conversation over.</p>
     </div>
 
     <!-- Signed-in header bar (hidden until logged in) -->
     <div id="signed-in-header" class="user-header" style="display:none;">
-      <h1>Socratic Facilitator</h1>
+      <div class="user-brand">
+        <img class="user-brand-mark" src="/images/expanse-icon.png" srcset="/images/expanse-icon.png 1x, /images/expanse-icon@2x.png 2x" alt="">
+        <h1>Expanse</h1>
+      </div>
       <div class="user-header-right">
         <div class="user-avatar" id="user-avatar-initial">T</div>
         <div class="user-header-info">
@@ -417,7 +423,7 @@
         <div id="jitsi-container"></div>
         <div id="plato-tile" class="plato-tile">
           <div class="plato-tile-avatar">
-            <div class="plato-tile-icon">P</div>
+            <div class="plato-tile-icon"><img src="/images/expanse-icon.png" srcset="/images/expanse-icon.png 1x, /images/expanse-icon@2x.png 2x, /images/expanse-icon@3x.png 3x" alt="" style="width:100%;height:100%;object-fit:contain;"></div>
             <div class="plato-speaking-rings">
               <div class="ring ring-1"></div>
               <div class="ring ring-2"></div>
@@ -434,7 +440,7 @@
 
       <div class="video-sidebar">
         <div class="sidebar-header">
-          <div class="plato-avatar-small">P</div>
+          <div class="plato-avatar-small"><img src="/images/expanse-icon.png" srcset="/images/expanse-icon.png 1x, /images/expanse-icon@2x.png 2x" alt="" style="width:100%;height:100%;object-fit:contain;"></div>
           <div>
             <h3>Plato</h3>
             <span id="facilitator-status" class="status-badge listening">Listening</span>
@@ -464,7 +470,7 @@
         <div class="sidebar-controls">
           <div class="sidebar-controls-top">
             <button id="start-discussion-btn" class="btn btn-primary">Start Discussion</button>
-            <a id="video-dashboard-btn" href="#" target="_blank" class="btn btn-dashboard" style="display:none;" title="Open Plato Dashboard in new tab">
+            <a id="video-dashboard-btn" href="#" target="_blank" class="btn btn-dashboard" style="display:none;" title="Open Dashboard in new tab">
               <span class="dash-icon">&#9638;&#9638;&#9638;</span> Dashboard
             </a>
           </div>

@@ -98,6 +98,126 @@ Conversation lifecycle categories worth labeling:
 <!-- PUSH-UPDATE:CURRENT:START -->
 ## Current Push Snapshot
 
+- Last updated: 2026-04-30T20:36:52.958Z
+- Branch: feat/semantic-retrieval
+- Commit: 94b5f50
+- Push remote: origin
+- Working tree:
+  - M .gitignore
+  -  M client/public/admin.html
+  -  M client/public/dashboard.html
+  -  M client/public/index.html
+  -  M client/src/app.js
+  -  M client/src/dashboard.css
+  -  M client/src/main.js
+  -  M client/src/state.js
+  -  M client/src/style.css
+  -  M docs/roadmap-bizplan.md
+  -  M server/db/repositories/participants.js
+  -  M server/db/repositories/sessions.js
+<!-- PUSH-UPDATE:CURRENT:END -->
+
+## Archived Push Updates
+
+<!-- PUSH-UPDATE:ARCHIVE:START -->
+## Current Push Snapshot
+
+- Last updated: 2026-04-30T05:08:23.971Z
+- Branch: feat/semantic-retrieval
+- Commit: 50aa13b
+- Push remote: origin
+- Working tree:
+  - M status.md
+  - ?? "# Cold DM playbook \342\200\224 cohort instructors.md"
+  - ?? "# Multi-Party Facilitation Trajectories "
+  - ?? "# Socratic Facilitator \342\200\224 6-Month Business.md"
+  - ?? "docs/Socratic Facilitator_Notes.pages"
+  - ?? docs/socratic_facilitator_blueprint.docx
+
+---
+
+## Current Push Snapshot
+
+- Last updated: 2026-04-30T04:51:34.867Z
+- Branch: feat/semantic-retrieval
+- Commit: 9208b74
+- Push remote: origin
+- Working tree:
+  - M status.md
+  - ?? "# Cold DM playbook \342\200\224 cohort instructors.md"
+  - ?? "# Multi-Party Facilitation Trajectories "
+  - ?? "# Socratic Facilitator \342\200\224 6-Month Business.md"
+  - ?? "docs/Socratic Facilitator_Notes.pages"
+  - ?? docs/socratic_facilitator_blueprint.docx
+
+---
+
+## Current Push Snapshot
+
+- Last updated: 2026-04-30T04:42:48.774Z
+- Branch: feat/semantic-retrieval
+- Commit: 26cf1e2
+- Push remote: origin
+- Working tree:
+  - M status.md
+  - ?? "# Cold DM playbook \342\200\224 cohort instructors.md"
+  - ?? "# Multi-Party Facilitation Trajectories "
+  - ?? "# Socratic Facilitator \342\200\224 6-Month Business.md"
+  - ?? "docs/Socratic Facilitator_Notes.pages"
+  - ?? docs/socratic_facilitator_blueprint.docx
+
+---
+
+## Current Push Snapshot
+
+- Last updated: 2026-04-30T01:30:52.500Z
+- Branch: feat/semantic-retrieval
+- Commit: 45dd7f7
+- Push remote: origin
+- Working tree:
+  - M status.md
+  - ?? "# Cold DM playbook \342\200\224 cohort instructors.md"
+  - ?? "# Multi-Party Facilitation Trajectories "
+  - ?? "# Socratic Facilitator \342\200\224 6-Month Business.md"
+  - ?? "docs/Socratic Facilitator_Notes.pages"
+  - ?? docs/socratic_facilitator_blueprint.docx
+
+---
+
+## Current Push Snapshot
+
+- Last updated: 2026-04-29T21:50:43.393Z
+- Branch: feat/semantic-retrieval
+- Commit: f295533
+- Push remote: origin
+- Working tree:
+  - M status.md
+  - ?? "# Cold DM playbook \342\200\224 cohort instructors.md"
+  - ?? "# Multi-Party Facilitation Trajectories "
+  - ?? "# Socratic Facilitator \342\200\224 6-Month Business.md"
+  - ?? "docs/Socratic Facilitator_Notes.pages"
+  - ?? docs/socratic_facilitator_blueprint.docx
+
+---
+
+## Current Push Snapshot
+
+- Last updated: 2026-04-29T21:26:47.328Z
+- Branch: feat/semantic-retrieval
+- Commit: fcd8de9
+- Push remote: origin
+- Working tree:
+  - M status.md
+  - ?? "# Cold DM playbook \342\200\224 cohort instructors.md"
+  - ?? "# Multi-Party Facilitation Trajectories "
+  - ?? "# Socratic Facilitator \342\200\224 6-Month Business.md"
+  - ?? "docs/Socratic Facilitator_Notes.pages"
+  - ?? docs/socratic_facilitator_blueprint.docx
+
+---
+
+## Current Push Snapshot
+
 - Last updated: 2026-04-27T21:33:13.691Z
 - Branch: feat/semantic-retrieval
 - Commit: e7418a0
@@ -113,11 +233,9 @@ Conversation lifecycle categories worth labeling:
   - ?? "# Socratic Facilitator \342\200\224 6-Month Business.md"
   - ?? "docs/Socratic Facilitator_Notes.pages"
   - ?? docs/socratic_facilitator_blueprint.docx
-<!-- PUSH-UPDATE:CURRENT:END -->
 
-## Archived Push Updates
+---
 
-<!-- PUSH-UPDATE:ARCHIVE:START -->
 ## Current Push Snapshot
 
 - Last updated: 2026-04-24T07:40:59.525Z

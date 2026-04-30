@@ -12,6 +12,9 @@ const materialsRepo = require('../db/repositories/materials');
 const materialChunksRepo = require('../db/repositories/materialChunks');
 const primedContextRepo = require('../db/repositories/primedContext');
 const sessionReportsRepo = require('../db/repositories/sessionReports');
+const interventionTelemetryRepo = require('../db/repositories/interventionTelemetry');
+const labelQueueRepo = require('../db/repositories/labelQueue');
+const consentExportsRepo = require('../db/repositories/consentExports');
 const classesRepo = require('../db/repositories/classes');
 const classMembershipsRepo = require('../db/repositories/classMemberships');
 const storage = require('../storage');
@@ -331,6 +334,158 @@ router.post('/:shortCode/teacher-notes', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Teacher notes error:', error);
     res.status(500).json({ error: 'Failed to save teacher notes' });
+  }
+});
+
+router.get('/:shortCode/intervention-telemetry', async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+    const session = await sessionsRepo.findByShortCode(shortCode);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    if (!(await requireSessionAccess(req, res, session, { manage: true }))) return;
+
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit || 200)));
+    const rows = await interventionTelemetryRepo.listBySession(session.id, limit);
+    res.json({
+      items: rows.map(row => ({
+        id: row.id,
+        sessionId: row.session_id,
+        triggerMessageId: row.trigger_message_id,
+        facilitatorMessageId: row.facilitator_message_id,
+        model: row.model,
+        promptVersion: row.prompt_version,
+        move: row.move,
+        latencyMs: row.latency_ms,
+        inputTokens: row.input_tokens,
+        outputTokens: row.output_tokens,
+        estimatedCostUsd: row.estimated_cost_usd == null ? null : Number(row.estimated_cost_usd),
+        sourceChunkIds: row.source_chunk_ids || [],
+        decision: row.decision_json || {},
+        createdAt: row.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Intervention telemetry error:', error);
+    res.status(500).json({ error: 'Failed to load intervention telemetry' });
+  }
+});
+
+router.patch('/:shortCode/data-use', async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+    const session = await sessionsRepo.findByShortCode(shortCode);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    if (!(await requireSessionAccess(req, res, session, { manage: true }))) return;
+
+    const dataUseMode = String(req.body?.dataUseMode || 'report_only').trim();
+    const allowedModes = new Set(['report_only', 'eval_export', 'training_export']);
+    if (!allowedModes.has(dataUseMode)) {
+      return res.status(400).json({ error: 'Invalid dataUseMode' });
+    }
+
+    const updated = await sessionsRepo.updateDataUse(session.id, {
+      dataUseMode,
+      allowEvalExport: !!req.body?.allowEvalExport
+    });
+
+    res.json({
+      id: updated.id,
+      shortCode: updated.short_code,
+      dataUseMode: updated.data_use_mode,
+      allowEvalExport: !!updated.allow_eval_export
+    });
+  } catch (error) {
+    console.error('Session data-use error:', error);
+    res.status(500).json({ error: 'Failed to update session data-use settings' });
+  }
+});
+
+router.patch('/:shortCode/participants/:participantId/eval-consent', async (req, res) => {
+  try {
+    const { shortCode, participantId } = req.params;
+    const session = await sessionsRepo.findByShortCode(shortCode);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    if (!(await requireSessionAccess(req, res, session, { manage: true }))) return;
+
+    const participant = await participantsRepo.findById(participantId);
+    if (!participant || participant.session_id !== session.id) {
+      return res.status(404).json({ error: 'Participant not found' });
+    }
+
+    const consentStatus = String(req.body?.consentStatus || (req.body?.evalConsentGranted ? 'granted' : 'denied')).trim();
+    const allowedStatuses = new Set(['unknown', 'granted', 'denied', 'withdrawn']);
+    if (!allowedStatuses.has(consentStatus)) {
+      return res.status(400).json({ error: 'Invalid consentStatus' });
+    }
+
+    const updated = await participantsRepo.updateEvalConsent(participant.id, {
+      evalConsentGranted: consentStatus === 'granted' && !!req.body?.evalConsentGranted,
+      consentStatus
+    });
+
+    res.json({
+      id: updated.id,
+      name: updated.name,
+      evalConsentGranted: !!updated.eval_consent_granted,
+      consentStatus: updated.consent_status
+    });
+  } catch (error) {
+    console.error('Participant eval consent error:', error);
+    res.status(500).json({ error: 'Failed to update participant consent' });
+  }
+});
+
+router.post('/:shortCode/label-queue/enqueue', async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+    const session = await sessionsRepo.findByShortCode(shortCode);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    if (!(await requireSessionAccess(req, res, session, { manage: true }))) return;
+
+    const limit = Math.min(500, Math.max(1, Number(req.body?.limit || 200)));
+    const items = await labelQueueRepo.enqueueFromSession(session.id, { limit });
+    res.status(201).json({
+      enqueuedCount: items.length,
+      items
+    });
+  } catch (error) {
+    console.error('Session label queue enqueue error:', error);
+    res.status(500).json({ error: 'Failed to enqueue labels for verification' });
+  }
+});
+
+router.get('/:shortCode/eval-export', async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+    const session = await sessionsRepo.findByShortCode(shortCode);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    if (!(await requireSessionAccess(req, res, session, { manage: true }))) return;
+
+    if (!session.allow_eval_export) {
+      return res.status(409).json({
+        error: 'Eval export is not enabled for this session',
+        required: 'Set allowEvalExport=true on the session data-use settings before exporting.'
+      });
+    }
+
+    const payload = await consentExportsRepo.buildSessionEvalExport(session.id);
+    if (!payload) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    res.json(payload);
+  } catch (error) {
+    console.error('Session eval export error:', error);
+    res.status(500).json({ error: 'Failed to build consent-aware eval export' });
   }
 });
 

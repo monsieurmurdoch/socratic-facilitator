@@ -1,5 +1,5 @@
 /**
- * Socratic Facilitator Voice Bot
+ * Expanse Voice Bot
  *
  * Main entry point for the voice-based facilitation bot.
  * Joins a Jitsi meeting, listens via STT, facilitates via Claude, speaks via TTS.

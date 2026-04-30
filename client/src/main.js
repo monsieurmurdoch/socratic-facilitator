@@ -1,7 +1,7 @@
 /**
  * Main Entry Point
  *
- * Initializes the Socratic Facilitator client application.
+ * Initializes the Expanse client application.
  */
 
 import {

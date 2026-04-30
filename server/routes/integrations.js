@@ -848,7 +848,7 @@ router.post('/lti/sessions/:sessionCode/ags-sync', requireAnyRole(['Teacher', 'A
         timestamp: new Date().toISOString(),
         scoreGiven,
         scoreMaximum: Number(gradebookLink.score_maximum || 100),
-        comment: `Socratic Facilitator discussion score for ${session.title}`,
+        comment: `Expanse discussion score for ${session.title}`,
         activityProgress: 'Completed',
         gradingProgress: 'FullyGraded',
         userId: accountLink.lti_subject
@@ -923,7 +923,7 @@ router.get('/lti/deep-links/:sessionCode', requireAnyRole(['Teacher', 'Admin', '
       },
       deepLink: {
         title: session.title,
-        text: `Launch ${session.title} in Socratic Facilitator`,
+        text: `Launch ${session.title} in Expanse`,
         launchUrl: `${req.protocol}://${req.get('host')}/api/integrations/lti/login?iss=${encodeURIComponent(registration.issuer)}&client_id=${encodeURIComponent(registration.client_id)}&target_link_uri=${encodeURIComponent(`${req.protocol}://${req.get('host')}/?join=${session.short_code}`)}`,
         custom: {
           sessionCode: session.short_code,

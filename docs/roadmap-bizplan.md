@@ -1,13 +1,13 @@
-# Socratic Facilitator Product Board
+# Expanse Product Board
 
 Updated: 2026-04-30  
 Mirror: `~/Documents/Obsidian Vault/Coding/Socratic-Facilitator (Expanse)/roadmap-bizplan.md`
 
 ## Operating Thesis
 
-Build the facilitation layer for recurring small-group conversation. The near-term wedge is paid AI-facilitated seminar pods. The long-term asset is consented multiparty conversation data, evals, and product knowledge that make the AI better at helping humans think, include, repair, remember, and return.
+Build Expanse as the professional product shell for recurring small-group conversation, with Plato as the in-room AI facilitator. The near-term wedge is paid AI-facilitated seminar pods. The long-term asset is consented multiparty conversation data, evals, and product knowledge that make the AI better at helping humans think, include, repair, remember, and return.
 
-The company does not beat Gemini, Claude, or future models on raw intelligence. It competes on group ritual, facilitation policy, trust, memory, curriculum, social continuity, and labeled multiparty eval data.
+The company does not beat Gemini, Claude, or future models on raw intelligence. It competes on group ritual, facilitation policy, trust, memory, curriculum, social continuity, and labeled multiparty eval data. Brand architecture: Expanse is the app and domain; Plato is the facilitator personality inside the room.
 
 ## Product Goal
 
@@ -26,7 +26,9 @@ Launch a pilot-ready product that can get at least one paying client to run recu
 - [x] Post-session analytics timeline MVP: speaker turns, score lanes, anchors, hover inspector, zoom, local favorites.
 - [x] Class room-code direction started.
 - [x] Post-session report infrastructure started.
+- [x] Expanse reskin started: app title, favicon, core icon assets, signed-in/out header mark, and live-room Plato tile icon.
 - [ ] Single clean pilot flow: create class -> add reading -> go live -> end -> report.
+- [ ] Professional domain pointed to the production app.
 - [ ] Parent/teacher consent flow before recording/transcription.
 - [ ] Clear billing/scheduling path for pilot customers.
 - [ ] Demo content and first-run path for homeschool/co-op buyers.
@@ -58,10 +60,10 @@ Launch a pilot-ready product that can get at least one paying client to run recu
 - [x] Learner memory/profile direction started.
 - [ ] Teacher-controlled question posture: questions-only, mostly questions, balanced, or more directive synthesis.
 - [ ] Provider abstraction for Claude/Gemini/task-specific routing.
-- [ ] Per-intervention telemetry: model, prompt version, move, latency, cost, source chunks.
-- [ ] LLM-assisted label queue with human verification.
-- [ ] Baseline eval: prompted model vs Plato policy layer.
-- [ ] Consent-aware export format for anonymized eval/training data.
+- [x] Per-intervention telemetry: model, prompt version, move, latency, cost, source chunks.
+- [x] LLM-assisted label queue with human verification.
+- [x] Baseline eval: prompted model vs Plato policy layer.
+- [x] Consent-aware export format for anonymized eval/training data.
 
 ### Testing And Operations
 
@@ -124,12 +126,12 @@ A teacher can tune Plato from "only ask questions" to "occasionally synthesize o
 ### Gate C: Consent And Data Capture
 
 - [ ] Consent screen appears before mic/transcription starts.
-- [ ] Data-use mode is stored per session and participant.
+- [x] Data-use mode is stored per session and participant.
 - [ ] Teacher can choose: no retention, report-only retention, or consented research/eval retention.
 - [ ] Student/child consent and teacher approval are both required before parent access to child-specific comments, favorites, or transcript-linked analytics.
 - [ ] Export/delete path exists for transcripts and participant records.
-- [ ] LLM-assisted labeling queue can consume only consented sessions.
-- [ ] Data export format includes speaker turns, timestamps, move labels, model metadata, and redaction status.
+- [x] LLM-assisted labeling queue can consume only consented sessions.
+- [x] Data export format includes speaker turns, timestamps, move labels, model metadata, and redaction status.
 - [x] Signed session-access tokens allow easy guest joins without reopening raw transcript/material routes by short code alone.
 
 Done When:
@@ -238,6 +240,8 @@ The product has evidence that the unit works: people show up, talk to each other
   - Done When: a new user can run a canned seminar demo from login to report.
 - [ ] Draft consent/data-use copy.
   - Done When: a participant sees plain-language choices before transcription/recording.
+- [x] Ship backend data-pipeline foundations.
+  - Done When: telemetry, label queue, baseline eval, consent flags, and anonymized export routes exist behind session/admin access checks.
 - [ ] Add Plato question-posture control to setup and live room.
   - Done When: teacher can switch between questions-only, mostly questions, balanced, and synthesis/directive.
 
@@ -354,7 +358,7 @@ The product has evidence that the unit works: people show up, talk to each other
 - [x] Protected session/material/transcript routes.
 - [x] Active late join and reconnect identity fix.
 - [x] Duplicate display-name fix.
-- [ ] Consent/data-use mode.
+- [x] Consent/data-use mode.
 - [ ] Demo seminar flow.
 - [x] Jest ignore patterns.
 - [ ] Browser-level 3-client smoke test.
@@ -368,9 +372,9 @@ The product has evidence that the unit works: people show up, talk to each other
 - [x] Signed guest/session access tokens.
 - [ ] Simple manual billing/invoice flow.
 - [ ] Scheduling/reminder shell.
-- [ ] Per-session cost tracking.
+- [x] Per-intervention cost/latency/model telemetry.
 - [ ] Provider abstraction.
-- [ ] Labeling queue.
+- [x] Labeling queue.
 - [ ] Report export.
 - [ ] Admin retention controls.
 - [ ] Parent/child/teacher permission grants for timeline comments, favorites, and transcript excerpts.

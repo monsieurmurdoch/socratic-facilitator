@@ -230,6 +230,18 @@ async function findLatestLiveByClassId(classId) {
   }
 }
 
+async function updateDataUse(id, { dataUseMode = 'report_only', allowEvalExport = false }) {
+  const result = await db.query(
+    `UPDATE sessions
+     SET data_use_mode = $2,
+         allow_eval_export = $3
+     WHERE id = $1
+     RETURNING *`,
+    [id, dataUseMode, !!allowEvalExport]
+  );
+  return result.rows[0] || null;
+}
+
 /**
  * Get detailed analytics for a session
  */
@@ -364,6 +376,7 @@ module.exports = {
   deleteSession,
   listHistoryByUser,
   findLatestLiveByClassId,
+  updateDataUse,
   getDetailedAnalytics,
   userInClass,
   userWasParticipant,

@@ -84,6 +84,21 @@ async function markLeft(id) {
   );
 }
 
+async function updateEvalConsent(id, {
+  evalConsentGranted = false,
+  consentStatus = 'unknown'
+} = {}) {
+  const result = await db.query(
+    `UPDATE participants
+     SET eval_consent_granted = $2,
+         consent_status = $3
+     WHERE id = $1
+     RETURNING *`,
+    [id, !!evalConsentGranted, consentStatus]
+  );
+  return result.rows[0] || null;
+}
+
 /**
  * Get participant stats (message count, etc.)
  */
@@ -113,5 +128,6 @@ module.exports = {
   getBySession,
   getCount,
   markLeft,
+  updateEvalConsent,
   getStats
 };
