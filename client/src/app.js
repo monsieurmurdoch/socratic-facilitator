@@ -539,11 +539,16 @@
   }
 
   function applyTeacherParams(params = {}) {
-    if (params.speechPatienceMode) {
+    if (Object.prototype.hasOwnProperty.call(params, "speechPatienceMode")) {
       teacherSpeechPatienceMode = normalizeSpeechPatienceMode(params.speechPatienceMode);
-    } else {
-      teacherSpeechPatienceMode = "balanced";
     }
+  }
+
+  function getSelectedFacilitationPosture(id = "facilitation-posture") {
+    const value = document.getElementById(id)?.value || "mostly_questions";
+    return ["questions_only", "mostly_questions", "balanced", "synthesis_directive"].includes(value)
+      ? value
+      : "mostly_questions";
   }
 
   function openSetupForClass(classId = null, options = {}) {
@@ -576,11 +581,13 @@
   function resetSetupDraft() {
     const titleInput = document.getElementById("session-title");
     const questionInput = document.getElementById("opening-question");
+    const postureSelect = document.getElementById("facilitation-posture");
     const pasteTextInput = document.getElementById("paste-text-input");
     const preview = document.getElementById("primed-preview");
     const themes = document.getElementById("primed-themes");
     if (titleInput) titleInput.value = "";
     if (questionInput) questionInput.value = "";
+    if (postureSelect) postureSelect.value = "mostly_questions";
     if (pasteTextInput) pasteTextInput.value = "";
     if (preview) preview.style.display = "none";
     if (themes) themes.innerHTML = "";
@@ -844,6 +851,14 @@
               <div class="form-group">
                 <textarea id="expanded-question-input" placeholder="Opening question (optional)" rows="2"></textarea>
               </div>
+              <div class="form-group">
+                <select id="expanded-posture-select" aria-label="Plato posture">
+                  <option value="questions_only">Questions only</option>
+                  <option value="mostly_questions" selected>Mostly questions</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="synthesis_directive">Synthesis/directive</option>
+                </select>
+              </div>
               <div class="class-materials-panel">
                 <div class="class-materials-heading">
                   <h5>Source Text</h5>
@@ -910,6 +925,7 @@
       const questionInput = document.getElementById("expanded-question-input");
       const title = (titleInput?.value || "").trim() || `${cls.name} Discussion`;
       const question = (questionInput?.value || "").trim() || null;
+      const facilitationPosture = getSelectedFacilitationPosture("expanded-posture-select");
       const btn = document.getElementById("expanded-start-btn");
       if (btn) { btn.disabled = true; btn.textContent = "Creating..."; }
 
@@ -918,7 +934,8 @@
           title,
           openingQuestion: question,
           conversationGoal: null,
-          classId: cls.id
+          classId: cls.id,
+          facilitationPosture
         });
         if (!session.shortCode) {
           throw new Error("Server returned session without shortCode");
@@ -2770,6 +2787,7 @@
     const title = document.getElementById("session-title").value.trim();
     const question = document.getElementById("opening-question").value.trim();
     const classId = document.getElementById("session-class-select").value || null;
+    const facilitationPosture = getSelectedFacilitationPosture();
 
     if (!title && materials.length === 0) {
       alert("Enter a discussion title or upload some materials");
@@ -2788,7 +2806,8 @@
       title: sessionTitle,
       openingQuestion: question || null,
       conversationGoal: null,
-      classId
+      classId,
+      facilitationPosture
     }).then(session => {
       console.log("[Session] Created:", session);
       if (!session.shortCode) {

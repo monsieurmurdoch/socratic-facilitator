@@ -5,6 +5,7 @@
  */
 
 const db = require('../index');
+const { normalizeQuestionPostureMode } = require('../../config');
 
 /**
  * Generate a short, human-readable session code
@@ -28,7 +29,8 @@ async function create({
   creatorId = null,
   ownerUserId = null,
   classId = null,
-  previousSessionShortCode = null
+  previousSessionShortCode = null,
+  facilitationPosture = 'mostly_questions'
 }) {
   let shortCode;
   let attempts = 0;
@@ -51,10 +53,10 @@ async function create({
   let result;
   try {
     result = await db.query(
-      `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by, owner_user_id, class_id, previous_session_short_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by, owner_user_id, class_id, previous_session_short_code, facilitation_posture)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId, ownerUserId, classId, previousSessionShortCode]
+      [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId, ownerUserId, classId, previousSessionShortCode, normalizeQuestionPostureMode(facilitationPosture)]
     );
   } catch (error) {
     const isMissingOwnershipColumns = error?.code === '42703' && (
@@ -67,10 +69,10 @@ async function create({
     }
 
     result = await db.query(
-      `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by, previous_session_short_code)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO sessions (short_code, title, opening_question, conversation_goal, created_by, previous_session_short_code, facilitation_posture)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId, previousSessionShortCode]
+      [shortCode, title, openingQuestion || null, conversationGoal || null, creatorId, previousSessionShortCode, normalizeQuestionPostureMode(facilitationPosture)]
     );
   }
 
@@ -242,6 +244,17 @@ async function updateDataUse(id, { dataUseMode = 'report_only', allowEvalExport 
   return result.rows[0] || null;
 }
 
+async function updateFacilitationPosture(id, facilitationPosture) {
+  const result = await db.query(
+    `UPDATE sessions
+     SET facilitation_posture = $2
+     WHERE id = $1
+     RETURNING *`,
+    [id, normalizeQuestionPostureMode(facilitationPosture)]
+  );
+  return result.rows[0] || null;
+}
+
 /**
  * Get detailed analytics for a session
  */
@@ -377,6 +390,7 @@ module.exports = {
   listHistoryByUser,
   findLatestLiveByClassId,
   updateDataUse,
+  updateFacilitationPosture,
   getDetailedAnalytics,
   userInClass,
   userWasParticipant,

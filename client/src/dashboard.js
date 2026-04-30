@@ -82,6 +82,13 @@
     return "Balanced";
   }
 
+  function normalizeQuestionPostureMode(mode) {
+    const normalized = String(mode || "").trim().toLowerCase().replace(/-/g, "_");
+    return ["questions_only", "mostly_questions", "balanced", "synthesis_directive"].includes(normalized)
+      ? normalized
+      : "mostly_questions";
+  }
+
   function joinSession() {
     const code = $("session-code-input").value.trim().toLowerCase();
     if (!code) return;
@@ -223,6 +230,7 @@
     const ratio = parseInt($("param-ratio").value);
     const silence = parseInt($("param-silence").value);
     const speechPatienceMode = speechPatienceValueToMode($("param-patience").value);
+    const questionPostureMode = normalizeQuestionPostureMode($("param-posture").value);
     $("param-gap-val").textContent = gap + "s";
     $("param-ratio-val").textContent = ratio + "%";
     $("param-silence-val").textContent = silence + "s";
@@ -235,7 +243,8 @@
           minInterventionGapSec: gap,
           maxAITalkRatio: ratio / 100,
           silenceTimeoutSec: silence,
-          speechPatienceMode
+          speechPatienceMode,
+          questionPostureMode
         }
       });
       const statusEl = $("params-status");
@@ -253,6 +262,7 @@
   $("param-ratio").addEventListener("input", onParamChange);
   $("param-silence").addEventListener("input", onParamChange);
   $("param-patience").addEventListener("input", onParamChange);
+  $("param-posture").addEventListener("change", onParamChange);
 
   // --- Renderers ---
 
@@ -354,11 +364,13 @@
     const ratio = Number(params.maxAITalkRatio != null ? params.maxAITalkRatio * 100 : $("param-ratio").value || 15);
     const silence = Number(params.silenceTimeoutSec || $("param-silence").value || 45);
     const patienceMode = params.speechPatienceMode || speechPatienceValueToMode($("param-patience").value || 2);
+    const questionPostureMode = normalizeQuestionPostureMode(params.questionPostureMode || $("param-posture").value);
 
     $("param-gap").value = String(Math.max(5, Math.min(60, Math.round(gap))));
     $("param-ratio").value = String(Math.max(5, Math.min(50, Math.round(ratio))));
     $("param-silence").value = String(Math.max(10, Math.min(120, Math.round(silence))));
     $("param-patience").value = String(speechPatienceModeToValue(patienceMode));
+    $("param-posture").value = questionPostureMode;
     $("param-gap-val").textContent = $("param-gap").value + "s";
     $("param-ratio-val").textContent = $("param-ratio").value + "%";
     $("param-silence-val").textContent = $("param-silence").value + "s";

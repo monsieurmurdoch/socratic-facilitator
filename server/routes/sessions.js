@@ -21,7 +21,7 @@ const storage = require('../storage');
 const contentExtractor = require('../content/extractor');
 const { getOCRAvailability } = require('../content/ocr');
 const sessionPrimer = require('../content/primer');
-const { DISCUSSION_TOPICS } = require('../config');
+const { DISCUSSION_TOPICS, normalizeQuestionPostureMode } = require('../config');
 const { requireAuth } = require('../auth');
 const { apiLimiter } = require('../middleware/rate-limit');
 const { issueSessionAccessToken, getSessionAccessFromRequest } = require('../sessionAccess');
@@ -80,7 +80,15 @@ async function requireSessionAccess(req, res, session, { manage = false } = {}) 
  */
 router.post('/', apiLimiter, async (req, res) => {
   try {
-    const { title, openingQuestion, conversationGoal, topicId, classId = null, previousSessionShortCode = null } = req.body;
+    const {
+      title,
+      openingQuestion,
+      conversationGoal,
+      topicId,
+      classId = null,
+      previousSessionShortCode = null,
+      facilitationPosture = 'mostly_questions'
+    } = req.body;
 
     // If topicId provided, use that topic's data
     let sessionTitle = title;
@@ -117,7 +125,8 @@ router.post('/', apiLimiter, async (req, res) => {
       conversationGoal,
       ownerUserId: req.user?.id || null,
       classId: req.user ? classId : null,
-      previousSessionShortCode
+      previousSessionShortCode,
+      facilitationPosture
     });
 
     res.status(201).json({
@@ -130,6 +139,7 @@ router.post('/', apiLimiter, async (req, res) => {
       title: session.title,
       openingQuestion: session.opening_question,
       conversationGoal: session.conversation_goal,
+      facilitationPosture: normalizeQuestionPostureMode(session.facilitation_posture),
       status: session.status,
       createdAt: session.created_at
     });
@@ -531,6 +541,7 @@ router.get('/:code', async (req, res) => {
       title: session.title,
       openingQuestion: session.opening_question,
       conversationGoal: session.conversation_goal,
+      facilitationPosture: normalizeQuestionPostureMode(session.facilitation_posture),
       status: session.status,
       createdAt: session.created_at,
       startedAt: session.started_at,

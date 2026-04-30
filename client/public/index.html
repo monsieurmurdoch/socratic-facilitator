@@ -6,7 +6,7 @@
   <title>Expanse</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/images/expanse-icon.png">
-  <link rel="stylesheet" href="/src/style.css?v=23">
+  <link rel="stylesheet" href="/src/style.css?v=24">
 </head>
 <body>
 
@@ -15,10 +15,8 @@
 
     <!-- Signed-out header -->
     <div id="unsigned-header" class="welcome-header">
-      <img class="welcome-mark" src="/images/expanse-icon.png" srcset="/images/expanse-icon.png 1x, /images/expanse-icon@2x.png 2x, /images/expanse-icon@3x.png 3x" alt="">
+      <img class="welcome-logo" src="/images/expanse-logo.png" srcset="/images/expanse-logo.png 1x, /images/expanse-logo@2x.png 2x, /images/expanse-logo@3x.png 3x" alt="Expanse">
       <span class="welcome-badge">Expand Every Conversation</span>
-      <h1>Expanse</h1>
-      <p>Give every class a stable room, preserve the memory of each session, and let Plato push thinking forward without taking the conversation over.</p>
     </div>
 
     <!-- Signed-in header bar (hidden until logged in) -->
@@ -322,6 +320,16 @@
           <div class="form-group" style="max-width: 100%;">
             <label for="opening-question">Opening Question (optional)</label>
             <textarea id="opening-question" placeholder="What question should Plato open with?"></textarea>
+          </div>
+
+          <div class="form-group" style="max-width: 100%;">
+            <label for="facilitation-posture">Plato Posture</label>
+            <select id="facilitation-posture">
+              <option value="questions_only">Questions only</option>
+              <option value="mostly_questions" selected>Mostly questions</option>
+              <option value="balanced">Balanced</option>
+              <option value="synthesis_directive">Synthesis/directive</option>
+            </select>
           </div>
 
           <div class="form-group" style="max-width: 100%;">

@@ -16,7 +16,13 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { FacilitationOrchestrator, AGE_PROFILES } = require("./analysis/facilitationOrchestrator");
 const { MessageAssessor } = require("./analysis/messageAssessor");
 const { getMoveTaxonomyPrompt } = require("./moves");
-const { getAgeCalibration, FACILITATION_PARAMS, SOLO_EXCLUDED_MOVES, getFacilitationParams } = require("./config");
+const {
+  getAgeCalibration,
+  FACILITATION_PARAMS,
+  SOLO_EXCLUDED_MOVES,
+  getFacilitationParams,
+  normalizeQuestionPostureMode
+} = require("./config");
 const {
   PLATO_IDENTITY,
   getPlatoForAge,
@@ -81,6 +87,8 @@ class EnhancedFacilitationEngine {
    */
   async processMessage(stateTracker, message) {
     const pipelineStartedAt = Date.now();
+    const facilitationParams = message.facilitationParams || {};
+    const questionPostureMode = normalizeQuestionPostureMode(facilitationParams.questionPostureMode);
     const sessionId = stateTracker.sessionId;
     const ages = Array.from(stateTracker.participants.values()).map(p => p.age);
     const ageCalibration = getAgeCalibration(ages);
@@ -133,7 +141,8 @@ class EnhancedFacilitationEngine {
         orchestrator,
         decision,
         ageCalibration,
-        responsePolicy
+        responsePolicy,
+        facilitationParams
       );
 
       return {
@@ -148,7 +157,8 @@ class EnhancedFacilitationEngine {
         telemetry: {
           ...(generatedMessage.telemetry || {}),
           triggerMessageId: message.dbMessageId || null,
-          pipelineLatencyMs: Date.now() - pipelineStartedAt
+          pipelineLatencyMs: Date.now() - pipelineStartedAt,
+          questionPostureMode
         },
         analysis
       };
@@ -197,7 +207,8 @@ class EnhancedFacilitationEngine {
     const result = await this.processMessage(stateTracker, {
       participantName: lastMessage.participantName,
       text: lastMessage.text,
-      timestamp: lastMessage.timestamp
+      timestamp: lastMessage.timestamp,
+      facilitationParams: params
     });
 
     return {
@@ -208,6 +219,7 @@ class EnhancedFacilitationEngine {
       message: result.message || null,
       forced: !!result.forced,
       forcedBySoloCadence: !!result.forcedBySoloCadence,
+      telemetry: result.telemetry || null,
       stateUpdates: {},
       _debug: result.analysis  // Include analysis for debugging
     };
@@ -216,7 +228,7 @@ class EnhancedFacilitationEngine {
   /**
    * Generate the facilitator message.
    */
-  async _generateMessage(stateTracker, orchestrator, decision, ageCalibration, responsePolicy = null) {
+  async _generateMessage(stateTracker, orchestrator, decision, ageCalibration, responsePolicy = null, facilitationParams = {}) {
     const snapshot = await stateTracker.getStateSnapshot();
     const history = await stateTracker.getRecentHistory(40);
     const llmContext = orchestrator.getLLMContext();
@@ -335,7 +347,8 @@ class EnhancedFacilitationEngine {
       primedSnippet,
       participantHistory,
       responsePolicy,
-      groundingSnippet
+      groundingSnippet,
+      facilitationParams
     );
 
     const userMessage = this._buildUserMessage(
@@ -345,7 +358,8 @@ class EnhancedFacilitationEngine {
       interventionType,
       llmContext,
       responsePolicy,
-      groundingSnippet
+      groundingSnippet,
+      facilitationParams
     );
 
     const generationStartedAt = Date.now();
@@ -399,7 +413,8 @@ class EnhancedFacilitationEngine {
             isAnchor: !!result.isAnchor,
             responsePolicy,
             steeringEligible,
-            steeringChunkId: steeringChunk?.id || null
+            steeringChunkId: steeringChunk?.id || null,
+            questionPostureMode: normalizeQuestionPostureMode(facilitationParams.questionPostureMode)
           }
         }
       };
@@ -416,7 +431,11 @@ class EnhancedFacilitationEngine {
           move: "deepen",
           latencyMs: Date.now() - generationStartedAt,
           sourceChunkIds: groundingChunkIds,
-          decisionJson: { error: error.message, fallback: true }
+          decisionJson: {
+            error: error.message,
+            fallback: true,
+            questionPostureMode: normalizeQuestionPostureMode(facilitationParams.questionPostureMode)
+          }
         }
       };
     }
@@ -718,10 +737,15 @@ class EnhancedFacilitationEngine {
   /**
    * Build the system prompt.
    */
-  _buildSystemPrompt(topic, ageCalibration, interventionType, llmContext, ageProfile = 'middle', participantCount = 2, primedSnippet = null, participantHistory = null, responsePolicy = null, groundingSnippet = null) {
+  _buildSystemPrompt(topic, ageCalibration, interventionType, llmContext, ageProfile = 'middle', participantCount = 2, primedSnippet = null, participantHistory = null, responsePolicy = null, groundingSnippet = null, facilitationParams = {}) {
     const isSolo = participantCount <= 1;
     const interventionGuidance = this._getInterventionGuidance(interventionType, llmContext);
     const platoIdentity = getPlatoSystemPromptAddition(ageProfile);
+    const questionPostureMode = normalizeQuestionPostureMode(facilitationParams.questionPostureMode);
+    const questionPostureGuidance = this._getQuestionPostureGuidance(questionPostureMode);
+    const messageShape = questionPostureMode === "questions_only" || questionPostureMode === "mostly_questions"
+      ? "What you will say (one short question)"
+      : "What you will say (brief facilitation move; usually a question, sometimes a short synthesis or directive)";
 
     // Build participant history section if available
     let participantHistorySection = '';
@@ -763,7 +787,7 @@ Most of the time, you should not speak. The conversation belongs to the particip
       exclude: isSolo ? SOLO_EXCLUDED_MOVES : []
     });
 
-    return `You are a Socratic discussion facilitator${isSolo ? ' in a 1-on-1 dialogue' : ' for a group of young people'}. You are NOT a teacher, tutor, or expert. You do not explain, lecture, or share your own views on the topic. You ask questions. That is your only tool.
+    return `You are a Socratic discussion facilitator${isSolo ? ' in a 1-on-1 dialogue' : ' for a group of young people'}. You are NOT a teacher, tutor, or expert. You do not lecture or share your own views on the topic. Questions are your primary tool; the active Plato posture below defines whether brief synthesis or directive attention is allowed.
 
 FOCUS ON LITERAL MEANING: Start with questions about what the text literally says, what words mean, and what is directly stated. Only after establishing the literal foundation should you explore implications, layers, or the drama of the text.
 
@@ -776,6 +800,8 @@ ${platoIdentity}
 ${roleDescription}
 
 ${silenceGuidance}
+
+${questionPostureGuidance}
 
 ${participantHistorySection}
 CURRENT CONVERSATION STATE:
@@ -809,7 +835,7 @@ ${moveTaxonomy}
 OUTPUT FORMAT:
 You must respond with ONLY a JSON object:
 {
-  "message": "What you will say (one short question)",
+  "message": "${messageShape}",
   "move": "move_id from taxonomy",
   "targetParticipantName": "Name of who you're addressing (or null for group)",
   "reasoning": "Brief explanation of why you chose this intervention",
@@ -818,7 +844,7 @@ You must respond with ONLY a JSON object:
 }
 
 CRITICAL RULES:
-1. Keep it SHORT. One question maximum.
+1. Keep it SHORT. In questions-only and mostly-questions posture, one question maximum. In balanced or synthesis/directive posture, at most one brief facilitation move.
 2. Use names. Be specific.
 3. Never lecture. Never explain.
 4. If correcting a fact, do it gently as a question ("Is it possible that...?")
@@ -829,6 +855,29 @@ CRITICAL RULES:
 9. If the response budget is micro, ask a very small clarifying question and do not paraphrase at length.
 10. When grounded source excerpts are present, stay close to those excerpts before widening out. Ask about the phrase, line, contrast, or detail the participant just raised.
 11. Never use these phrases: ${PLATO_IDENTITY.personality.language.forbiddenPhrases.slice(0, 4).join(', ')}`;
+  }
+
+  _getQuestionPostureGuidance(mode) {
+    switch (mode) {
+      case "questions_only":
+        return `PLATO POSTURE: QUESTIONS ONLY.
+- Every intervention must be one question.
+- Do not synthesize, summarize, explain, or direct.
+- If tempted to give content, turn it into a short question instead.`;
+      case "balanced":
+        return `PLATO POSTURE: BALANCED.
+- Prefer questions, but a brief reflection is allowed when it helps the group notice what they are doing.
+- Keep any reflection under one sentence, then return the work to participants.`;
+      case "synthesis_directive":
+        return `PLATO POSTURE: SYNTHESIS / DIRECTIVE.
+- You may briefly synthesize a tension, name a pattern, or direct attention to a source detail.
+- Do not lecture; keep synthesis short and use it to reopen human-to-human discussion.`;
+      case "mostly_questions":
+      default:
+        return `PLATO POSTURE: MOSTLY QUESTIONS.
+- Default to one focused question.
+- A tiny setup phrase is allowed, but the intervention should still turn the group back toward inquiry.`;
+    }
   }
 
   /**
@@ -898,7 +947,11 @@ When in doubt, stay silent.`;
   /**
    * Build the user message with conversation context.
    */
-  _buildUserMessage(snapshot, history, decision, interventionType, llmContext, responsePolicy = null, groundingSnippet = null) {
+  _buildUserMessage(snapshot, history, decision, interventionType, llmContext, responsePolicy = null, groundingSnippet = null, facilitationParams = {}) {
+    const questionPostureMode = normalizeQuestionPostureMode(facilitationParams.questionPostureMode);
+    const reminder = questionPostureMode === "questions_only" || questionPostureMode === "mostly_questions"
+      ? "Remember: ONE question, SHORT, use names."
+      : "Remember: one brief facilitation move, SHORT, use names, and return the work to participants.";
     return `CURRENT STATE:
 ${JSON.stringify(snapshot, null, 2)}
 
@@ -917,7 +970,7 @@ ${responsePolicy ? `- Pedagogical phase: ${responsePolicy.pedagogicalPhase}
 - Allowed question types: ${responsePolicy.allowedQuestionTypes.join(", ")}` : ''}
 ${groundingSnippet ? '- Grounded numbered source text is available above. Only use those line numbers if you mention line numbers.' : '- No grounded numbered source text is available. Do not claim exact location in the text.'}
 
-Based on this, generate your intervention message. Remember: ONE question, SHORT, use names.
+Based on this, generate your intervention message. ${reminder}
 
 Respond with ONLY the JSON.`;
   }

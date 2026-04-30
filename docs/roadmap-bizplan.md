@@ -45,7 +45,7 @@ Launch a pilot-ready product that can get at least one paying client to run recu
 - [x] Late joiners are moved into active discussions.
 - [x] Duplicate display names are represented as separate participants.
 - [x] Rejoin during disconnect grace window restores the same participant identity.
-- [ ] Guest join capability separates easy access from public data access.
+- [x] Guest join capability separates easy access from public data access.
 - [x] Signed guest/session access tokens for unauthenticated pilots.
 - [ ] Sensitive audit events for transcript views, exports, material changes, parent access.
 - [ ] Dual-permission parent access: parent can view a child's post-session details only when both teacher and child/student permission are granted.
@@ -58,7 +58,7 @@ Launch a pilot-ready product that can get at least one paying client to run recu
 - [x] Message assessment, anchor tracking, intervention orchestration.
 - [x] Text grounding and source chunk coverage.
 - [x] Learner memory/profile direction started.
-- [ ] Teacher-controlled question posture: questions-only, mostly questions, balanced, or more directive synthesis.
+- [x] Teacher-controlled question posture: questions-only, mostly questions, balanced, or more directive synthesis.
 - [ ] Provider abstraction for Claude/Gemini/task-specific routing.
 - [x] Per-intervention telemetry: model, prompt version, move, latency, cost, source chunks.
 - [x] LLM-assisted label queue with human verification.
@@ -112,12 +112,12 @@ No pilot report can show "0s speaking" or "0 messages" when a real conversation 
 
 ### Gate B2: Facilitation Controls
 
-- [ ] Pre-session Plato posture setting exists.
-- [ ] Live teacher control exists for question propensity.
-- [ ] Available modes: questions-only, mostly questions, balanced, and synthesis/directive.
-- [ ] Mode changes are broadcast to the room and persisted with the session.
-- [ ] Plato intervention logs include the active posture mode.
-- [ ] Teacher can see the current mode without opening a hidden dashboard.
+- [x] Pre-session Plato posture setting exists.
+- [x] Live teacher control exists for question propensity.
+- [x] Available modes: questions-only, mostly questions, balanced, and synthesis/directive.
+- [x] Mode changes are broadcast to the room and persisted with the session.
+- [x] Plato intervention logs include the active posture mode.
+- [ ] Teacher can see the current mode inside the live room, without opening the dashboard.
 
 Done When:
 
@@ -165,9 +165,9 @@ Status: In progress.
 - [ ] At least two participants can join and speak.
 - [ ] Plato can generate opening, nudges, and closing.
 - [ ] Transcript and report are visible after session.
-- [ ] No obviously public transcript/source-material leak remains in demo flow.
-- [ ] No participant can accidentally end or control the room.
-- [ ] Late join/rejoin demo works without doubled audio/video.
+- [x] No obviously public transcript/source-material leak remains in demo flow.
+- [x] No participant can accidentally end or control the room.
+- [x] Late join/rejoin demo works without doubled audio/video.
 
 Done When:
 
@@ -177,10 +177,10 @@ The demo can be shown live in under 10 minutes without explaining missing core p
 
 Status: Not started.
 
-- [ ] Teacher controls are authorized.
-- [ ] Session/material/transcript endpoints are protected.
+- [x] Teacher controls are authorized.
+- [x] Session/material/transcript endpoints are protected.
 - [ ] Consent screen exists for participants and parents/guardians where relevant.
-- [ ] Data-use mode is stored with session and participant records.
+- [x] Data-use mode is stored with session and participant records.
 - [ ] Retention default is visible and safe.
 - [ ] Parent/teacher report is useful without exposing unnecessary raw transcript by default.
 - [ ] Failure states are clear: no mic, no AI key, no live session, ended session, no consent.
@@ -242,8 +242,10 @@ The product has evidence that the unit works: people show up, talk to each other
   - Done When: a participant sees plain-language choices before transcription/recording.
 - [x] Ship backend data-pipeline foundations.
   - Done When: telemetry, label queue, baseline eval, consent flags, and anonymized export routes exist behind session/admin access checks.
-- [ ] Add Plato question-posture control to setup and live room.
-  - Done When: teacher can switch between questions-only, mostly questions, balanced, and synthesis/directive.
+- [x] Add Plato question-posture control to setup and live dashboard.
+  - Done When: teacher can switch between questions-only, mostly questions, balanced, and synthesis/directive, and the active posture is persisted and logged.
+- [ ] Surface the active Plato posture inside the live room.
+  - Done When: the teacher can see and adjust posture without leaving the session surface.
 
 ### Days 8-21: First Client Sprint
 
@@ -363,7 +365,7 @@ The product has evidence that the unit works: people show up, talk to each other
 - [x] Jest ignore patterns.
 - [ ] Browser-level 3-client smoke test.
 - [ ] Transcript truth checks in analytics/report modal.
-- [ ] Teacher-facing question-posture control.
+- [x] Teacher-facing question-posture control.
 - [ ] Parent/teacher report polish.
 - [ ] Dual-permission parent access model for child-specific transcript/timeline details.
 
@@ -376,11 +378,11 @@ The product has evidence that the unit works: people show up, talk to each other
 - [ ] Provider abstraction.
 - [x] Labeling queue.
 - [ ] Report export.
-- [ ] Admin retention controls.
+- [x] Admin retention controls.
 - [ ] Parent/child/teacher permission grants for timeline comments, favorites, and transcript excerpts.
 - [ ] Conversation replay/debugger for Plato decisions.
 - [ ] Teacher transcript-health indicator.
-- [ ] Persisted intervention-mode controls and telemetry.
+- [x] Persisted intervention-mode controls and telemetry.
 - [ ] Pilot onboarding checklist: reading, roster, consent, schedule, price.
 
 ### Later Product Bets

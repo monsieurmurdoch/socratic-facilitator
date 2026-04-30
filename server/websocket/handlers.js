@@ -4,7 +4,7 @@
  */
 
 const WebSocket = require("ws");
-const { DISCUSSION_TOPICS } = require("../config");
+const { DISCUSSION_TOPICS, normalizeQuestionPostureMode } = require("../config");
 const { authenticateToken } = require("../auth");
 const { issueSessionAccessToken, verifySessionAccessToken } = require("../sessionAccess");
 const { v4: uuidv4 } = require("uuid");
@@ -94,8 +94,9 @@ async function handleCreateSession(ws, msg, ctx) {
   const { sessionsRepo } = ctx.deps;
   const title = msg.title || "Open Discussion";
   const openingQuestion = msg.openingQuestion || null;
+  const facilitationPosture = normalizeQuestionPostureMode(msg.facilitationPosture || msg.questionPostureMode);
 
-  const session = await sessionsRepo.create({ title, openingQuestion });
+  const session = await sessionsRepo.create({ title, openingQuestion, facilitationPosture });
   const shortCode = session.short_code;
 
   const SessionStateTracker = require("../stateTracker").SessionStateTracker;
@@ -117,6 +118,9 @@ async function handleCreateSession(ws, msg, ctx) {
     active: false,
     topic,
     mode: "video",
+    paramOverrides: {
+      questionPostureMode: normalizeQuestionPostureMode(session.facilitation_posture)
+    },
     disconnectTimers: new Map()
   });
 
@@ -270,9 +274,24 @@ async function handleTeacherAdjustParams(ws, msg, ctx) {
   const session = requireTeacher(ws, ctx, "Adjust parameters");
   if (!session) return;
   // Apply overrides to the session's stateTracker params
-  const overrides = msg.params || {};
+  const overrides = { ...(msg.params || {}) };
+  if (overrides.questionPostureMode || overrides.facilitationPosture) {
+    overrides.questionPostureMode = normalizeQuestionPostureMode(
+      overrides.questionPostureMode || overrides.facilitationPosture
+    );
+    delete overrides.facilitationPosture;
+  }
   if (!session.paramOverrides) session.paramOverrides = {};
   Object.assign(session.paramOverrides, overrides);
+  if (overrides.questionPostureMode && session.dbSession?.id) {
+    ctx.deps.sessionsRepo.updateFacilitationPosture?.(
+      session.dbSession.id,
+      overrides.questionPostureMode
+    ).catch(error => {
+      console.warn("[teacher_adjust_params] Failed to persist facilitation posture:", error.message);
+    });
+    session.dbSession.facilitation_posture = overrides.questionPostureMode;
+  }
   console.log(`[${ctx.currentSessionShortCode}] Teacher adjusted params:`, overrides);
   ctx.sessionManager.broadcast(ctx.currentSessionShortCode, {
     type: "teacher_params_updated",
@@ -374,6 +393,9 @@ async function handleJoinSession(ws, msg, ctx) {
           clients: [],
           active: dbSession.status === 'active',
           topic,
+          paramOverrides: {
+            questionPostureMode: normalizeQuestionPostureMode(dbSession.facilitation_posture)
+          },
           disconnectTimers: new Map()
         };
         ctx.sessionManager.set(requestedCode, session);
@@ -513,6 +535,9 @@ async function handleRejoinSession(ws, msg, ctx) {
         active: dbSession.status === 'active',
         paused: false,
         topic,
+        paramOverrides: {
+          questionPostureMode: normalizeQuestionPostureMode(dbSession.facilitation_posture)
+        },
         readOnly: isReadOnly,
         disconnectTimers: new Map()
       };

@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS owner_user_id UUID;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS class_id UUID;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS previous_session_short_code VARCHAR(8);
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS facilitation_posture TEXT NOT NULL DEFAULT 'mostly_questions';
 
 DO $$
 BEGIN

@@ -440,7 +440,7 @@ class SessionManager {
       const silenceThreshold = effectiveParams.silenceTimeoutSec || ageCalibration.silenceToleranceSec || FACILITATION_PARAMS.silenceTimeoutSec;
 
       if (snapshot.silenceSinceLastActivitySec >= silenceThreshold) {
-        const decision = await this.deps.enhancedEngine.decide(session.stateTracker);
+        const decision = await this.deps.enhancedEngine.decide(session.stateTracker, effectiveParams);
         if (decision.shouldSpeak && decision.message) {
           await this.handleFacilitatorMessage(sessionShortCode, decision);
         }
@@ -481,7 +481,8 @@ class SessionManager {
           reasoning: decision.reasoning || decision.reason || null,
           activation: decision.activation ?? null,
           forced: !!decision.forced,
-          forcedBySoloCadence: !!decision.forcedBySoloCadence
+          forcedBySoloCadence: !!decision.forcedBySoloCadence,
+          questionPostureMode: decision.telemetry.questionPostureMode || decision.telemetry.decisionJson?.questionPostureMode || null
         }
       }).catch(error => {
         console.warn("[telemetry] Failed to save intervention telemetry:", error.message);
@@ -630,11 +631,12 @@ class SessionManager {
         text,
         timestamp: Date.now(),
         llmAssessment,
-        dbMessageId: recordedMessage?.dbId || null
+        dbMessageId: recordedMessage?.dbId || null,
+        facilitationParams: effectiveParams
       });
     } else {
       // Fallback to legacy decide() path (still uses enhanced engine)
-      decision = await this.deps.enhancedEngine.decide(session.stateTracker);
+      decision = await this.deps.enhancedEngine.decide(session.stateTracker, effectiveParams);
     }
 
     const pipelineLatencyMs = Date.now() - pipelineStart;

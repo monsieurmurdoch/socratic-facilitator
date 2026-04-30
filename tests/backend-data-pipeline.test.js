@@ -9,6 +9,7 @@ describe("backend data pipeline guardrails", () => {
   test("schema has intervention telemetry, label queue, and export consent fields", () => {
     const schema = read("server/db/schema.sql");
 
+    expect(schema).toContain("facilitation_posture TEXT NOT NULL DEFAULT 'mostly_questions'");
     expect(schema).toContain("CREATE TABLE IF NOT EXISTS intervention_telemetry");
     expect(schema).toContain("model TEXT");
     expect(schema).toContain("prompt_version TEXT");
@@ -52,6 +53,30 @@ describe("backend data pipeline guardrails", () => {
     expect(manager).toContain("interventionTelemetryRepo.create");
     expect(manager).toContain("facilitatorMessageId");
     expect(manager).toContain("triggerMessageId");
+  });
+
+  test("Plato question posture is configurable before and during sessions", () => {
+    const config = read("server/config.js");
+    const routes = read("server/routes/sessions.js");
+    const handlers = read("server/websocket/handlers.js");
+    const engine = read("server/enhancedFacilitator.js");
+    const indexHtml = read("client/public/index.html");
+    const dashboardHtml = read("client/public/dashboard.html");
+    const dashboardJs = read("client/src/dashboard.js");
+
+    expect(config).toContain("QUESTION_POSTURE_MODES");
+    expect(config).toContain("questions_only");
+    expect(config).toContain("synthesis_directive");
+    expect(routes).toContain("facilitationPosture");
+    expect(handlers).toContain("updateFacilitationPosture");
+    expect(handlers).toContain("questionPostureMode");
+    expect(engine).toContain("_getQuestionPostureGuidance");
+    expect(engine).toContain("facilitationParams: params");
+    expect(engine).toContain("questionPostureMode");
+    expect(indexHtml).toContain("id=\"facilitation-posture\"");
+    expect(dashboardHtml).toContain("id=\"param-posture\"");
+    expect(dashboardJs).toContain("teacher_adjust_params");
+    expect(dashboardJs).toContain("questionPostureMode");
   });
 
   test("admin routes expose facilitation eval baseline and human verification queue", () => {

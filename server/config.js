@@ -120,7 +120,10 @@ const FACILITATION_PARAMS = {
   maxAITalkRatio: 0.15,
 
   // Session duration in minutes
-  sessionDurationMin: 25
+  sessionDurationMin: 25,
+
+  // How question-forward Plato should be in this session
+  questionPostureMode: "mostly_questions"
 };
 
 /**
@@ -135,8 +138,21 @@ const SOLO_FACILITATION_PARAMS = {
   dominanceThreshold: 1.0,    // N/A for solo
   quietThreshold: 999,        // N/A for solo
   maxAITalkRatio: 0.45,       // Much more conversational in 1-on-1
-  sessionDurationMin: 25
+  sessionDurationMin: 25,
+  questionPostureMode: "mostly_questions"
 };
+
+const QUESTION_POSTURE_MODES = new Set([
+  "questions_only",
+  "mostly_questions",
+  "balanced",
+  "synthesis_directive"
+]);
+
+function normalizeQuestionPostureMode(mode) {
+  const normalized = String(mode || "").trim().toLowerCase().replace(/-/g, "_");
+  return QUESTION_POSTURE_MODES.has(normalized) ? normalized : "mostly_questions";
+}
 
 /**
  * Moves that require multiple participants and should be excluded in solo mode.
@@ -169,6 +185,8 @@ module.exports = {
   FACILITATION_PARAMS,
   SOLO_FACILITATION_PARAMS,
   SOLO_EXCLUDED_MOVES,
+  QUESTION_POSTURE_MODES,
   getAgeCalibration,
-  getFacilitationParams
+  getFacilitationParams,
+  normalizeQuestionPostureMode
 };
