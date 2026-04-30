@@ -48,6 +48,9 @@
   let jitsiMutePoller = null;
   let jitsiLaunchingRoom = null;
   let activeJitsiRoom = null;
+  let currentAnalyticsData = null;
+  let timelineZoom = 1;
+  let timelineFavorites = {};
 
   const SPEECH_PATIENCE_PRESETS = {
     quick: { warmup: 260, discussion: 220, vadFlush: 110 },
@@ -60,6 +63,20 @@
   const AUTH_TOKEN_KEY = "socratic_auth_token";
   const AUTH_USER_KEY = "socratic_auth_user";
   const SESSION_ACCESS_TOKEN_KEY = "socratic_session_access_tokens";
+  const TIMELINE_FAVORITES_KEY = "socratic_timeline_favorites";
+  timelineFavorites = loadTimelineFavorites();
+
+  function loadTimelineFavorites() {
+    try {
+      return JSON.parse(localStorage.getItem(TIMELINE_FAVORITES_KEY) || "{}");
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  function saveTimelineFavorites() {
+    localStorage.setItem(TIMELINE_FAVORITES_KEY, JSON.stringify(timelineFavorites));
+  }
 
   function loadSessionAccessTokens() {
     try {
@@ -3127,6 +3144,10 @@
       if (e.key === 'Escape' && modal && modal.classList.contains('active')) {
         hideAnalyticsModal();
       }
+      const timelineModal = document.getElementById('conversation-timeline-modal');
+      if (e.key === 'Escape' && timelineModal && timelineModal.classList.contains('active')) {
+        hideTimelineModal();
+      }
     });
   }
 
@@ -3176,7 +3197,331 @@
     modal.style.display = 'none';
   }
 
+  function ensureTimelineModal() {
+    let modal = document.getElementById('conversation-timeline-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'conversation-timeline-modal';
+    modal.className = 'modal conversation-timeline-modal';
+    modal.style.display = 'none';
+    modal.innerHTML = `
+      <div class="modal-backdrop" id="conversation-timeline-backdrop"></div>
+      <div class="modal-content timeline-modal-content">
+        <div class="modal-header timeline-modal-header">
+          <div>
+            <h2 id="conversation-timeline-title">Conversation Timeline</h2>
+            <p id="conversation-timeline-subtitle" class="timeline-modal-subtitle"></p>
+          </div>
+          <button class="modal-close" id="conversation-timeline-close" aria-label="Close timeline">&times;</button>
+        </div>
+        <div class="timeline-toolbar">
+          <div class="timeline-legend">
+            <span><i class="timeline-legend-dot timeline-dot-participant"></i> Participant</span>
+            <span><i class="timeline-legend-dot timeline-dot-facilitator"></i> Plato</span>
+            <span><i class="timeline-legend-dot timeline-dot-self"></i> Your comment</span>
+            <span><i class="timeline-legend-dot timeline-dot-anchor"></i> Anchor</span>
+          </div>
+          <div class="timeline-zoom-controls">
+            <button type="button" class="btn btn-secondary btn-small" id="timeline-zoom-out">Zoom Out</button>
+            <button type="button" class="btn btn-secondary btn-small" id="timeline-zoom-reset">Reset</button>
+            <button type="button" class="btn btn-secondary btn-small" id="timeline-zoom-in">Zoom In</button>
+          </div>
+        </div>
+        <div class="timeline-modal-body">
+          <div class="timeline-scroll" id="timeline-scroll">
+            <div id="conversation-timeline-chart" class="conversation-timeline-chart"></div>
+          </div>
+          <aside id="timeline-inspector" class="timeline-inspector">
+            <p class="timeline-inspector-empty">Hover over a point to inspect the transcript moment.</p>
+          </aside>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const close = () => hideTimelineModal();
+    modal.querySelector('#conversation-timeline-backdrop')?.addEventListener('click', close);
+    modal.querySelector('#conversation-timeline-close')?.addEventListener('click', close);
+    modal.querySelector('#timeline-zoom-out')?.addEventListener('click', () => setTimelineZoom(timelineZoom / 1.35));
+    modal.querySelector('#timeline-zoom-reset')?.addEventListener('click', () => setTimelineZoom(1));
+    modal.querySelector('#timeline-zoom-in')?.addEventListener('click', () => setTimelineZoom(timelineZoom * 1.35));
+    return modal;
+  }
+
+  function showTimelineModal(data = currentAnalyticsData) {
+    if (!data) return;
+    currentAnalyticsData = data;
+    const modal = ensureTimelineModal();
+    modal.style.display = '';
+    modal.classList.add('active');
+    renderTimelineModal();
+  }
+
+  function hideTimelineModal() {
+    const modal = document.getElementById('conversation-timeline-modal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+
+  function setTimelineZoom(nextZoom) {
+    timelineZoom = Math.max(0.45, Math.min(4, nextZoom));
+    renderTimelineModal();
+  }
+
+  function scoreToY(score, top, height) {
+    const normalized = Math.max(0, Math.min(1, Number(score || 0)));
+    return top + ((1 - normalized) * height);
+  }
+
+  function getMessageAnalytics(msg) {
+    return msg.analytics || {};
+  }
+
+  function getSpeakerInitials(name) {
+    return String(name || '?')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(part => part[0]?.toUpperCase() || '')
+      .join('') || '?';
+  }
+
+  function getTimelineFavoriteKey(session, msg) {
+    return `${session.shortCode}:${msg.id}`;
+  }
+
+  function isTimelineFavorite(session, msg) {
+    return !!timelineFavorites[getTimelineFavoriteKey(session, msg)];
+  }
+
+  function toggleTimelineFavorite(session, msg) {
+    const key = getTimelineFavoriteKey(session, msg);
+    if (timelineFavorites[key]) {
+      delete timelineFavorites[key];
+    } else {
+      timelineFavorites[key] = {
+        sessionShortCode: session.shortCode,
+        messageId: msg.id,
+        speaker: msg.senderName,
+        createdAt: msg.createdAt
+      };
+    }
+    saveTimelineFavorites();
+    renderTimelineInspector(msg);
+    renderTimelineModal();
+  }
+
+  function renderTimelineInspector(msg) {
+    const inspector = document.getElementById('timeline-inspector');
+    if (!inspector || !currentAnalyticsData) return;
+    const { session } = currentAnalyticsData;
+    const analytics = getMessageAnalytics(msg);
+    const sender = msg.senderType === 'facilitator' ? 'Plato' : (msg.senderName || 'Unknown');
+    const time = msg.createdAt
+      ? new Date(msg.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+      : '';
+    const hasScores = msg.senderType === 'participant' && msg.analytics;
+    const favorite = isTimelineFavorite(session, msg);
+    const favoriteButton = msg.senderType === 'participant' ? `
+      <button type="button" class="timeline-favorite-btn ${favorite ? 'active' : ''}" id="timeline-favorite-current">
+        ${favorite ? 'Favorited' : 'Favorite'}
+      </button>
+    ` : '';
+
+    inspector.innerHTML = `
+      <div class="timeline-inspector-card">
+        <div class="timeline-inspector-header">
+          <span class="timeline-speaker-badge">${escapeHtml(getSpeakerInitials(sender))}</span>
+          <div>
+            <strong>${escapeHtml(sender)}</strong>
+            <span>${escapeHtml(time)}</span>
+          </div>
+        </div>
+        <p class="timeline-inspector-text">${escapeHtml(msg.content || '')}</p>
+        ${hasScores ? `
+          <div class="timeline-score-grid">
+            <span>Specificity <strong>${Number(analytics.specificity || 0).toFixed(2)}</strong></span>
+            <span>Profoundness <strong>${Number(analytics.profoundness || 0).toFixed(2)}</strong></span>
+            <span>Coherence <strong>${Number(analytics.coherence || 0).toFixed(2)}</strong></span>
+            <span>Value <strong>${Number(analytics.discussionValue || 0).toFixed(2)}</strong></span>
+          </div>
+          <div class="timeline-flags">
+            ${analytics.isAnchor ? '<span>Anchor</span>' : ''}
+            ${analytics.referencedAnchor ? '<span>References anchor</span>' : ''}
+            ${analytics.respondedToPeer ? '<span>Peer response</span>' : ''}
+          </div>
+          ${analytics.reasoning ? `<p class="timeline-reasoning">${escapeHtml(analytics.reasoning)}</p>` : ''}
+        ` : '<p class="timeline-reasoning">Facilitator turns are plotted for timing context, but participant quality scores are attached to student turns.</p>'}
+        ${favoriteButton}
+      </div>
+    `;
+
+    document.getElementById('timeline-favorite-current')?.addEventListener('click', () => {
+      toggleTimelineFavorite(session, msg);
+    });
+  }
+
+  function renderTimelineModal() {
+    if (!currentAnalyticsData) return;
+    const { session, messages = [] } = currentAnalyticsData;
+    const chart = document.getElementById('conversation-timeline-chart');
+    if (!chart) return;
+
+    const title = document.getElementById('conversation-timeline-title');
+    const subtitle = document.getElementById('conversation-timeline-subtitle');
+    if (title) title.textContent = `${session.title || 'Session'} Timeline`;
+    if (subtitle) subtitle.textContent = 'X-axis shows when each turn happened; metric lanes show participant scores over time.';
+
+    const datedMessages = messages
+      .map((msg, index) => ({ ...msg, _index: index, _time: msg.createdAt ? new Date(msg.createdAt).getTime() : NaN }))
+      .filter(msg => Number.isFinite(msg._time));
+
+    if (!datedMessages.length) {
+      chart.innerHTML = '<p class="empty-state">No timestamped messages are available for this timeline.</p>';
+      return;
+    }
+
+    const sessionStart = session.createdAt ? new Date(session.createdAt).getTime() : datedMessages[0]._time;
+    const sessionEnd = session.endedAt ? new Date(session.endedAt).getTime() : datedMessages[datedMessages.length - 1]._time;
+    const minTime = Math.min(sessionStart, datedMessages[0]._time);
+    const maxTime = Math.max(sessionEnd, datedMessages[datedMessages.length - 1]._time, minTime + 60000);
+    const durationMs = Math.max(60000, maxTime - minTime);
+    const minutes = Math.max(1, durationMs / 60000);
+    const width = Math.max(1120, Math.round(minutes * 110 * timelineZoom));
+    const height = 560;
+    const left = 150;
+    const right = 60;
+    const top = 42;
+    const plotWidth = width - left - right;
+    const speakerY = 58;
+    const lanes = [
+      { key: 'specificity', label: 'Specificity', y: 128, color: '#2f7d6f' },
+      { key: 'profoundness', label: 'Profoundness', y: 218, color: '#7a5cc7' },
+      { key: 'coherence', label: 'Coherence', y: 308, color: '#c77d2f' },
+      { key: 'discussionValue', label: 'Value', y: 398, color: '#2f5fc7' },
+      { key: 'anchor', label: 'Anchors', y: 494, color: '#9f2f52' }
+    ];
+    const laneHeight = 58;
+    const xFor = (time) => left + ((time - minTime) / durationMs) * plotWidth;
+    const participantMessages = datedMessages.filter(msg => msg.senderType === 'participant' && msg.analytics);
+    const showSnippets = timelineZoom > 1.35;
+
+    const timeTicks = [];
+    const tickCount = Math.min(10, Math.max(3, Math.ceil(width / 240)));
+    for (let i = 0; i <= tickCount; i += 1) {
+      const time = minTime + ((durationMs / tickCount) * i);
+      timeTicks.push(`
+        <g>
+          <line x1="${xFor(time)}" y1="${top}" x2="${xFor(time)}" y2="${height - 34}" class="timeline-grid-line" />
+          <text x="${xFor(time)}" y="${height - 12}" text-anchor="middle" class="timeline-axis-label">${new Date(time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</text>
+        </g>
+      `);
+    }
+
+    const laneMarkup = lanes.map(lane => `
+      <g>
+        <text x="22" y="${lane.y + 6}" class="timeline-lane-label">${lane.label}</text>
+        <line x1="${left}" y1="${lane.y}" x2="${width - right}" y2="${lane.y}" class="timeline-lane-line" />
+        ${lane.key !== 'anchor' ? `
+          <text x="${left - 18}" y="${lane.y - laneHeight / 2 + 5}" class="timeline-scale-label">1.0</text>
+          <text x="${left - 18}" y="${lane.y + laneHeight / 2 + 5}" class="timeline-scale-label">0.0</text>
+        ` : ''}
+      </g>
+    `).join('');
+
+    const lineFor = (key, color) => {
+      const points = participantMessages
+        .map(msg => `${xFor(msg._time)},${scoreToY(msg.analytics[key], lanes.find(l => l.key === key).y - laneHeight / 2, laneHeight)}`)
+        .join(' ');
+      return points ? `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.5" opacity="0.55" />` : '';
+    };
+
+    const metricLines = lanes
+      .filter(lane => lane.key !== 'anchor')
+      .map(lane => lineFor(lane.key, lane.color))
+      .join('');
+
+    const speakerPoints = datedMessages.map(msg => {
+      const x = xFor(msg._time);
+      const sender = msg.senderType === 'facilitator' ? 'Plato' : (msg.senderName || 'Unknown');
+      const analytics = getMessageAnalytics(msg);
+      const isAnchor = !!analytics.isAnchor;
+      const isFavorite = isTimelineFavorite(session, msg);
+      const cls = [
+        'timeline-point',
+        msg.senderType === 'facilitator' ? 'facilitator' : 'participant',
+        msg.isViewerMessage ? 'self' : '',
+        isAnchor ? 'anchor' : '',
+        isFavorite ? 'favorite' : ''
+      ].filter(Boolean).join(' ');
+      return `
+        <g class="${cls}" tabindex="0" role="button" data-index="${msg._index}" transform="translate(${x},${speakerY})">
+          <circle r="${msg.senderType === 'facilitator' ? 12 : 15}" />
+          <text y="4" text-anchor="middle">${escapeHtml(getSpeakerInitials(sender))}</text>
+          ${isFavorite ? '<text class="timeline-star" x="13" y="-12">★</text>' : ''}
+        </g>
+      `;
+    }).join('');
+
+    const metricPoints = participantMessages.map(msg => {
+      const x = xFor(msg._time);
+      const analytics = getMessageAnalytics(msg);
+      const cls = ['timeline-metric-point', msg.isViewerMessage ? 'self' : '', analytics.isAnchor ? 'anchor' : ''].filter(Boolean).join(' ');
+      return lanes.filter(lane => lane.key !== 'anchor').map(lane => `
+        <circle class="${cls}" data-index="${msg._index}" cx="${x}" cy="${scoreToY(analytics[lane.key], lane.y - laneHeight / 2, laneHeight)}" r="${analytics.isAnchor ? 5.5 : 4.5}" fill="${lane.color}" />
+      `).join('');
+    }).join('');
+
+    const anchorPoints = participantMessages
+      .filter(msg => msg.analytics?.isAnchor || msg.analytics?.referencedAnchor)
+      .map(msg => `
+        <g class="timeline-anchor-marker" data-index="${msg._index}" transform="translate(${xFor(msg._time)},${lanes.find(l => l.key === 'anchor').y})">
+          <path d="M0,-11 L9,0 L0,11 L-9,0 Z" />
+        </g>
+      `).join('');
+
+    const snippets = showSnippets ? participantMessages.map(msg => {
+      const snippet = String(msg.content || '').slice(0, 46);
+      return `
+        <text x="${xFor(msg._time) + 8}" y="${scoreToY(msg.analytics.discussionValue, lanes[3].y - laneHeight / 2, laneHeight) - 8}" class="timeline-snippet">
+          ${escapeHtml(snippet)}${msg.content && msg.content.length > 46 ? '…' : ''}
+        </text>
+      `;
+    }).join('') : '';
+
+    chart.innerHTML = `
+      <svg class="conversation-timeline-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Conversation timeline graph">
+        <rect x="0" y="0" width="${width}" height="${height}" class="timeline-bg" />
+        ${timeTicks.join('')}
+        <text x="22" y="${speakerY + 5}" class="timeline-lane-label">Who spoke</text>
+        <line x1="${left}" y1="${speakerY}" x2="${width - right}" y2="${speakerY}" class="timeline-lane-line speaker" />
+        ${laneMarkup}
+        ${metricLines}
+        ${metricPoints}
+        ${anchorPoints}
+        ${snippets}
+        ${speakerPoints}
+      </svg>
+    `;
+
+    chart.querySelectorAll('[data-index]').forEach(node => {
+      const index = Number(node.getAttribute('data-index'));
+      const msg = datedMessages.find(item => item._index === index);
+      if (!msg) return;
+      node.addEventListener('mouseenter', () => renderTimelineInspector(msg));
+      node.addEventListener('focus', () => renderTimelineInspector(msg));
+      node.addEventListener('click', () => renderTimelineInspector(msg));
+    });
+
+    if (!document.querySelector('#timeline-inspector .timeline-inspector-card')) {
+      renderTimelineInspector(datedMessages[0]);
+    }
+  }
+
   function renderAnalyticsContent(data) {
+    currentAnalyticsData = data;
     const { session, analytics, messages = [], canManage = false, teacherNotes = '' } = data;
     const content = document.getElementById('analytics-content');
 
@@ -3300,6 +3645,11 @@
       <!-- Session Overview -->
       <div class="analytics-section">
         <h3>Session Overview</h3>
+        <div class="analytics-action-row">
+          <button type="button" class="btn btn-secondary btn-small" id="open-conversation-timeline">
+            Open Timeline
+          </button>
+        </div>
         <div class="analytics-grid">
           ${metricCard('participants', analytics.overview.participantCount, 'Participants')}
           ${metricCard('messages', analytics.overview.messageCount, 'Messages')}
@@ -3410,6 +3760,11 @@
       });
     }
     if (detailClose) detailClose.addEventListener('click', closeMetricDetail);
+
+    document.getElementById('open-conversation-timeline')?.addEventListener('click', () => {
+      timelineZoom = 1;
+      showTimelineModal(data);
+    });
 
     const transcriptToggle = document.getElementById('analytics-transcript-toggle');
     const transcriptBody = document.getElementById('analytics-transcript-body');

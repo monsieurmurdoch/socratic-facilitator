@@ -23,6 +23,7 @@ describe("session route guardrails", () => {
       "router.post('/:code/materials'",
       "router.post('/:code/prime'",
       "router.get('/:code/messages'",
+      "router.post('/:shortCode/teacher-notes'",
       "router.delete('/:code/materials/:materialId'"
     ];
 

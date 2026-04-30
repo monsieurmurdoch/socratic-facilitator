@@ -55,6 +55,7 @@ async function getBySession(sessionId, options = {}) {
     `SELECT
       m.*,
       p.name as participant_name,
+      p.user_id as participant_user_id,
       tp.name as target_participant_name
      FROM messages m
      LEFT JOIN participants p ON m.participant_id = p.id

@@ -7,6 +7,7 @@ const router = express.Router();
 const sessionsRepo = require('../db/repositories/sessions');
 const participantsRepo = require('../db/repositories/participants');
 const messagesRepo = require('../db/repositories/messages');
+const messageAnalyticsRepo = require('../db/repositories/messageAnalytics');
 const materialsRepo = require('../db/repositories/materials');
 const materialChunksRepo = require('../db/repositories/materialChunks');
 const primedContextRepo = require('../db/repositories/primedContext');
@@ -250,6 +251,8 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
     // Get detailed session analytics
     const analytics = await sessionsRepo.getDetailedAnalytics(session.id, userId);
     const messages = await messagesRepo.getBySession(session.id, { limit: 500 });
+    const messageAnalytics = await messageAnalyticsRepo.listBySession(session.id, 500);
+    const analyticsByMessageId = new Map(messageAnalytics.map(row => [row.message_id, row]));
     const teacherNotesReport = access.canManage
       ? await sessionReportsRepo.getBySessionAndType(session.id, 'teacher_notes')
       : null;
@@ -266,15 +269,32 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
       canManage: access.canManage,
       teacherNotes: teacherNotesReport?.report_json?.notes || '',
       analytics,
-      messages: messages.map(m => ({
-        id: m.id,
-        senderType: m.sender_type,
-        senderName: m.sender_name || m.participant_name,
-        content: m.content,
-        moveType: m.move_type,
-        targetParticipantName: m.target_participant_name,
-        createdAt: m.created_at
-      }))
+      messages: messages.map(m => {
+        const row = analyticsByMessageId.get(m.id);
+        return {
+          id: m.id,
+          participantId: m.participant_id,
+          senderType: m.sender_type,
+          senderName: m.sender_name || m.participant_name,
+          content: m.content,
+          moveType: m.move_type,
+          targetParticipantName: m.target_participant_name,
+          createdAt: m.created_at,
+          isViewerMessage: !access.canManage && m.participant_user_id === userId,
+          analytics: row ? {
+            specificity: Number(row.specificity || 0),
+            profoundness: Number(row.profoundness || 0),
+            coherence: Number(row.coherence || 0),
+            discussionValue: Number(row.discussion_value || 0),
+            contributionWeight: Number(row.contribution_weight || 0),
+            engagementEstimate: Number(row.engagement_estimate || 0),
+            respondedToPeer: !!row.responded_to_peer,
+            referencedAnchor: !!row.referenced_anchor,
+            isAnchor: !!row.is_anchor,
+            reasoning: row.reasoning || null
+          } : null
+        };
+      })
     });
   } catch (error) {
     console.error('Session analytics error:', error);
@@ -290,10 +310,8 @@ router.post('/:shortCode/teacher-notes', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    const access = await getSessionAccess(session, req.user);
-    if (!access.canManage) {
-      return res.status(403).json({ error: 'Teacher notes require teacher access' });
-    }
+    const access = await requireSessionAccess(req, res, session, { manage: true });
+    if (!access) return;
 
     const notes = String(req.body?.notes || '').slice(0, 12000);
     const report = await sessionReportsRepo.upsert({

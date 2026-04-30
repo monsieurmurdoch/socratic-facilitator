@@ -34,4 +34,16 @@ describe('analytics post-mortem UI guards', () => {
     expect(sessionsRouteSource).toContain("router.post('/:shortCode/teacher-notes', requireAuth");
     expect(sessionsRouteSource).toContain("reportType: 'teacher_notes'");
   });
+
+  test('analytics timeline modal renders zoomable speaker and metric lanes', () => {
+    expect(appSource).toContain('conversation-timeline-modal');
+    expect(appSource).toContain('open-conversation-timeline');
+    expect(appSource).toContain('timeline-zoom-in');
+    expect(appSource).toContain('timelineZoom');
+    expect(appSource).toContain('Who spoke');
+    expect(appSource).toContain('timeline-inspector');
+    expect(appSource).toContain('timelineFavorites');
+    expect(styleSource).toContain('.timeline-modal-content');
+    expect(styleSource).toContain('.conversation-timeline-svg');
+  });
 });
