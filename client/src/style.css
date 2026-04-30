@@ -1868,6 +1868,21 @@ body.video-active {
   transition: all 0.25s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
 
+.analytics-metric-button {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  font: inherit;
+}
+
+.analytics-metric-button:focus-visible {
+  outline: 3px solid var(--accent-light);
+  outline-offset: 2px;
+}
+
 .analytics-metric:hover {
   transform: translateY(-3px);
   box-shadow: 0 10px 24px -6px rgba(139, 69, 19, 0.12);
@@ -1888,6 +1903,150 @@ body.video-active {
   letter-spacing: 0.5px;
   color: var(--text-secondary);
   text-transform: uppercase;
+}
+
+.metric-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1002;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.metric-detail-backdrop[hidden] {
+  display: none;
+}
+
+.metric-detail-modal {
+  position: relative;
+  width: min(520px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+  padding: 28px;
+}
+
+.metric-detail-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.metric-detail-value {
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+  margin-bottom: 12px;
+  font-feature-settings: "tnum";
+}
+
+.metric-detail-modal h3 {
+  margin: 0 36px 12px 0;
+  padding: 0;
+  border: 0;
+}
+
+.metric-detail-modal p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+
+.metric-detail-formula {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.metric-detail-formula span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.metric-detail-formula code {
+  color: var(--text);
+  white-space: normal;
+}
+
+.analytics-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--accent-light);
+}
+
+.analytics-section-header h3 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.analytics-section-toggle {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 7px 10px;
+}
+
+.analytics-section-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent-light);
+}
+
+.teacher-notes-input {
+  width: 100%;
+  min-height: 160px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  padding: 14px;
+}
+
+.teacher-notes-input:focus {
+  outline: 3px solid var(--accent-light);
+  border-color: var(--accent);
+}
+
+.teacher-notes-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.teacher-notes-status {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
 }
 
 .participants-table {

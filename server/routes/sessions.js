@@ -10,6 +10,7 @@ const messagesRepo = require('../db/repositories/messages');
 const materialsRepo = require('../db/repositories/materials');
 const materialChunksRepo = require('../db/repositories/materialChunks');
 const primedContextRepo = require('../db/repositories/primedContext');
+const sessionReportsRepo = require('../db/repositories/sessionReports');
 const classesRepo = require('../db/repositories/classes');
 const classMembershipsRepo = require('../db/repositories/classMemberships');
 const storage = require('../storage');
@@ -249,6 +250,9 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
     // Get detailed session analytics
     const analytics = await sessionsRepo.getDetailedAnalytics(session.id, userId);
     const messages = await messagesRepo.getBySession(session.id, { limit: 500 });
+    const teacherNotesReport = access.canManage
+      ? await sessionReportsRepo.getBySessionAndType(session.id, 'teacher_notes')
+      : null;
 
     res.json({
       session: {
@@ -259,6 +263,8 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
         createdAt: session.created_at,
         endedAt: session.ended_at
       },
+      canManage: access.canManage,
+      teacherNotes: teacherNotesReport?.report_json?.notes || '',
       analytics,
       messages: messages.map(m => ({
         id: m.id,
@@ -273,6 +279,40 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Session analytics error:', error);
     res.status(500).json({ error: 'Failed to load session analytics' });
+  }
+});
+
+router.post('/:shortCode/teacher-notes', requireAuth, async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+    const session = await sessionsRepo.findByShortCode(shortCode);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const access = await getSessionAccess(session, req.user);
+    if (!access.canManage) {
+      return res.status(403).json({ error: 'Teacher notes require teacher access' });
+    }
+
+    const notes = String(req.body?.notes || '').slice(0, 12000);
+    const report = await sessionReportsRepo.upsert({
+      sessionId: session.id,
+      reportType: 'teacher_notes',
+      reportJson: {
+        notes,
+        updatedByUserId: req.user.id,
+        updatedAt: new Date().toISOString()
+      }
+    });
+
+    res.json({
+      notes: report.report_json?.notes || '',
+      updatedAt: report.report_json?.updatedAt || report.generated_at
+    });
+  } catch (error) {
+    console.error('Teacher notes error:', error);
+    res.status(500).json({ error: 'Failed to save teacher notes' });
   }
 });
 

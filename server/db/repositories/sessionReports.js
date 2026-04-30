@@ -10,6 +10,16 @@ async function getBySession(sessionId) {
   return result.rows[0] || null;
 }
 
+async function getBySessionAndType(sessionId, reportType = 'teacher_debrief') {
+  const result = await db.query(
+    `SELECT *
+     FROM session_reports
+     WHERE session_id = $1 AND report_type = $2`,
+    [sessionId, reportType]
+  );
+  return result.rows[0] || null;
+}
+
 async function upsert({ sessionId, reportType = 'teacher_debrief', reportJson }) {
   const result = await db.query(
     `INSERT INTO session_reports (session_id, report_type, report_json, generated_at)
@@ -25,5 +35,6 @@ async function upsert({ sessionId, reportType = 'teacher_debrief', reportJson })
 
 module.exports = {
   getBySession,
+  getBySessionAndType,
   upsert
 };

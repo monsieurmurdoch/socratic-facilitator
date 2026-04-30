@@ -3177,7 +3177,7 @@
   }
 
   function renderAnalyticsContent(data) {
-    const { session, analytics, messages = [] } = data;
+    const { session, analytics, messages = [], canManage = false, teacherNotes = '' } = data;
     const content = document.getElementById('analytics-content');
 
     const formatDuration = (seconds) => {
@@ -3194,6 +3194,64 @@
       if (!dateString) return '';
       return new Date(dateString).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     };
+
+    const metricDetails = {
+      participants: {
+        title: "Participants",
+        value: String(analytics.overview.participantCount),
+        body: "Unique participant records attached to this session. This includes teachers and learners who joined the session, not just people who spoke.",
+        formula: "COUNT(DISTINCT participants.id)"
+      },
+      messages: {
+        title: "Messages",
+        value: String(analytics.overview.messageCount),
+        body: "Saved transcript turns for the session. Participant speech is batched into speaker turns before it is counted.",
+        formula: "COUNT(DISTINCT messages.id)"
+      },
+      duration: {
+        title: "Duration",
+        value: formatDuration(analytics.overview.durationSeconds),
+        body: "Clock time from session creation to the ended timestamp. This is session duration, not just speaking time.",
+        formula: "ended_at - created_at"
+      },
+      totalSpeaking: {
+        title: "Total Speaking",
+        value: `${analytics.overview.totalSpeakingTimeSeconds}s`,
+        body: "Estimated participant speaking time summed across participant turns. Today this is estimated from word count, so it should be read as directional.",
+        formula: "sum(max(1s, words / 150 wpm * 60s))"
+      },
+      specificity: {
+        title: "Avg Specificity",
+        value: analytics.quality.avgSpecificity.toFixed(2),
+        body: "How much the discussion used concrete details, evidence, examples, or textual references instead of staying general.",
+        formula: "average(message_analytics.specificity)"
+      },
+      profoundness: {
+        title: "Avg Profoundness",
+        value: analytics.quality.avgProfoundness.toFixed(2),
+        body: "How often comments moved beyond surface response into interpretation, implication, tension, or genuinely meaningful insight.",
+        formula: "average(message_analytics.profoundness)"
+      },
+      coherence: {
+        title: "Avg Coherence",
+        value: analytics.quality.avgCoherence.toFixed(2),
+        body: "How well participant comments connected to the prompt, prior turns, and the emerging thread of the discussion.",
+        formula: "average(message_analytics.coherence)"
+      },
+      discussionValue: {
+        title: "Avg Discussion Value",
+        value: analytics.quality.avgDiscussionValue.toFixed(2),
+        body: "A blended score meant to summarize the pedagogical value of participant turns. It weights profoundness slightly more heavily than specificity or coherence.",
+        formula: "(specificity * 0.35) + (profoundness * 0.40) + (coherence * 0.25)"
+      }
+    };
+
+    const metricCard = (key, value, label) => `
+      <button type="button" class="analytics-metric analytics-metric-button" data-metric-key="${escapeAttribute(key)}" aria-label="Explain ${escapeAttribute(label)}">
+        <span class="metric-value">${value}</span>
+        <span class="metric-label">${escapeHtml(label)}</span>
+      </button>
+    `;
 
     const transcriptHtml = messages.length
       ? messages.map(msg => {
@@ -3213,27 +3271,40 @@
         }).join('')
       : '<p class="empty-state">No transcript messages were saved for this session.</p>';
 
+    const teacherNotesHtml = canManage ? `
+      <!-- Teacher Notes -->
+      <div class="analytics-section teacher-notes-section">
+        <h3>Teacher Notes</h3>
+        <textarea id="teacher-notes-input" class="teacher-notes-input" rows="7" maxlength="12000" placeholder="Write private notes about what happened, who to follow up with, or what to try next time.">${escapeHtml(teacherNotes)}</textarea>
+        <div class="teacher-notes-actions">
+          <button type="button" class="btn btn-primary btn-small" id="save-teacher-notes" data-shortcode="${escapeAttribute(session.shortCode)}">Save Notes</button>
+          <span id="teacher-notes-status" class="teacher-notes-status" aria-live="polite"></span>
+        </div>
+      </div>
+    ` : '';
+
     content.innerHTML = `
+      <div class="metric-detail-backdrop" id="metric-detail-backdrop" hidden>
+        <div class="metric-detail-modal" role="dialog" aria-modal="true" aria-labelledby="metric-detail-title">
+          <button type="button" class="metric-detail-close" id="metric-detail-close" aria-label="Close metric explanation">&times;</button>
+          <div class="metric-detail-value" id="metric-detail-value"></div>
+          <h3 id="metric-detail-title"></h3>
+          <p id="metric-detail-body"></p>
+          <div class="metric-detail-formula">
+            <span>How it is calculated</span>
+            <code id="metric-detail-formula"></code>
+          </div>
+        </div>
+      </div>
+
       <!-- Session Overview -->
       <div class="analytics-section">
         <h3>Session Overview</h3>
         <div class="analytics-grid">
-          <div class="analytics-metric">
-            <span class="metric-value">${analytics.overview.participantCount}</span>
-            <span class="metric-label">Participants</span>
-          </div>
-          <div class="analytics-metric">
-            <span class="metric-value">${analytics.overview.messageCount}</span>
-            <span class="metric-label">Messages</span>
-          </div>
-          <div class="analytics-metric">
-            <span class="metric-value">${formatDuration(analytics.overview.durationSeconds)}</span>
-            <span class="metric-label">Duration</span>
-          </div>
-          <div class="analytics-metric">
-            <span class="metric-value">${analytics.overview.totalSpeakingTimeSeconds}s</span>
-            <span class="metric-label">Total Speaking</span>
-          </div>
+          ${metricCard('participants', analytics.overview.participantCount, 'Participants')}
+          ${metricCard('messages', analytics.overview.messageCount, 'Messages')}
+          ${metricCard('duration', formatDuration(analytics.overview.durationSeconds), 'Duration')}
+          ${metricCard('totalSpeaking', `${analytics.overview.totalSpeakingTimeSeconds}s`, 'Total Speaking')}
         </div>
       </div>
 
@@ -3241,22 +3312,10 @@
       <div class="analytics-section">
         <h3>Discussion Quality</h3>
         <div class="analytics-grid">
-          <div class="analytics-metric">
-            <span class="metric-value">${analytics.quality.avgSpecificity.toFixed(2)}</span>
-            <span class="metric-label">Avg Specificity</span>
-          </div>
-          <div class="analytics-metric">
-            <span class="metric-value">${analytics.quality.avgProfoundness.toFixed(2)}</span>
-            <span class="metric-label">Avg Profoundness</span>
-          </div>
-          <div class="analytics-metric">
-            <span class="metric-value">${analytics.quality.avgCoherence.toFixed(2)}</span>
-            <span class="metric-label">Avg Coherence</span>
-          </div>
-          <div class="analytics-metric">
-            <span class="metric-value">${analytics.quality.avgDiscussionValue.toFixed(2)}</span>
-            <span class="metric-label">Avg Discussion Value</span>
-          </div>
+          ${metricCard('specificity', analytics.quality.avgSpecificity.toFixed(2), 'Avg Specificity')}
+          ${metricCard('profoundness', analytics.quality.avgProfoundness.toFixed(2), 'Avg Profoundness')}
+          ${metricCard('coherence', analytics.quality.avgCoherence.toFixed(2), 'Avg Coherence')}
+          ${metricCard('discussionValue', analytics.quality.avgDiscussionValue.toFixed(2), 'Avg Discussion Value')}
         </div>
         <div style="margin-top: 16px; font-size: 0.9rem; color: var(--text-secondary);">
           <strong>Engagement Metrics:</strong> ${analytics.quality.anchorReferences} anchor references,
@@ -3305,8 +3364,11 @@
 
       <!-- Transcript -->
       <div class="analytics-section">
-        <h3>Transcript</h3>
-        <div class="transcript-feed">
+        <div class="analytics-section-header">
+          <h3>Transcript</h3>
+          <button type="button" class="analytics-section-toggle" id="analytics-transcript-toggle" aria-expanded="true" aria-controls="analytics-transcript-body">Collapse</button>
+        </div>
+        <div class="transcript-feed" id="analytics-transcript-body">
           ${transcriptHtml}
         </div>
       </div>
@@ -3321,6 +3383,62 @@
           ${session.endedAt ? `<strong>Ended:</strong> ${formatDateTime(session.endedAt)}` : ''}
         </div>
       </div>
+
+      ${teacherNotesHtml}
     `;
+
+    const detailBackdrop = document.getElementById('metric-detail-backdrop');
+    const detailClose = document.getElementById('metric-detail-close');
+    const closeMetricDetail = () => {
+      if (detailBackdrop) detailBackdrop.hidden = true;
+    };
+    const openMetricDetail = (detail) => {
+      if (!detailBackdrop || !detail) return;
+      document.getElementById('metric-detail-value').textContent = detail.value;
+      document.getElementById('metric-detail-title').textContent = detail.title;
+      document.getElementById('metric-detail-body').textContent = detail.body;
+      document.getElementById('metric-detail-formula').textContent = detail.formula;
+      detailBackdrop.hidden = false;
+    };
+
+    content.querySelectorAll('[data-metric-key]').forEach(card => {
+      card.addEventListener('click', () => openMetricDetail(metricDetails[card.dataset.metricKey]));
+    });
+    if (detailBackdrop) {
+      detailBackdrop.addEventListener('click', (event) => {
+        if (event.target === detailBackdrop) closeMetricDetail();
+      });
+    }
+    if (detailClose) detailClose.addEventListener('click', closeMetricDetail);
+
+    const transcriptToggle = document.getElementById('analytics-transcript-toggle');
+    const transcriptBody = document.getElementById('analytics-transcript-body');
+    if (transcriptToggle && transcriptBody) {
+      transcriptToggle.addEventListener('click', () => {
+        const collapsed = transcriptBody.toggleAttribute('hidden');
+        transcriptToggle.textContent = collapsed ? 'Expand' : 'Collapse';
+        transcriptToggle.setAttribute('aria-expanded', String(!collapsed));
+      });
+    }
+
+    const saveNotesButton = document.getElementById('save-teacher-notes');
+    const notesInput = document.getElementById('teacher-notes-input');
+    const notesStatus = document.getElementById('teacher-notes-status');
+    if (saveNotesButton && notesInput && notesStatus) {
+      saveNotesButton.addEventListener('click', async () => {
+        saveNotesButton.disabled = true;
+        notesStatus.textContent = 'Saving...';
+        try {
+          await apiPost(`/api/sessions/${saveNotesButton.dataset.shortcode}/teacher-notes`, {
+            notes: notesInput.value
+          });
+          notesStatus.textContent = 'Saved';
+        } catch (error) {
+          notesStatus.textContent = `Could not save: ${error.message}`;
+        } finally {
+          saveNotesButton.disabled = false;
+        }
+      });
+    }
   }
 })();
