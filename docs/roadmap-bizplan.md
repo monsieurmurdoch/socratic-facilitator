@@ -1,6 +1,6 @@
 # Socratic Facilitator Product Board
 
-Updated: 2026-04-28  
+Updated: 2026-04-30  
 Mirror: `~/Documents/Obsidian Vault/Coding/Socratic-Facilitator (Expanse)/roadmap-bizplan.md`
 
 ## Operating Thesis
@@ -23,6 +23,7 @@ Launch a pilot-ready product that can get at least one paying client to run recu
 - [x] Parent account concept.
 - [x] Source material upload and priming.
 - [x] Transcript capture/display.
+- [x] Post-session analytics timeline MVP: speaker turns, score lanes, anchors, hover inspector, zoom, local favorites.
 - [x] Class room-code direction started.
 - [x] Post-session report infrastructure started.
 - [ ] Single clean pilot flow: create class -> add reading -> go live -> end -> report.
@@ -45,6 +46,7 @@ Launch a pilot-ready product that can get at least one paying client to run recu
 - [ ] Guest join capability separates easy access from public data access.
 - [x] Signed guest/session access tokens for unauthenticated pilots.
 - [ ] Sensitive audit events for transcript views, exports, material changes, parent access.
+- [ ] Dual-permission parent access: parent can view a child's post-session details only when both teacher and child/student permission are granted.
 - [ ] Production-safe defaults for retention and exports.
 
 ### AI And Data
@@ -124,6 +126,7 @@ A teacher can tune Plato from "only ask questions" to "occasionally synthesize o
 - [ ] Consent screen appears before mic/transcription starts.
 - [ ] Data-use mode is stored per session and participant.
 - [ ] Teacher can choose: no retention, report-only retention, or consented research/eval retention.
+- [ ] Student/child consent and teacher approval are both required before parent access to child-specific comments, favorites, or transcript-linked analytics.
 - [ ] Export/delete path exists for transcripts and participant records.
 - [ ] LLM-assisted labeling queue can consume only consented sessions.
 - [ ] Data export format includes speaker turns, timestamps, move labels, model metadata, and redaction status.
@@ -340,6 +343,7 @@ The product has evidence that the unit works: people show up, talk to each other
 - [ ] Retention policy applied.
 - [ ] Delete/export requests tracked.
 - [ ] Parent-safe report mode respected.
+- [ ] Parent child-comment access respects dual-permission grants.
 - [ ] Incident log maintained.
 
 ## Backlog
@@ -357,6 +361,7 @@ The product has evidence that the unit works: people show up, talk to each other
 - [ ] Transcript truth checks in analytics/report modal.
 - [ ] Teacher-facing question-posture control.
 - [ ] Parent/teacher report polish.
+- [ ] Dual-permission parent access model for child-specific transcript/timeline details.
 
 ### Should Do Soon
 
@@ -368,6 +373,7 @@ The product has evidence that the unit works: people show up, talk to each other
 - [ ] Labeling queue.
 - [ ] Report export.
 - [ ] Admin retention controls.
+- [ ] Parent/child/teacher permission grants for timeline comments, favorites, and transcript excerpts.
 - [ ] Conversation replay/debugger for Plato decisions.
 - [ ] Teacher transcript-health indicator.
 - [ ] Persisted intervention-mode controls and telemetry.

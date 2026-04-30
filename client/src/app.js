@@ -1037,6 +1037,7 @@
             ` : ""}
             <div class="timeline-actions">
               <button class="btn btn-secondary btn-small timeline-open-btn" data-shortcode="${escapeAttribute(session.shortCode)}">Open Analytics</button>
+              <button class="btn btn-secondary btn-small timeline-graph-btn" data-shortcode="${escapeAttribute(session.shortCode)}">Timeline</button>
               <span class="workspace-item-tag code-badge code-badge-session">${escapeHtml(session.shortCode)}</span>
             </div>
           </div>
@@ -1062,6 +1063,13 @@
       btn.addEventListener('click', (event) => {
         event.stopPropagation();
         showSessionAnalytics(btn.dataset.shortcode);
+      });
+    });
+
+    document.querySelectorAll('.timeline-graph-btn').forEach(btn => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        showSessionTimeline(btn.dataset.shortcode);
       });
     });
   }
@@ -3258,6 +3266,41 @@
     renderTimelineModal();
   }
 
+  function showSessionTimeline(shortCode) {
+    if (!accountUser) {
+      console.warn('[Timeline] Requires sign-in');
+      return;
+    }
+
+    const modal = ensureTimelineModal();
+    modal.style.display = '';
+    modal.classList.add('active');
+    document.getElementById('conversation-timeline-title').textContent = `Session ${shortCode} Timeline`;
+    document.getElementById('conversation-timeline-subtitle').textContent = 'Loading transcript and analytics...';
+    document.getElementById('conversation-timeline-chart').innerHTML = `
+      <div class="analytics-loading">
+        <div class="spinner"></div>
+        <p>Loading timeline...</p>
+      </div>
+    `;
+    document.getElementById('timeline-inspector').innerHTML = `
+      <p class="timeline-inspector-empty">Timeline details will appear here.</p>
+    `;
+
+    apiGet(`/api/sessions/${shortCode}/analytics`)
+      .then(data => {
+        currentAnalyticsData = data;
+        timelineZoom = 1;
+        renderTimelineModal();
+      })
+      .catch(error => {
+        console.error('Failed to load timeline:', error);
+        document.getElementById('conversation-timeline-chart').innerHTML = `
+          <p class="empty-state">Failed to load timeline: ${escapeHtml(error.message)}</p>
+        `;
+      });
+  }
+
   function hideTimelineModal() {
     const modal = document.getElementById('conversation-timeline-modal');
     if (!modal) return;
@@ -3372,7 +3415,7 @@
     const title = document.getElementById('conversation-timeline-title');
     const subtitle = document.getElementById('conversation-timeline-subtitle');
     if (title) title.textContent = `${session.title || 'Session'} Timeline`;
-    if (subtitle) subtitle.textContent = 'X-axis shows when each turn happened; metric lanes show participant scores over time.';
+    if (subtitle) subtitle.textContent = 'Speaker turns, scoring lanes, anchors, and transcript context across the full session.';
 
     const datedMessages = messages
       .map((msg, index) => ({ ...msg, _index: index, _time: msg.createdAt ? new Date(msg.createdAt).getTime() : NaN }))
@@ -3407,6 +3450,8 @@
     const xFor = (time) => left + ((time - minTime) / durationMs) * plotWidth;
     const participantMessages = datedMessages.filter(msg => msg.senderType === 'participant' && msg.analytics);
     const showSnippets = timelineZoom > 1.35;
+    const speakerCount = new Set(datedMessages.map(msg => msg.senderType === 'facilitator' ? 'Plato' : (msg.senderName || 'Unknown'))).size;
+    const scoreCount = participantMessages.length;
 
     const timeTicks = [];
     const tickCount = Math.min(10, Math.max(3, Math.ceil(width / 240)));
@@ -3492,6 +3537,13 @@
     }).join('') : '';
 
     chart.innerHTML = `
+      <div class="timeline-summary-strip">
+        <span>${datedMessages.length} turns</span>
+        <span>${speakerCount} voices</span>
+        <span>${scoreCount} scored participant turns</span>
+        <span>${Math.round(minutes)} min span</span>
+        <span>${showSnippets ? 'Transcript labels visible' : 'Zoom in for transcript labels'}</span>
+      </div>
       <svg class="conversation-timeline-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Conversation timeline graph">
         <rect x="0" y="0" width="${width}" height="${height}" class="timeline-bg" />
         ${timeTicks.join('')}
@@ -3644,12 +3696,16 @@
 
       <!-- Session Overview -->
       <div class="analytics-section">
-        <h3>Session Overview</h3>
-        <div class="analytics-action-row">
+        <div class="analytics-tool-strip">
+          <div>
+            <strong>Explore the conversation over time</strong>
+            <span>Speaker turns, scores, anchors, and transcript hover cards.</span>
+          </div>
           <button type="button" class="btn btn-secondary btn-small" id="open-conversation-timeline">
             Open Timeline
           </button>
         </div>
+        <h3>Session Overview</h3>
         <div class="analytics-grid">
           ${metricCard('participants', analytics.overview.participantCount, 'Participants')}
           ${metricCard('messages', analytics.overview.messageCount, 'Messages')}
@@ -3796,4 +3852,6 @@
       });
     }
   }
+
+  window.socraticOpenTimeline = showSessionTimeline;
 })();

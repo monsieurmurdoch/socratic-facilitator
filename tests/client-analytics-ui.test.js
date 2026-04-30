@@ -38,11 +38,16 @@ describe('analytics post-mortem UI guards', () => {
   test('analytics timeline modal renders zoomable speaker and metric lanes', () => {
     expect(appSource).toContain('conversation-timeline-modal');
     expect(appSource).toContain('open-conversation-timeline');
+    expect(appSource).toContain('timeline-graph-btn');
+    expect(appSource).toContain('function showSessionTimeline');
+    expect(appSource).toContain('window.socraticOpenTimeline = showSessionTimeline');
     expect(appSource).toContain('timeline-zoom-in');
     expect(appSource).toContain('timelineZoom');
     expect(appSource).toContain('Who spoke');
     expect(appSource).toContain('timeline-inspector');
     expect(appSource).toContain('timelineFavorites');
+    expect(appSource).toContain('timeline-summary-strip');
+    expect(styleSource).toContain('.analytics-tool-strip');
     expect(styleSource).toContain('.timeline-modal-content');
     expect(styleSource).toContain('.conversation-timeline-svg');
   });
