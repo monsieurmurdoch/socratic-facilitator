@@ -43,4 +43,9 @@ describe("session route guardrails", () => {
     expect(source).not.toContain("router.get('/:shortCode/analytics', requireAuth");
     expect(source).not.toContain("router.post('/:shortCode/teacher-notes', requireAuth");
   });
+
+  test("legacy ownerless sessions remain recoverable for signed-in teachers", () => {
+    expect(source).toContain("!session.owner_user_id && !session.class_id && user.role === 'Teacher'");
+    expect(source).toContain("without reopening anonymous code-only access");
+  });
 });

@@ -40,6 +40,13 @@ async function getSessionAccess(session, user) {
     return { canView: true, canManage: true };
   }
 
+  // Sessions created before account/class ownership existed have no durable owner.
+  // Let signed-in educators recover their own legacy post-mortems from the UI
+  // without reopening anonymous code-only access to raw session data.
+  if (!session.owner_user_id && !session.class_id && user.role === 'Teacher') {
+    return { canView: true, canManage: true };
+  }
+
   if (session.class_id) {
     const cls = await classesRepo.findById(session.class_id);
     if (cls?.owner_user_id === user.id) {
