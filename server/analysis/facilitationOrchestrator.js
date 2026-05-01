@@ -49,6 +49,7 @@ class FacilitationOrchestrator {
     this.anchorTracker = new AnchorTracker();
     this.claimAssessor = new ClaimAssessor();
     this.neuron = new InterventionNeuron(ageProfile);
+    this.ageProfile = ageProfile;
     this.humanDeference = new HumanDeference();
 
     // Conversation state
@@ -161,6 +162,15 @@ class FacilitationOrchestrator {
       decision,
       phase: this.phase
     };
+  }
+
+  /**
+   * Update the intervention profile without dropping accumulated conversation state.
+   */
+  setAgeProfile(ageProfile) {
+    if (!ageProfile || ageProfile === this.ageProfile) return;
+    this.neuron = new InterventionNeuron(ageProfile);
+    this.ageProfile = ageProfile;
   }
 
   /**

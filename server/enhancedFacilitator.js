@@ -76,7 +76,9 @@ class EnhancedFacilitationEngine {
     if (!this.orchestrators.has(sessionId)) {
       this.orchestrators.set(sessionId, new FacilitationOrchestrator(opts));
     }
-    return this.orchestrators.get(sessionId);
+    const orchestrator = this.orchestrators.get(sessionId);
+    orchestrator.setAgeProfile?.(opts.ageProfile);
+    return orchestrator;
   }
 
   /**

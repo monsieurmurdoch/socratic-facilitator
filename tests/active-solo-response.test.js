@@ -43,6 +43,57 @@ describe("active solo discussion response cadence", () => {
     expect(result.forcedBySoloCadence).toBe(true);
   });
 
+  test("orchestrator switches back to group intervention weights when a solo session becomes multiparty", async () => {
+    const engine = new EnhancedFacilitationEngine("test-key");
+    engine._generateMessage = jest.fn(async () => ({
+      text: "What makes that feel more cyclical than depressing?",
+      move: "deepen",
+      targetParticipantName: null
+    }));
+
+    const participants = new Map([
+      ["teacher-1", { id: "teacher-1", name: "Demo Teacher", age: 14 }]
+    ]);
+    const stateTracker = {
+      sessionId: "session-weights",
+      participants,
+      topic: { title: "Ozymandias", openingQuestion: "What strikes you?" },
+      getTurnsIncludingCurrent: () => [
+        {
+          participantId: "teacher-1",
+          participantName: "Demo Teacher",
+          text: "It feels cyclical."
+        }
+      ]
+    };
+
+    await engine.processMessage(stateTracker, {
+      participantName: "Demo Teacher",
+      text: "It feels cyclical.",
+      timestamp: Date.now(),
+      llmAssessment: {
+        engagement: { specificity: 0.8, profoundness: 0.4, coherence: 0.8 },
+        anchor: { isAnchor: false }
+      }
+    });
+
+    expect(engine.orchestrators.get("session-weights").ageProfile).toBe("solo_middle");
+
+    participants.set("student-2", { id: "student-2", name: "Chris", age: 14 });
+    await engine.processMessage(stateTracker, {
+      participantName: "Chris",
+      text: "I agree with that, and I think the ruins make it less depressing.",
+      timestamp: Date.now() + 1000,
+      llmAssessment: {
+        engagement: { specificity: 0.8, profoundness: 0.4, coherence: 0.8 },
+        anchor: { isAnchor: false }
+      }
+    });
+
+    expect(engine.orchestrators.get("session-weights").ageProfile).toBe("middle");
+    expect(engine.orchestrators.get("session-weights").neuron.threshold).toBe(0.5);
+  });
+
   test("active solo forced replies bypass group hard constraints", async () => {
     const ws = new MockWebSocket();
     const stateTracker = {
