@@ -11,6 +11,8 @@ describe('Expanse landing page routing', () => {
 
     expect(serverSource).toContain('"expanseonline.co"');
     expect(serverSource).toContain('"www.expanseonline.co"');
+    expect(serverSource).toContain('CANONICAL_MARKETING_HOST');
+    expect(serverSource).toContain('res.redirect(308');
     expect(serverSource).toContain('client/public/landing.html');
     expect(serverSource).toContain('return next()');
   });
@@ -20,9 +22,10 @@ describe('Expanse landing page routing', () => {
     const css = read('client/src/landing.css');
 
     expect(landing).toContain('/images/expanse-logo.png');
-    expect(landing).toContain('Expand Every Conversation');
+    expect(landing).toContain('Human-led seminars, amplified by Plato');
     expect(landing).toContain('Socratic extracurriculars');
     expect(landing).toContain('https://talk.expanseonline.co');
-    expect(css).toContain('.conversation-board');
+    expect(css).toContain('.seminar-scene');
+    expect(css).toContain('.proof-section');
   });
 });

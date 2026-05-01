@@ -51,9 +51,9 @@ const wss = new WebSocketServer({ server });
 app.set('trust proxy', 1);
 
 const defaultMarketingHosts = new Set([
-  "expanseonline.co",
   "www.expanseonline.co"
 ]);
+const CANONICAL_MARKETING_HOST = process.env.CANONICAL_MARKETING_HOST || "www.expanseonline.co";
 
 function getMarketingHosts() {
   const configured = String(process.env.MARKETING_HOSTS || "")
@@ -71,7 +71,11 @@ function getRequestHost(req) {
 }
 
 app.get(["/", "/landing"], (req, res, next) => {
-  if (req.path === "/landing" || getMarketingHosts().has(getRequestHost(req))) {
+  const host = getRequestHost(req);
+  if (host === "expanseonline.co") {
+    return res.redirect(308, `https://${CANONICAL_MARKETING_HOST}${req.originalUrl}`);
+  }
+  if (req.path === "/landing" || getMarketingHosts().has(host)) {
     return res.sendFile(path.join(__dirname, "../client/public/landing.html"));
   }
   return next();
