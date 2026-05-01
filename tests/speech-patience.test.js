@@ -203,10 +203,10 @@ describe("SessionManager speech patience", () => {
     await manager.handleParticipantMessage("room1", "p1", "It doesn't seem depressing to me.", { source: "stt" });
     await manager.handleParticipantMessage("room1", "p1", "I mean, there's something cyclical about civilization.", { source: "stt" });
 
-    await jest.advanceTimersByTimeAsync(1000);
+    await jest.advanceTimersByTimeAsync(2000);
     expect(session.stateTracker.recordMessage).not.toHaveBeenCalled();
 
-    await jest.advanceTimersByTimeAsync(200);
+    await jest.advanceTimersByTimeAsync(300);
 
     const expectedText = "It doesn't seem depressing to me. I mean, there's something cyclical about civilization.";
     expect(session.stateTracker.recordMessage).toHaveBeenCalledTimes(1);

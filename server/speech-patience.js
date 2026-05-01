@@ -3,19 +3,22 @@ const SPEECH_PATIENCE_PRESETS = {
     mode: "quick",
     label: "Quick",
     warmupMergeMs: 600,
-    warmupSettleMs: 280
+    warmupSettleMs: 280,
+    activeMergeMs: 1400
   },
   balanced: {
     mode: "balanced",
     label: "Balanced",
     warmupMergeMs: 1100,
-    warmupSettleMs: 450
+    warmupSettleMs: 450,
+    activeMergeMs: 2200
   },
   patient: {
     mode: "patient",
     label: "Patient",
     warmupMergeMs: 1700,
-    warmupSettleMs: 750
+    warmupSettleMs: 750,
+    activeMergeMs: 3200
   }
 };
 

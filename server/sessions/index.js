@@ -410,7 +410,9 @@ class SessionManager {
     }
 
     const speechPatience = this.getSpeechPatience(session);
-    const delay = source === "stt" ? speechPatience.warmupMergeMs : 0;
+    const delay = source === "stt"
+      ? (speechPatience.activeMergeMs || speechPatience.warmupMergeMs)
+      : 0;
     pendingTurn.timer = setTimeout(() => {
       this.finalizeActiveTurn(sessionShortCode, clientId).catch((error) => {
         console.error("[active-stt] finalize turn error:", error.message);

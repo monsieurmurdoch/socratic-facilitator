@@ -25,6 +25,10 @@ const { DISCUSSION_TOPICS, normalizeQuestionPostureMode } = require('../config')
 const { requireAuth } = require('../auth');
 const { apiLimiter } = require('../middleware/rate-limit');
 const { issueSessionAccessToken, getSessionAccessFromRequest } = require('../sessionAccess');
+const {
+  buildAnalyticsFromTranscript,
+  coalesceTranscriptMessages
+} = require('../transcripts/coalesce');
 
 // Enable JSON body parsing
 router.use(express.json({ limit: '10mb' }));
@@ -276,15 +280,17 @@ router.get('/:shortCode/analytics', async (req, res) => {
     if (!access) return;
 
     // Get detailed session analytics
-    const analytics = await sessionsRepo.getDetailedAnalytics(session.id, userId);
-    const messages = await messagesRepo.getBySession(session.id, { limit: 500 });
+    const rawAnalytics = await sessionsRepo.getDetailedAnalytics(session.id, userId);
+    const rawMessages = await messagesRepo.getBySession(session.id, { limit: 500 });
     const messageAnalytics = await optionalAnalyticsRead(
       'message analytics rows',
       [],
       () => messageAnalyticsRepo.listBySession(session.id, 500)
     );
     const analyticsByMessageId = new Map(messageAnalytics.map(row => [row.message_id, row]));
-    const messagesById = new Map(messages.map(message => [message.id, message]));
+    const messages = coalesceTranscriptMessages(rawMessages, analyticsByMessageId);
+    const analytics = buildAnalyticsFromTranscript(rawAnalytics, messages);
+    const messagesById = new Map(rawMessages.map(message => [message.id, message]));
     const participantMessages = messages.filter(message => message.sender_type === 'participant');
     const participantRowCounts = new Map();
     for (const message of participantMessages) {
@@ -293,10 +299,13 @@ router.get('/:shortCode/analytics', async (req, res) => {
     const participantCountsMatch = analytics.participants.every(participant =>
       Number(participant.messageCount || 0) === Number(participantRowCounts.get(participant.id) || 0)
     );
-    const unscoredParticipantMessages = participantMessages.filter(message => !analyticsByMessageId.has(message.id));
+    const unscoredParticipantMessages = participantMessages.filter(message => !message._analytics && !analyticsByMessageId.has(message.id));
     const transcriptWarnings = [];
+    if (messages.length < rawMessages.length) {
+      transcriptWarnings.push(`${rawMessages.length - messages.length} fragmented transcript row(s) were merged into readable speaker turns.`);
+    }
     if (Number(analytics.overview.messageCount || 0) !== messages.length) {
-      transcriptWarnings.push('Overview message count does not match persisted transcript row count.');
+      transcriptWarnings.push('Overview message count does not match displayed transcript turn count.');
     }
     if (!participantCountsMatch) {
       transcriptWarnings.push('One or more participant message counts do not match transcript rows.');
@@ -311,8 +320,9 @@ router.get('/:shortCode/analytics', async (req, res) => {
       transcriptWarnings.push('Session has duration but no saved transcript rows. Check mic, STT, or mute state during the call.');
     }
     const transcriptHealth = {
-      sourceOfTruth: 'messages table',
-      persistedTranscriptRows: messages.length,
+      sourceOfTruth: 'messages table, coalesced for display',
+      persistedTranscriptRows: rawMessages.length,
+      displayedTranscriptRows: messages.length,
       participantTranscriptRows: participantMessages.length,
       scoredParticipantRows: participantMessages.length - unscoredParticipantMessages.length,
       overviewMessageCountMatchesTranscript: Number(analytics.overview.messageCount || 0) === messages.length,
@@ -407,9 +417,10 @@ router.get('/:shortCode/analytics', async (req, res) => {
       transcriptHealth,
       platoReplay,
       messages: messages.map(m => {
-        const row = analyticsByMessageId.get(m.id);
+        const row = m._analytics || analyticsByMessageId.get(m.id);
         return {
           id: m.id,
+          mergedMessageIds: m.mergedMessageIds || [m.id],
           participantId: m.participant_id,
           senderType: m.sender_type,
           senderName: m.sender_name || m.participant_name,

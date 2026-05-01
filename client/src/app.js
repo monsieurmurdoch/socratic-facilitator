@@ -54,9 +54,9 @@
   let timelineFavorites = {};
 
   const SPEECH_PATIENCE_PRESETS = {
-    quick: { warmup: 260, discussion: 220, vadFlush: 110 },
-    balanced: { warmup: 450, discussion: 350, vadFlush: 180 },
-    patient: { warmup: 900, discussion: 720, vadFlush: 320 }
+    quick: { warmup: 350, discussion: 900, vadFlush: 900 },
+    balanced: { warmup: 650, discussion: 1400, vadFlush: 1400 },
+    patient: { warmup: 1000, discussion: 2200, vadFlush: 2200 }
   };
 
   // ---- State Persistence ----
@@ -1881,7 +1881,7 @@
         if (msg.event === "speech_started") {
           setFacilitatorStatus("listening");
         } else if (msg.event === "speech_stopped" && sttBatchBuffer.trim()) {
-          scheduleSttFlush(Math.min(getSpeechPatienceProfile().vadFlush, getSttFlushDelay()));
+          scheduleSttFlush(Math.max(getSpeechPatienceProfile().vadFlush, getSttFlushDelay()));
         }
         break;
 
@@ -3714,10 +3714,10 @@
       <div class="analytics-section transcript-health-section">
         <h3>Transcript Health</h3>
         <div class="transcript-health-grid">
-          <div><strong>${Number(transcriptHealth.persistedTranscriptRows || messages.length)}</strong><span>Persisted turns</span></div>
+          <div><strong>${Number(transcriptHealth.displayedTranscriptRows || messages.length)}</strong><span>Displayed turns</span></div>
+          <div><strong>${Number(transcriptHealth.persistedTranscriptRows || messages.length)}</strong><span>Raw rows</span></div>
           <div><strong>${Number(transcriptHealth.participantTranscriptRows || 0)}</strong><span>Participant turns</span></div>
           <div><strong>${Number(transcriptHealth.scoredParticipantRows || 0)}</strong><span>Scored turns</span></div>
-          <div><strong>Estimated</strong><span>Speaking time basis</span></div>
         </div>
         ${healthWarnings.length ? `
           <div class="transcript-health-warnings">
