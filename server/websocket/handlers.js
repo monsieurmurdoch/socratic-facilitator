@@ -9,6 +9,18 @@ const { authenticateToken } = require("../auth");
 const { issueSessionAccessToken, verifySessionAccessToken } = require("../sessionAccess");
 const { v4: uuidv4 } = require("uuid");
 
+async function getRoomCodeForSession(dbSession) {
+  if (!dbSession?.class_id) return null;
+  try {
+    const classesRepo = require("../db/repositories/classes");
+    const cls = await classesRepo.findById(dbSession.class_id);
+    return cls?.room_code || null;
+  } catch (error) {
+    console.warn("[room_code] Could not load room code:", error.message);
+    return null;
+  }
+}
+
 function isAdminRole(role) {
   return role === 'Admin' || role === 'SuperAdmin';
 }
@@ -457,6 +469,7 @@ async function handleJoinSession(ws, msg, ctx) {
   ws.send(JSON.stringify({
     type: "session_joined",
     sessionId: requestedCode,
+    roomCode: await getRoomCodeForSession(session.dbSession),
     topicTitle: session.topic.title,
     passage: session.topic.passage,
     currentParams: session.paramOverrides || {},
@@ -567,6 +580,7 @@ async function handleRejoinSession(ws, msg, ctx) {
         sessionStatus: dbSession.status,
         messages,
         sessionId,
+        roomCode: await getRoomCodeForSession(dbSession),
         topicTitle: topic.title,
         passage: topic.passage,
         participants,
@@ -634,6 +648,7 @@ async function handleRejoinSession(ws, msg, ctx) {
   ws.send(JSON.stringify({
     type: "session_joined",
     sessionId,
+    roomCode: await getRoomCodeForSession(session.dbSession),
     topicTitle: session.topic.title,
     passage: session.topic.passage,
     participants,

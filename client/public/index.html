@@ -91,7 +91,7 @@
         <div id="signup-parent-fields" class="signup-role-fields" style="display:none;">
           <div class="form-group">
             <label for="auth-child-input">Link to your child (optional)</label>
-            <input type="text" id="auth-child-input" placeholder="Child's email or session code">
+            <input type="text" id="auth-child-input" placeholder="Child's email or room code">
           </div>
         </div>
         <button id="register-btn" class="btn btn-primary" style="width:100%;">Create Account</button>
@@ -110,10 +110,10 @@
       </div>
       <div id="join-section" style="display: none;">
         <div class="form-group">
-          <label for="join-code-input">Room Or Session Code</label>
-          <input type="text" id="join-code-input" placeholder="e.g. RM-4K7P or abc123" maxlength="10" autocomplete="off">
+          <label for="join-code-input">Room Code</label>
+          <input type="text" id="join-code-input" placeholder="e.g. maple-river" maxlength="40" autocomplete="off">
         </div>
-        <p class="join-code-helper">Room codes start with <strong>RM-</strong>. Live session codes are six lowercase characters.</p>
+        <p class="join-code-helper">Ask your teacher for the room code. Older one-time session links still work.</p>
         <button id="join-btn" class="btn btn-secondary">Join</button>
       </div>
     </div>
@@ -195,12 +195,12 @@
     <div id="dashboard-student" class="dashboard-container" style="display:none;">
       <div class="dashboard-card">
         <h3>Join A Class Room</h3>
-        <p class="workspace-meta">Enter the room code or the live session code your teacher gave you.</p>
+        <p class="workspace-meta">Enter the room code your teacher gave you.</p>
         <div class="form-group">
-          <label for="join-code-input-student">Room Or Session Code</label>
-          <input type="text" id="join-code-input-student" placeholder="e.g. RM-4K7P or abc123" maxlength="10" autocomplete="off">
+          <label for="join-code-input-student">Room Code</label>
+          <input type="text" id="join-code-input-student" placeholder="e.g. maple-river" maxlength="40" autocomplete="off">
         </div>
-        <p class="join-code-helper">You can paste either the class room code or today’s live session code.</p>
+        <p class="join-code-helper">Use the same room code each week. Older one-time session links still work.</p>
         <button id="join-btn-student" class="btn btn-primary" style="width:100%;">Join</button>
       </div>
 
@@ -282,7 +282,7 @@
 
         <div class="room-wait-code-card">
           <span class="room-code-label">Stable room code</span>
-          <strong id="room-wait-code">RM-----</strong>
+          <strong id="room-wait-code">room-code</strong>
           <button id="room-wait-copy-btn" class="btn btn-secondary btn-small">Copy Code</button>
         </div>
 
@@ -405,8 +405,8 @@
     <h2>Waiting Room</h2>
 
     <div class="session-code" id="session-code">------</div>
-    <p style="color: var(--text-secondary); font-size: 0.85rem;">Share this live session code so others can join this discussion now.</p>
-    <p style="color: var(--text-muted); font-size: 0.78rem;">Class rooms keep a stable room code. This code is just for today’s live session.</p>
+    <p style="color: var(--text-secondary); font-size: 0.85rem;">Share this room code or link so others can join.</p>
+    <p style="color: var(--text-muted); font-size: 0.78rem;">Each meeting is saved as a private session record inside the room.</p>
 
     <div id="lobby-topic-section" class="passage-preview" style="display:none;">
       <h3 id="lobby-topic">Topic</h3>
@@ -532,6 +532,6 @@
     </div>
   </div>
 
-  <script src="/src/app.js?v=13"></script>
+  <script src="/src/app.js?v=14"></script>
 </body>
 </html>

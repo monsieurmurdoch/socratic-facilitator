@@ -19,13 +19,14 @@ CREATE TABLE IF NOT EXISTS classes (
   name VARCHAR(160) NOT NULL,
   description TEXT,
   age_range VARCHAR(60),
-  room_code VARCHAR(16),
+  room_code VARCHAR(40),
   sort_order INT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE IF EXISTS classes ADD COLUMN IF NOT EXISTS room_code VARCHAR(16);
+ALTER TABLE IF EXISTS classes ADD COLUMN IF NOT EXISTS room_code VARCHAR(40);
+ALTER TABLE IF EXISTS classes ALTER COLUMN room_code TYPE VARCHAR(40);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_room_code_unique ON classes(room_code) WHERE room_code IS NOT NULL;
 
 -- Sessions table

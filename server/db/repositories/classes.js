@@ -4,21 +4,40 @@ function normalizeCode(code = '') {
   return String(code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+const ROOM_ADJECTIVES = [
+  'amber', 'bright', 'cedar', 'clear', 'copper', 'gentle', 'golden', 'green',
+  'hidden', 'juniper', 'lively', 'maple', 'north', 'quiet', 'river', 'silver',
+  'steady', 'stone', 'sunlit', 'willow'
+];
+
+const ROOM_NOUNS = [
+  'atlas', 'bridge', 'circle', 'cove', 'field', 'forge', 'garden', 'harbor',
+  'lantern', 'meadow', 'orbit', 'path', 'prairie', 'ridge', 'summit', 'table',
+  'thread', 'valley', 'window', 'workshop'
+];
+
+function normalizeRoomCodeForDisplay(code = '') {
+  return String(code || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
 function generateRoomCode() {
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 4; i += 1) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `RM-${code}`;
+  const adjective = ROOM_ADJECTIVES[Math.floor(Math.random() * ROOM_ADJECTIVES.length)];
+  const noun = ROOM_NOUNS[Math.floor(Math.random() * ROOM_NOUNS.length)];
+  return `${adjective}-${noun}`;
 }
 
 async function ensureRoomCodeSchema() {
-  await db.query(`ALTER TABLE IF EXISTS classes ADD COLUMN IF NOT EXISTS room_code VARCHAR(16)`);
+  await db.query(`ALTER TABLE IF EXISTS classes ADD COLUMN IF NOT EXISTS room_code VARCHAR(40)`);
+  await db.query(`ALTER TABLE IF EXISTS classes ALTER COLUMN room_code TYPE VARCHAR(40)`);
   await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_classes_room_code_unique ON classes(room_code) WHERE room_code IS NOT NULL`);
 }
 
-async function codeExistsAnywhere(code) {
+async function codeExistsAnywhere(code, { excludeClassId = null } = {}) {
   const normalized = normalizeCode(code);
   let classResult = { rowCount: 0 };
   try {
@@ -27,8 +46,9 @@ async function codeExistsAnywhere(code) {
        FROM classes
        WHERE room_code IS NOT NULL
          AND LOWER(REGEXP_REPLACE(room_code, '[^a-z0-9]', '', 'g')) = $1
+         AND ($2::uuid IS NULL OR id <> $2)
        LIMIT 1`,
-      [normalized]
+      [normalized, excludeClassId]
     );
   } catch (error) {
     if (error?.code !== '42703') throw error;
@@ -54,7 +74,7 @@ async function reserveRoomCode() {
     }
 
     for (let suffix = 2; suffix <= 9; suffix += 1) {
-      const candidate = `${baseCode}${suffix}`;
+      const candidate = `${baseCode}-${suffix}`;
       if (!(await codeExistsAnywhere(candidate))) {
         return candidate;
       }
@@ -66,13 +86,14 @@ async function reserveRoomCode() {
 }
 
 async function persistRoomCode(classId, roomCode) {
+  const normalizedRoomCode = normalizeRoomCodeForDisplay(roomCode);
   try {
     const result = await db.query(
       `UPDATE classes
        SET room_code = $2, updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
-      [classId, roomCode]
+      [classId, normalizedRoomCode]
     );
     return result.rows[0] || null;
   } catch (error) {
@@ -83,7 +104,7 @@ async function persistRoomCode(classId, roomCode) {
          SET room_code = $2, updated_at = NOW()
          WHERE id = $1
          RETURNING *`,
-        [classId, roomCode]
+        [classId, normalizedRoomCode]
       );
       return retried.rows[0] || null;
     }
@@ -92,7 +113,8 @@ async function persistRoomCode(classId, roomCode) {
 }
 
 async function ensureRoomCode(row) {
-  if (!row || row.room_code) return row;
+  if (!row) return row;
+  if (row.room_code && !/^RM-[A-Z0-9]+$/i.test(row.room_code)) return row;
   const roomCode = await reserveRoomCode();
   const updated = await persistRoomCode(row.id, roomCode);
   return updated
@@ -214,10 +236,26 @@ async function update(classId, fields) {
       i++;
     }
   }
+  if (fields.roomCode !== undefined) {
+    const roomCode = normalizeRoomCodeForDisplay(fields.roomCode);
+    if (!roomCode || normalizeCode(roomCode).length < 3) {
+      const error = new Error('Room code must be at least 3 letters or numbers');
+      error.code = 'ROOM_CODE_INVALID';
+      throw error;
+    }
+    if (await codeExistsAnywhere(roomCode, { excludeClassId: classId })) {
+      const error = new Error('Room code is already in use');
+      error.code = 'ROOM_CODE_TAKEN';
+      throw error;
+    }
+    sets.push(`room_code = $${i}`);
+    values.push(roomCode);
+    i++;
+  }
   if (sets.length === 0) return findById(classId);
   values.push(classId);
   const result = await db.query(
-    `UPDATE classes SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`,
+    `UPDATE classes SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${i} RETURNING *`,
     values
   );
   return result.rows[0] || null;
@@ -240,6 +278,7 @@ module.exports = {
   findOwnedByUser,
   findById,
   findByRoomCode,
+  normalizeRoomCodeForDisplay,
   update,
   reorder
 };

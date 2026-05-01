@@ -233,21 +233,26 @@ router.patch('/:id', requireAnyRole(['Teacher', 'Admin', 'SuperAdmin']), async (
     const name = req.body.name !== undefined ? String(req.body.name).trim() : undefined;
     const description = req.body.description !== undefined ? String(req.body.description).trim() || null : undefined;
     const ageRange = req.body.ageRange !== undefined ? String(req.body.ageRange).trim() || null : undefined;
+    const roomCode = req.body.roomCode !== undefined ? String(req.body.roomCode).trim() : undefined;
 
     if (name !== undefined && !name) {
       return res.status(400).json({ error: 'Class name cannot be empty' });
     }
 
-    const updated = await classesRepo.update(req.params.id, { name, description, ageRange });
+    const updated = await classesRepo.update(req.params.id, { name, description, ageRange, roomCode });
     res.json({
       id: updated.id,
       name: updated.name,
       description: updated.description,
       ageRange: updated.age_range,
+      roomCode: updated.room_code,
       sessionCount: parseInt(cls.session_count || '0', 10),
       createdAt: updated.created_at
     });
   } catch (error) {
+    if (error.code === 'ROOM_CODE_INVALID' || error.code === 'ROOM_CODE_TAKEN') {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Update class error:', error);
     res.status(500).json({ error: 'Failed to update class' });
   }

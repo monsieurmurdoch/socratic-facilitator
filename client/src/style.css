@@ -227,7 +227,8 @@ body.video-active {
 
 /* Inline edit fields (used in expanded class card) */
 .class-edit-name,
-.class-edit-age {
+.class-edit-age,
+.class-edit-room-code {
   padding: 10px 14px;
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
@@ -239,7 +240,8 @@ body.video-active {
 }
 
 .class-edit-name:focus,
-.class-edit-age:focus {
+.class-edit-age:focus,
+.class-edit-room-code:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -3294,7 +3296,7 @@ body.video-active {
 .room-code-value {
   font-family: 'Playfair Display', serif;
   font-size: 1.4rem;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.02em;
   color: var(--text);
 }
 

@@ -10,6 +10,7 @@
   let myName = "";
   let myId = "";
   let currentSessionId = null;
+  let currentRoomCode = null;
   let participants = [];
   let isHost = false;
   let jitsiApi = null;
@@ -108,6 +109,7 @@
         myName,
         myId,
         currentSessionId,
+        currentRoomCode,
         isHost,
         participants,
         currentScreen,
@@ -133,6 +135,7 @@
   function clearState() {
     localStorage.removeItem(STORAGE_KEY);
     currentSessionId = null;
+    currentRoomCode = null;
     myId = "";
     participants = [];
     isHost = false;
@@ -324,6 +327,7 @@
         myName = saved.myName;
         myId = saved.myId;
         currentSessionId = saved.currentSessionId;
+        currentRoomCode = saved.currentRoomCode || null;
         isHost = saved.isHost;
         send({
           type: "rejoin_session",
@@ -502,8 +506,11 @@
 
   function normalizeJoinCode(raw) {
     const cleaned = String(raw || "")
-      .replace(/\s+/g, "")
-      .replace(/[^a-zA-Z0-9-]/g, "");
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-zA-Z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "");
     if (!cleaned) return "";
 
     const compact = cleaned.replace(/-/g, "");
@@ -512,7 +519,7 @@
       return suffix ? `RM-${suffix}` : "RM-";
     }
 
-    return compact.toLowerCase().slice(0, 10);
+    return cleaned.toLowerCase().slice(0, 40);
   }
 
   function applyJoinCodeFormatting(input) {
@@ -769,6 +776,11 @@
             <input type="text" class="class-edit-age" value="${escapeHtml(cls.ageRange || '')}" placeholder="e.g. 14-15">
           </div>
           <div class="form-group">
+            <label>Room Code</label>
+            <input type="text" class="class-edit-room-code" value="${escapeHtml(cls.roomCode || '')}" placeholder="maple-river" maxlength="40">
+            <p class="helper-text">Students use this stable code every week. Spaces are okay.</p>
+          </div>
+          <div class="form-group">
             <label>Notes</label>
             <textarea class="class-edit-desc" placeholder="Optional notes">${escapeHtml(cls.description || '')}</textarea>
           </div>
@@ -780,13 +792,15 @@
       card.querySelector('.class-save-btn').addEventListener('click', async () => {
         const name = card.querySelector('.class-edit-name').value.trim();
         const ageRange = card.querySelector('.class-edit-age').value.trim() || null;
+        const roomCode = normalizeJoinCode(card.querySelector('.class-edit-room-code').value.trim());
         const description = card.querySelector('.class-edit-desc').value.trim() || null;
         if (!name) { alert("Class name cannot be empty"); return; }
+        if (!roomCode) { alert("Room code cannot be empty"); return; }
         const btn = card.querySelector('.class-save-btn');
         btn.disabled = true;
         btn.textContent = "Saving...";
         try {
-          const updated = await apiPatch(`/api/classes/${cls.id}`, { name, ageRange, description });
+          const updated = await apiPatch(`/api/classes/${cls.id}`, { name, ageRange, description, roomCode });
           const idx = savedClasses.findIndex(c => c.id === cls.id);
           if (idx !== -1) savedClasses[idx] = { ...savedClasses[idx], ...updated };
           editingClassId = null;
@@ -892,7 +906,7 @@
           `}
         </div>
       </div>
-      <p class="room-code-note">Room codes stay the same for the class. Live session codes change each time you start a new session.</p>`;
+      <p class="room-code-note">Students use the room code every week. Each meeting is saved as a separate session inside this room.</p>`;
 
     renderMaterials();
 
@@ -1610,13 +1624,15 @@
   }
 
   // ---- Share Link ----
-  function getShareLink(sessionId) {
+  function getShareLink(joinCode) {
     const base = `${window.location.origin}${window.location.pathname}`;
-    return `${base}?join=${sessionId}`;
+    return `${base}?join=${encodeURIComponent(joinCode)}`;
   }
 
-  function showShareInfo(sessionId) {
-    document.getElementById("session-code").textContent = sessionId;
+  function showShareInfo(sessionId, roomCode = null) {
+    currentRoomCode = roomCode || null;
+    const publicJoinCode = currentRoomCode || sessionId;
+    document.getElementById("session-code").textContent = publicJoinCode;
 
     // Show dashboard link for host (lobby)
     const dashLink = document.getElementById("dashboard-link");
@@ -1633,8 +1649,8 @@
     }
 
     // Update URL without reload
-    const shareUrl = getShareLink(sessionId);
-    window.history.replaceState({}, '', `?join=${sessionId}`);
+    const shareUrl = getShareLink(publicJoinCode);
+    window.history.replaceState({}, '', `?join=${encodeURIComponent(publicJoinCode)}`);
 
     // Create or update share link display
     let shareEl = document.getElementById("share-link");
@@ -1726,7 +1742,7 @@
           }
         }
         updateParticipantList();
-        showShareInfo(msg.sessionId);
+        showShareInfo(msg.sessionId, msg.roomCode);
         if (msg.topicTitle) {
           document.getElementById("lobby-topic").textContent = msg.topicTitle;
           document.getElementById("lobby-topic-section").style.display = "block";
@@ -1758,7 +1774,7 @@
         myId = msg.yourId;
         participants = msg.participants;
         updateParticipantList();
-        showShareInfo(msg.sessionId);
+        showShareInfo(msg.sessionId, msg.roomCode);
         if (msg.topicTitle) {
           document.getElementById("lobby-topic").textContent = msg.topicTitle;
           document.getElementById("lobby-topic-section").style.display = "block";
@@ -2118,7 +2134,7 @@
 
     if (!cls) {
       titleEl.textContent = "Quick Session";
-      copyEl.textContent = "This will create a one-off discussion with a fresh live code for today only.";
+      copyEl.textContent = "This will create a one-off discussion with a fresh code for today only.";
       roomCodeEl.textContent = "Not used";
       sessionCodeEl.textContent = "Generated when created";
       noteEl.textContent = "Quick sessions are best for demos, tutoring, office hours, and spontaneous conversations.";
@@ -2126,9 +2142,9 @@
     }
 
     titleEl.textContent = cls.name;
-    copyEl.textContent = "This session will live inside a persistent class room, so the same room code keeps working across the semester.";
+    copyEl.textContent = "This session will live inside a persistent room. Students join with the room code every week.";
     roomCodeEl.textContent = cls.roomCode || "Pending";
-    sessionCodeEl.textContent = "Fresh code for today’s meeting";
+    sessionCodeEl.textContent = "Tracked privately after launch";
     noteEl.textContent = `Students can keep joining ${cls.roomCode || "this room"} every week. Each actual class meeting becomes a new session in the timeline.`;
   }
 
@@ -2842,7 +2858,7 @@
     applyJoinCodeFormatting(input);
     const code = input?.value?.trim();
     if (!myName) { alert(nameSource === "input" ? "Enter your name" : "Sign in first"); return; }
-    if (!code) { alert("Enter a room or session code"); return; }
+    if (!code) { alert("Enter a room code"); return; }
 
     try {
       const resolved = await apiGet(`/api/sessions/resolve/${encodeURIComponent(code)}`);
@@ -3125,7 +3141,7 @@
   if (shouldAutoRestore(savedState)) {
     // Show a loading state while we try to rejoin
     navigateTo("lobby", false);
-    document.getElementById("session-code").textContent = savedState.currentSessionId;
+    document.getElementById("session-code").textContent = savedState.currentRoomCode || savedState.currentSessionId;
     document.getElementById("participant-count").textContent = "Reconnecting...";
   } else {
     showScreen("welcome");
