@@ -3438,19 +3438,31 @@
     if (title) title.textContent = `${session.title || 'Session'} Timeline`;
     if (subtitle) subtitle.textContent = 'Speaker turns, scoring lanes, anchors, and transcript context across the full session.';
 
-    const datedMessages = messages
+    const allDatedMessages = messages
       .map((msg, index) => ({ ...msg, _index: index, _time: msg.createdAt ? new Date(msg.createdAt).getTime() : NaN }))
       .filter(msg => Number.isFinite(msg._time));
 
-    if (!datedMessages.length) {
+    if (!allDatedMessages.length) {
       chart.innerHTML = '<p class="empty-state">No timestamped messages are available for this timeline.</p>';
       return;
     }
 
-    const sessionStart = session.createdAt ? new Date(session.createdAt).getTime() : datedMessages[0]._time;
-    const sessionEnd = session.endedAt ? new Date(session.endedAt).getTime() : datedMessages[datedMessages.length - 1]._time;
+    const sessionStart = session.createdAt ? new Date(session.createdAt).getTime() : allDatedMessages[0]._time;
+    const endedAtTime = session.endedAt ? new Date(session.endedAt).getTime() : NaN;
+    const hasEndedAt = Number.isFinite(endedAtTime);
+    const datedMessages = hasEndedAt
+      ? allDatedMessages.filter(msg => msg._time <= endedAtTime)
+      : allDatedMessages;
+    const hiddenAfterEndCount = allDatedMessages.length - datedMessages.length;
+
+    if (!datedMessages.length) {
+      chart.innerHTML = '<p class="empty-state">No transcript turns fall inside the recorded session window.</p>';
+      return;
+    }
+
+    const sessionEnd = hasEndedAt ? endedAtTime : datedMessages[datedMessages.length - 1]._time;
     const minTime = Math.min(sessionStart, datedMessages[0]._time);
-    const maxTime = Math.max(sessionEnd, datedMessages[datedMessages.length - 1]._time, minTime + 60000);
+    const maxTime = Math.max(sessionEnd, minTime + 60000);
     const durationMs = Math.max(60000, maxTime - minTime);
     const minutes = Math.max(1, durationMs / 60000);
     const width = Math.max(1120, Math.round(minutes * 110 * timelineZoom));
@@ -3563,6 +3575,7 @@
         <span>${speakerCount} voices</span>
         <span>${scoreCount} scored participant turns</span>
         <span>${Math.round(minutes)} min span</span>
+        ${hiddenAfterEndCount ? `<span>${hiddenAfterEndCount} late turn${hiddenAfterEndCount === 1 ? '' : 's'} hidden after session end</span>` : ''}
         <span>${showSnippets ? 'Transcript labels visible' : 'Zoom in for transcript labels'}</span>
       </div>
       <svg class="conversation-timeline-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Conversation timeline graph">

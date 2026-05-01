@@ -63,6 +63,8 @@ describe('analytics post-mortem UI guards', () => {
     expect(appSource).toContain('timeline-inspector');
     expect(appSource).toContain('timelineFavorites');
     expect(appSource).toContain('timeline-summary-strip');
+    expect(appSource).toContain('hiddenAfterEndCount');
+    expect(appSource).toContain('allDatedMessages.filter(msg => msg._time <= endedAtTime)');
     expect(styleSource).toContain('.analytics-tool-strip');
     expect(styleSource).toContain('.timeline-modal-content');
     expect(styleSource).toContain('.conversation-timeline-svg');
