@@ -47,7 +47,7 @@ describe('analytics post-mortem UI guards', () => {
   test('teacher notes are persisted through a managed session route', () => {
     expect(appSource).toContain('teacher-notes-input');
     expect(appSource).toContain('/teacher-notes');
-    expect(sessionsRouteSource).toContain("router.post('/:shortCode/teacher-notes', requireAuth");
+    expect(sessionsRouteSource).toContain("router.post('/:shortCode/teacher-notes', async");
     expect(sessionsRouteSource).toContain("reportType: 'teacher_notes'");
   });
 

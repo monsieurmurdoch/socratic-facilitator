@@ -23,6 +23,7 @@ describe("session route guardrails", () => {
       "router.post('/:code/materials'",
       "router.post('/:code/prime'",
       "router.get('/:code/messages'",
+      "router.get('/:shortCode/analytics'",
       "router.post('/:shortCode/teacher-notes'",
       "router.delete('/:code/materials/:materialId'"
     ];
@@ -34,5 +35,12 @@ describe("session route guardrails", () => {
       const routeBody = source.slice(routeStart, nextRouteStart === -1 ? source.length : nextRouteStart);
       expect(routeBody).toContain("requireSessionAccess");
     }
+  });
+
+  test("signed session access can reach analytics routes before auth account checks", () => {
+    expect(source).toContain("router.get('/:shortCode/analytics', async");
+    expect(source).toContain("router.post('/:shortCode/teacher-notes', async");
+    expect(source).not.toContain("router.get('/:shortCode/analytics', requireAuth");
+    expect(source).not.toContain("router.post('/:shortCode/teacher-notes', requireAuth");
   });
 });

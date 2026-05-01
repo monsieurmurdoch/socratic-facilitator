@@ -254,10 +254,10 @@ router.get('/topics', (req, res) => {
 });
 
 // Get detailed analytics for a specific session
-router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
+router.get('/:shortCode/analytics', async (req, res) => {
   try {
     const { shortCode } = req.params;
-    const userId = req.user.id;
+    const userId = req.user?.id || null;
 
     // Verify user has access to this session
     const session = await sessionsRepo.findByShortCode(shortCode);
@@ -265,10 +265,8 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    const access = await getSessionAccess(session, req.user);
-    if (!access.canView) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    const access = await requireSessionAccess(req, res, session);
+    if (!access) return;
 
     // Get detailed session analytics
     const analytics = await sessionsRepo.getDetailedAnalytics(session.id, userId);
@@ -434,7 +432,7 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/:shortCode/teacher-notes', requireAuth, async (req, res) => {
+router.post('/:shortCode/teacher-notes', async (req, res) => {
   try {
     const { shortCode } = req.params;
     const session = await sessionsRepo.findByShortCode(shortCode);
@@ -451,7 +449,8 @@ router.post('/:shortCode/teacher-notes', requireAuth, async (req, res) => {
       reportType: 'teacher_notes',
       reportJson: {
         notes,
-        updatedByUserId: req.user.id,
+        updatedByUserId: req.user?.id || null,
+        updatedBySessionAccess: !req.user,
         updatedAt: new Date().toISOString()
       }
     });
