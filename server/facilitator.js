@@ -13,6 +13,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { getMoveTaxonomyPrompt } = require("./moves");
 const { getAgeCalibration, FACILITATION_PARAMS } = require("./config");
 const { ConversationAnalyzer } = require("./analysis/conversationAnalyzer");
+const { stripLeadingModelControlTags } = require("./utils/modelText");
 
 class FacilitationEngine {
   constructor(apiKey) {
@@ -152,9 +153,10 @@ Respond with ONLY the JSON.`;
         messages: [{ role: "user", content: userMessage }]
       });
 
-      const text = response.content[0].text.trim();
+      const text = stripLeadingModelControlTags(response.content[0].text);
       const jsonStr = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const result = JSON.parse(jsonStr);
+      const messageText = stripLeadingModelControlTags(result.message);
 
       // Apply state updates from the LLM if present
       if (result.stateUpdates) {
@@ -174,7 +176,7 @@ Respond with ONLY the JSON.`;
         reasoning: `Neuron fired (activation=${neuronDecision.activation}, type=${interventionType}): ${result.reasoning || neuronDecision.reasoning}`,
         move: result.move || interventionType,
         targetParticipantName: result.targetParticipantName || null,
-        message: result.message,
+        message: messageText,
         stateUpdates: result.stateUpdates || {},
         _analysis: neuronDecision
       };
@@ -316,7 +318,7 @@ Respond with ONLY the opening message text, nothing else.`;
         max_tokens: 300,
         messages: [{ role: "user", content: prompt }]
       });
-      return response.content[0].text.trim();
+      return stripLeadingModelControlTags(response.content[0].text);
     } catch (error) {
       console.error("Error generating opening:", error.message);
       return `Welcome everyone! Let's think about this together: ${topic.openingQuestion}`;
@@ -358,7 +360,7 @@ Respond with ONLY the closing message text.`;
         max_tokens: 400,
         messages: [{ role: "user", content: prompt }]
       });
-      return response.content[0].text.trim();
+      return stripLeadingModelControlTags(response.content[0].text);
     } catch (error) {
       console.error("Error generating closing:", error.message);
       return "That was a great discussion. Keep thinking about these questions \u2014 they don't have easy answers, and that's the point.";
@@ -400,7 +402,7 @@ Respond with ONLY the closing message text.`;
         messages
       });
 
-      const reply = response.content[0].text.trim();
+      const reply = stripLeadingModelControlTags(response.content[0].text);
 
       // Track Plato's response in history for multi-turn context
       history.push({ role: 'assistant', content: reply });

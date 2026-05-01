@@ -36,6 +36,7 @@ const materialsRepo = require("./db/repositories/materials");
 const materialChunksRepo = require("./db/repositories/materialChunks");
 const chunkCoverageRepo = require("./db/repositories/chunkCoverage");
 const { claudeBreaker } = require("./utils/api-breakers");
+const { stripLeadingModelControlTags } = require("./utils/modelText");
 const { DEFAULT_ANTHROPIC_MODEL } = require("./models");
 const {
   buildChunksFromText,
@@ -391,23 +392,24 @@ class EnhancedFacilitationEngine {
         ])
       );
 
-      const text = response.content[0].text.trim();
+      const text = stripLeadingModelControlTags(response.content[0].text);
       const jsonStr = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const result = JSON.parse(jsonStr);
+      const messageText = stripLeadingModelControlTags(result.message);
 
       // Record anchor if this message establishes one
       if (result.isAnchor) {
         orchestrator.anchorTracker.addAnchor({
           messageIndex: stateTracker.messages.length,
           participantName: 'Facilitator',
-          text: result.message,
+          text: messageText,
           profoundness: result.anchorProfundness || 0.5,
-          summary: result.anchorSummary || result.message.substring(0, 100)
+          summary: result.anchorSummary || messageText.substring(0, 100)
         });
       }
 
       return {
-        text: result.message,
+        text: messageText,
         move: result.move,
         targetParticipantName: result.targetParticipantName,
         isAnchor: result.isAnchor || false,
@@ -1071,7 +1073,7 @@ Respond with ONLY the opening message text, nothing else.`;
           messages: [{ role: "user", content: prompt }]
         })
       );
-      return response.content[0].text.trim();
+      return stripLeadingModelControlTags(response.content[0].text);
     } catch (error) {
       console.error("Error generating opening:", error.message);
       return `Welcome everyone! Let's think about this together: ${topic.openingQuestion}`;
@@ -1117,7 +1119,7 @@ Respond with ONLY the closing message text.`;
           messages: [{ role: "user", content: prompt }]
         })
       );
-      return response.content[0].text.trim();
+      return stripLeadingModelControlTags(response.content[0].text);
     } catch (error) {
       console.error("Error generating closing:", error.message);
       return "That was a great discussion. Keep thinking about these questions.";
@@ -1179,16 +1181,17 @@ Respond with ONLY the closing message text.`;
         console.log(`[warmup] Plato staying silent (group mode, ${participantCount} participants)`);
         return null;
       }
+      const cleanReply = stripLeadingModelControlTags(reply);
 
       // Track Plato's response in history for multi-turn context
-      history.push({ role: 'assistant', content: reply });
+      history.push({ role: 'assistant', content: cleanReply });
 
       // Keep history bounded (last 20 exchanges)
       if (history.length > 40) {
         this.warmupHistories.set(sessionKey, history.slice(-40));
       }
 
-      return reply;
+      return cleanReply;
     } catch (error) {
       console.error("Warmup chat error:", error.message, error.status || '', error.error?.message || '');
       // Fallback responses that fit Plato's personality
