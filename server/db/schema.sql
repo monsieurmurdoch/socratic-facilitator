@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS participants (
 );
 
 ALTER TABLE IF EXISTS participants DROP CONSTRAINT IF EXISTS participants_session_id_name_key;
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE participants ADD COLUMN IF NOT EXISTS eval_consent_granted BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE participants ADD COLUMN IF NOT EXISTS consent_status TEXT NOT NULL DEFAULT 'unknown';
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS data_use_mode TEXT NOT NULL DEFAULT 'report_only';
@@ -120,6 +121,10 @@ CREATE TABLE IF NOT EXISTS messages (
   target_participant_id UUID REFERENCES participants(id),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_name VARCHAR(100);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS move_type VARCHAR(50);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS target_participant_id UUID REFERENCES participants(id);
 
 -- Source materials table
 CREATE TABLE IF NOT EXISTS source_materials (

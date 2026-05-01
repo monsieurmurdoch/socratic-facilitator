@@ -64,4 +64,43 @@ describe("session analytics resilience", () => {
 
     warn.mockRestore();
   });
+
+  test("transcript loading falls back when legacy message columns are missing", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const query = jest.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('column p.user_id does not exist'), { code: '42703' }))
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "message-1",
+          session_id: "session-1",
+          participant_id: "participant-1",
+          sender_type: "participant",
+          content: "A legacy transcript turn.",
+          created_at: "2026-05-01T12:00:00.000Z",
+          participant_name: "Demo Teacher",
+          participant_user_id: null,
+          target_participant_name: null
+        }]
+      });
+
+    jest.doMock("../server/db", () => ({ query }));
+    const messagesRepo = require("../server/db/repositories/messages");
+
+    const messages = await messagesRepo.getBySession("session-1");
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toEqual(expect.objectContaining({
+      id: "message-1",
+      participant_name: "Demo Teacher",
+      participant_user_id: null,
+      target_participant_name: null
+    }));
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(
+      "[messages] Falling back to legacy transcript query:",
+      "column p.user_id does not exist"
+    );
+
+    warn.mockRestore();
+  });
 });

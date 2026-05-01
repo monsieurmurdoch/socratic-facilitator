@@ -51,20 +51,41 @@ async function addSystemMessage(sessionId, content) {
 async function getBySession(sessionId, options = {}) {
   const { limit = 100, offset = 0, order = 'ASC' } = options;
 
-  const result = await db.query(
-    `SELECT
-      m.*,
-      p.name as participant_name,
-      p.user_id as participant_user_id,
-      tp.name as target_participant_name
-     FROM messages m
-     LEFT JOIN participants p ON m.participant_id = p.id
-     LEFT JOIN participants tp ON m.target_participant_id = tp.id
-     WHERE m.session_id = $1
-     ORDER BY m.created_at ${order}
-     LIMIT $2 OFFSET $3`,
-    [sessionId, limit, offset]
-  );
+  let result;
+  try {
+    result = await db.query(
+      `SELECT
+        m.*,
+        p.name as participant_name,
+        p.user_id as participant_user_id,
+        tp.name as target_participant_name
+       FROM messages m
+       LEFT JOIN participants p ON m.participant_id = p.id
+       LEFT JOIN participants tp ON m.target_participant_id = tp.id
+       WHERE m.session_id = $1
+       ORDER BY m.created_at ${order}
+       LIMIT $2 OFFSET $3`,
+      [sessionId, limit, offset]
+    );
+  } catch (error) {
+    if (error?.code !== '42703') {
+      throw error;
+    }
+    console.warn('[messages] Falling back to legacy transcript query:', error.message);
+    result = await db.query(
+      `SELECT
+        m.*,
+        p.name as participant_name,
+        NULL::uuid as participant_user_id,
+        NULL::text as target_participant_name
+       FROM messages m
+       LEFT JOIN participants p ON m.participant_id = p.id
+       WHERE m.session_id = $1
+       ORDER BY m.created_at ${order}
+       LIMIT $2 OFFSET $3`,
+      [sessionId, limit, offset]
+    );
+  }
   return result.rows;
 }
 
