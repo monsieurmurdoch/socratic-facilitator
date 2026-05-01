@@ -49,6 +49,7 @@
   let jitsiMutePoller = null;
   let jitsiLaunchingRoom = null;
   let activeJitsiRoom = null;
+  let jitsiLaunchGeneration = 0;
   let currentAnalyticsData = null;
   let timelineZoom = 1;
   let timelineFavorites = {};
@@ -1373,6 +1374,7 @@
       return;
     }
     jitsiLaunchingRoom = fullRoomName;
+    const launchGeneration = ++jitsiLaunchGeneration;
 
     try {
       await loadJitsiScript();
@@ -1384,8 +1386,19 @@
     }
 
     const container = document.getElementById("jitsi-container");
+    if (launchGeneration !== jitsiLaunchGeneration) {
+      console.log("[Jitsi] Ignoring stale launch for room:", roomName);
+      return;
+    }
+    if (window.__socraticJitsiApi && window.__socraticJitsiApi !== jitsiApi) {
+      try { window.__socraticJitsiApi.executeCommand?.("hangup"); } catch (error) {}
+      try { window.__socraticJitsiApi.dispose(); } catch (error) {}
+      window.__socraticJitsiApi = null;
+      window.__socraticJitsiRoom = null;
+    }
     if (jitsiApi) {
-      jitsiApi.dispose();
+      try { jitsiApi.executeCommand?.("hangup"); } catch (error) {}
+      try { jitsiApi.dispose(); } catch (error) {}
       jitsiApi = null;
     }
     if (container) container.replaceChildren();
@@ -1421,7 +1434,9 @@
         disableInviteFunctions: true,
         hideConferenceSubject: true,
         disableThirdPartyRequests: false,
-        p2p: { enabled: true }
+        // Keep routing stable. P2P renegotiation in small calls can produce
+        // duplicate remote tracks in some embedded-browser/JaaS combinations.
+        p2p: { enabled: false }
       },
       interfaceConfigOverwrite: {
         SHOW_JITSI_WATERMARK: false,
@@ -1438,38 +1453,48 @@
       options.jwt = jwt;
     }
 
-    jitsiApi = new JitsiMeetExternalAPI("8x8.vc", options);
+    const api = new JitsiMeetExternalAPI("8x8.vc", options);
+    jitsiApi = api;
     activeJitsiRoom = fullRoomName;
     jitsiLaunchingRoom = null;
+    window.__socraticJitsiApi = api;
+    window.__socraticJitsiRoom = fullRoomName;
 
     // Ensure iframe has audio/video permissions (Safari requires this)
-    const iframe = jitsiApi.getIFrame();
+    const iframe = api.getIFrame();
     if (iframe) {
       iframe.setAttribute('allow', 'camera *; microphone *; autoplay *; display-capture *; clipboard-write *');
+      iframe.dataset.socraticJitsiRoom = fullRoomName;
       console.log('[Jitsi] iframe permissions set');
     }
 
-    jitsiApi.addEventListener('participantJoined', (event) => {
+    api.addEventListener('participantJoined', (event) => {
+      if (api !== jitsiApi) return;
       console.log('[Jitsi] Participant joined:', event);
     });
 
-    jitsiApi.addEventListener('participantLeft', (event) => {
+    api.addEventListener('participantLeft', (event) => {
+      if (api !== jitsiApi) return;
       console.log('[Jitsi] Participant left:', event);
     });
 
-    jitsiApi.addEventListener('readyToClose', () => {
+    api.addEventListener('readyToClose', () => {
+      if (api !== jitsiApi) return;
       console.log('[Jitsi] Conference ended');
     });
 
-    jitsiApi.addEventListener('videoConferenceLeft', () => {
+    api.addEventListener('videoConferenceLeft', () => {
+      if (api !== jitsiApi) return;
       console.log('[Jitsi] Left conference');
     });
 
-    jitsiApi.addEventListener('audioMuteStatusChanged', (event) => {
+    api.addEventListener('audioMuteStatusChanged', (event) => {
+      if (api !== jitsiApi) return;
       console.log('[Jitsi] Audio mute:', event.muted);
       scheduleJitsiMuteState(event.muted);
     });
-    jitsiApi.addEventListener('toolbarButtonClicked', (event) => {
+    api.addEventListener('toolbarButtonClicked', (event) => {
+      if (api !== jitsiApi) return;
       if (event.key === 'microphone') {
         setTimeout(syncJitsiMuteState, 80);
       }
@@ -1478,7 +1503,8 @@
     syncJitsiMuteState();
     startJitsiMutePolling();
 
-    jitsiApi.addEventListener('errorOccurred', (event) => {
+    api.addEventListener('errorOccurred', (event) => {
+      if (api !== jitsiApi) return;
       console.error('[Jitsi] Error:', event);
     });
 
@@ -1489,9 +1515,16 @@
     stopJitsiMutePolling();
     resetJitsiMuteState();
     if (jitsiApi) {
-      jitsiApi.dispose();
+      try { jitsiApi.executeCommand?.("hangup"); } catch (error) {}
+      try { jitsiApi.dispose(); } catch (error) {}
       jitsiApi = null;
     }
+    if (window.__socraticJitsiApi) {
+      try { window.__socraticJitsiApi.executeCommand?.("hangup"); } catch (error) {}
+      try { window.__socraticJitsiApi.dispose(); } catch (error) {}
+      window.__socraticJitsiApi = null;
+    }
+    window.__socraticJitsiRoom = null;
     activeJitsiRoom = null;
     jitsiLaunchingRoom = null;
     document.getElementById("jitsi-container")?.replaceChildren();

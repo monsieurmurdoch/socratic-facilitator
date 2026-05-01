@@ -10,9 +10,16 @@ describe('client Jitsi smoke guards', () => {
   test('Jitsi launch is idempotent for the active room and clears stale iframes', () => {
     expect(appSource).toContain('let jitsiLaunchingRoom = null;');
     expect(appSource).toContain('let activeJitsiRoom = null;');
+    expect(appSource).toContain('let jitsiLaunchGeneration = 0;');
     expect(appSource).toContain('jitsiLaunchingRoom === fullRoomName');
+    expect(appSource).toContain('window.__socraticJitsiApi');
     expect(appSource).toContain('container.replaceChildren()');
     expect(appSource).toContain('document.getElementById("jitsi-container")?.replaceChildren()');
+  });
+
+  test('Jitsi uses stable bridge routing instead of P2P renegotiation', () => {
+    expect(appSource).toContain('p2p: { enabled: false }');
+    expect(appSource).toContain('duplicate remote tracks');
   });
 
   test('Jitsi mute releases the separate STT mic stream without flushing partial speech', () => {
