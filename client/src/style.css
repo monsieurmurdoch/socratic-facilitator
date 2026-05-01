@@ -2706,6 +2706,10 @@ body.video-active {
   padding: 4px 0;
 }
 
+.transcript-feed[hidden] {
+  display: none;
+}
+
 .transcript-msg {
   padding: 10px 14px;
   border-radius: 10px;

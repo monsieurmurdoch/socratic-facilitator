@@ -26,6 +26,7 @@ describe('analytics post-mortem UI guards', () => {
     expect(appSource).toContain('analytics-transcript-toggle');
     expect(appSource).toContain('analytics-transcript-body');
     expect(appSource).toContain("transcriptBody.toggleAttribute('hidden')");
+    expect(styleSource).toContain('.transcript-feed[hidden]');
   });
 
   test('analytics post-mortem surfaces transcript health and estimated speaking time', () => {
