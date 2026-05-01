@@ -311,21 +311,28 @@ async function getDetailedAnalytics(sessionId, userId) {
     ORDER BY pms.speaking_seconds DESC, p.joined_at ASC
   `, [sessionId]);
 
-  // Get message analytics summary (robust against missing data/columns)
-  const messagesResult = await db.query(`
-    SELECT
-      COUNT(*) as total_messages,
-      ROUND(COALESCE(AVG(specificity), 0)::numeric, 3) as avg_specificity,
-      ROUND(COALESCE(AVG(profoundness), 0)::numeric, 3) as avg_profoundness,
-      ROUND(COALESCE(AVG(coherence), 0)::numeric, 3) as avg_coherence,
-      ROUND(COALESCE(AVG(discussion_value), 0)::numeric, 3) as avg_discussion_value,
-      COUNT(CASE WHEN referenced_anchor IS TRUE THEN 1 END) as anchor_references,
-      COUNT(CASE WHEN responded_to_peer IS TRUE THEN 1 END) as peer_responses,
-      COUNT(CASE WHEN is_anchor IS TRUE THEN 1 END) as anchors_created
-    FROM message_analytics ma
-    JOIN messages m ON m.id = ma.message_id
-    WHERE m.session_id = $1
-  `, [sessionId]);
+  // Score tables can lag behind transcript tables on older deployments.
+  // Keep the post-mortem usable and report zeros until schema/init catches up.
+  let messageStats = {};
+  try {
+    const messagesResult = await db.query(`
+      SELECT
+        COUNT(*) as total_messages,
+        ROUND(COALESCE(AVG(specificity), 0)::numeric, 3) as avg_specificity,
+        ROUND(COALESCE(AVG(profoundness), 0)::numeric, 3) as avg_profoundness,
+        ROUND(COALESCE(AVG(coherence), 0)::numeric, 3) as avg_coherence,
+        ROUND(COALESCE(AVG(discussion_value), 0)::numeric, 3) as avg_discussion_value,
+        COUNT(CASE WHEN referenced_anchor IS TRUE THEN 1 END) as anchor_references,
+        COUNT(CASE WHEN responded_to_peer IS TRUE THEN 1 END) as peer_responses,
+        COUNT(CASE WHEN is_anchor IS TRUE THEN 1 END) as anchors_created
+      FROM message_analytics ma
+      JOIN messages m ON m.id = ma.message_id
+      WHERE m.session_id = $1
+    `, [sessionId]);
+    messageStats = messagesResult.rows[0] || {};
+  } catch (error) {
+    console.warn('[analytics] Message analytics summary unavailable:', error.message);
+  }
 
   // Get session duration and basic stats
   const sessionStats = await db.query(`
@@ -343,7 +350,6 @@ async function getDetailedAnalytics(sessionId, userId) {
   `, [sessionId]);
 
   const participants = participantsResult.rows;
-  const messageStats = messagesResult.rows[0] || {};
   const stats = sessionStats.rows[0] || {};
 
   // Calculate additional metrics

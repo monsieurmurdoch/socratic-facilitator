@@ -74,6 +74,15 @@ async function requireSessionAccess(req, res, session, { manage = false } = {}) 
   return access;
 }
 
+async function optionalAnalyticsRead(label, fallback, readFn) {
+  try {
+    return await readFn();
+  } catch (error) {
+    console.warn(`[analytics] ${label} unavailable:`, error.message);
+    return fallback;
+  }
+}
+
 /**
  * Create a new session
  * POST /api/sessions
@@ -264,7 +273,11 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
     // Get detailed session analytics
     const analytics = await sessionsRepo.getDetailedAnalytics(session.id, userId);
     const messages = await messagesRepo.getBySession(session.id, { limit: 500 });
-    const messageAnalytics = await messageAnalyticsRepo.listBySession(session.id, 500);
+    const messageAnalytics = await optionalAnalyticsRead(
+      'message analytics rows',
+      [],
+      () => messageAnalyticsRepo.listBySession(session.id, 500)
+    );
     const analyticsByMessageId = new Map(messageAnalytics.map(row => [row.message_id, row]));
     const messagesById = new Map(messages.map(message => [message.id, message]));
     const participantMessages = messages.filter(message => message.sender_type === 'participant');
@@ -308,7 +321,11 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
       ]
     };
     const telemetryRows = access.canManage
-      ? await interventionTelemetryRepo.listBySession(session.id, 300)
+      ? await optionalAnalyticsRead(
+        'intervention telemetry',
+        [],
+        () => interventionTelemetryRepo.listBySession(session.id, 300)
+      )
       : [];
     const platoReplay = access.canManage
       ? telemetryRows.slice().reverse().map(row => {
@@ -363,7 +380,11 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
       })
       : [];
     const teacherNotesReport = access.canManage
-      ? await sessionReportsRepo.getBySessionAndType(session.id, 'teacher_notes')
+      ? await optionalAnalyticsRead(
+        'teacher notes',
+        null,
+        () => sessionReportsRepo.getBySessionAndType(session.id, 'teacher_notes')
+      )
       : null;
 
     res.json({
