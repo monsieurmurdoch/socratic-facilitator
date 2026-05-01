@@ -32,6 +32,8 @@ async function recordMessage(participantId, metrics) {
     wordCount = 0,
     estimatedSpeakingSeconds = 0,
     contributionScore = 0,
+    // Reserved for future richer engagement signals, such as consented
+    // attention/biometric inputs. Kept persisted but not surfaced in the UI.
     engagementScore = 0
   } = metrics;
 

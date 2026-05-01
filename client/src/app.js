@@ -3878,8 +3878,7 @@
               <th>Role</th>
               <th>Messages</th>
               <th>Est. Speaking</th>
-              <th>Contribution</th>
-              <th>Engagement</th>
+              <th>Contribution Total</th>
               <th>Speaking %</th>
             </tr>
           </thead>
@@ -3894,7 +3893,6 @@
                 <td>${p.messageCount}</td>
                 <td>${formatDuration(p.speakingSeconds)}</td>
                 <td>${p.contributionScore.toFixed(2)}</td>
-                <td>${p.engagementScore.toFixed(2)}</td>
                 <td>
                   ${p.speakingPercentage}%
                   <div class="speaking-bar">

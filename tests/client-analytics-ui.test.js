@@ -36,6 +36,16 @@ describe('analytics post-mortem UI guards', () => {
     expect(styleSource).toContain('.transcript-health-grid');
   });
 
+  test('participant breakdown hides placeholder engagement and clarifies contribution total', () => {
+    const breakdownStart = appSource.indexOf('<!-- Participant Breakdown -->');
+    const breakdownEnd = appSource.indexOf('<!-- Session Details -->', breakdownStart);
+    const breakdown = appSource.slice(breakdownStart, breakdownEnd);
+
+    expect(breakdown).toContain('Contribution Total');
+    expect(breakdown).not.toContain('<th>Engagement</th>');
+    expect(breakdown).not.toContain('p.engagementScore.toFixed');
+  });
+
   test('analytics post-mortem includes Plato replay/debug decisions for teachers', () => {
     expect(appSource).toContain('platoReplay');
     expect(appSource).toContain('plato-replay-section');

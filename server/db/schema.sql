@@ -208,6 +208,8 @@ CREATE TABLE IF NOT EXISTS session_memberships (
   total_word_count INTEGER DEFAULT 0,
   estimated_speaking_seconds FLOAT DEFAULT 0,
   contribution_score FLOAT DEFAULT 0,
+  -- Reserved for future richer engagement signals (e.g. consented attention/biometric inputs).
+  -- Do not surface as a participant-facing metric until it reflects more than transcript quality.
   engagement_score FLOAT DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
