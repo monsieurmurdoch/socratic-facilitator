@@ -50,6 +50,33 @@ const wss = new WebSocketServer({ server });
 // Trust Railway's reverse proxy so rate-limiting sees real client IPs
 app.set('trust proxy', 1);
 
+const defaultMarketingHosts = new Set([
+  "expanseonline.co",
+  "www.expanseonline.co"
+]);
+
+function getMarketingHosts() {
+  const configured = String(process.env.MARKETING_HOSTS || "")
+    .split(",")
+    .map(host => host.trim().toLowerCase())
+    .filter(Boolean);
+  return configured.length ? new Set(configured) : defaultMarketingHosts;
+}
+
+function getRequestHost(req) {
+  return String(req.headers.host || "")
+    .split(":")[0]
+    .trim()
+    .toLowerCase();
+}
+
+app.get(["/", "/landing"], (req, res, next) => {
+  if (req.path === "/landing" || getMarketingHosts().has(getRequestHost(req))) {
+    return res.sendFile(path.join(__dirname, "../client/public/landing.html"));
+  }
+  return next();
+});
+
 // Serve static frontend
 app.use(express.static(path.join(__dirname, "../client/public")));
 app.use("/src", express.static(path.join(__dirname, "../client/src")));
