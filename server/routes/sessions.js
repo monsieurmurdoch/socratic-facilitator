@@ -266,6 +266,102 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
     const messages = await messagesRepo.getBySession(session.id, { limit: 500 });
     const messageAnalytics = await messageAnalyticsRepo.listBySession(session.id, 500);
     const analyticsByMessageId = new Map(messageAnalytics.map(row => [row.message_id, row]));
+    const messagesById = new Map(messages.map(message => [message.id, message]));
+    const participantMessages = messages.filter(message => message.sender_type === 'participant');
+    const participantRowCounts = new Map();
+    for (const message of participantMessages) {
+      participantRowCounts.set(message.participant_id, (participantRowCounts.get(message.participant_id) || 0) + 1);
+    }
+    const participantCountsMatch = analytics.participants.every(participant =>
+      Number(participant.messageCount || 0) === Number(participantRowCounts.get(participant.id) || 0)
+    );
+    const unscoredParticipantMessages = participantMessages.filter(message => !analyticsByMessageId.has(message.id));
+    const transcriptWarnings = [];
+    if (Number(analytics.overview.messageCount || 0) !== messages.length) {
+      transcriptWarnings.push('Overview message count does not match persisted transcript row count.');
+    }
+    if (!participantCountsMatch) {
+      transcriptWarnings.push('One or more participant message counts do not match transcript rows.');
+    }
+    if (unscoredParticipantMessages.length > 0) {
+      transcriptWarnings.push(`${unscoredParticipantMessages.length} participant transcript turn(s) do not yet have analytics scores.`);
+    }
+    if (participantMessages.length > 0 && Number(analytics.overview.totalSpeakingTimeSeconds || 0) === 0) {
+      transcriptWarnings.push('Speaking time is zero even though participant transcript turns exist.');
+    }
+    if (messages.length === 0 && Number(analytics.overview.durationSeconds || 0) > 30) {
+      transcriptWarnings.push('Session has duration but no saved transcript rows. Check mic, STT, or mute state during the call.');
+    }
+    const transcriptHealth = {
+      sourceOfTruth: 'messages table',
+      persistedTranscriptRows: messages.length,
+      participantTranscriptRows: participantMessages.length,
+      scoredParticipantRows: participantMessages.length - unscoredParticipantMessages.length,
+      overviewMessageCountMatchesTranscript: Number(analytics.overview.messageCount || 0) === messages.length,
+      participantMessageCountsMatchTranscript: participantCountsMatch,
+      speakingTimeBasis: 'estimated_from_transcript_words',
+      warnings: transcriptWarnings,
+      teacherVisibleSignals: [
+        'Muted mic state is shown live on the Plato tile and mute button.',
+        'STT server errors appear as system notices in the live transcript.',
+        'Post-session transcript gaps are flagged here when rows or analytics are missing.'
+      ]
+    };
+    const telemetryRows = access.canManage
+      ? await interventionTelemetryRepo.listBySession(session.id, 300)
+      : [];
+    const platoReplay = access.canManage
+      ? telemetryRows.slice().reverse().map(row => {
+        const trigger = row.trigger_message_id ? messagesById.get(row.trigger_message_id) : null;
+        const facilitator = row.facilitator_message_id ? messagesById.get(row.facilitator_message_id) : null;
+        const pivotTime = facilitator?.created_at || row.created_at;
+        const context = messages
+          .filter(message => new Date(message.created_at).getTime() <= new Date(pivotTime).getTime())
+          .slice(-8)
+          .map(message => ({
+            id: message.id,
+            senderType: message.sender_type,
+            senderName: message.sender_name || message.participant_name,
+            content: message.content,
+            createdAt: message.created_at
+          }));
+        const decisionJson = row.decision_json || {};
+        return {
+          id: row.id,
+          createdAt: row.created_at,
+          spoke: !!row.facilitator_message_id,
+          model: row.model,
+          promptVersion: row.prompt_version,
+          move: row.move,
+          latencyMs: row.latency_ms,
+          estimatedCostUsd: row.estimated_cost_usd == null ? null : Number(row.estimated_cost_usd),
+          sourceChunkIds: row.source_chunk_ids || [],
+          trigger: trigger ? {
+            id: trigger.id,
+            senderName: trigger.sender_name || trigger.participant_name,
+            content: trigger.content,
+            createdAt: trigger.created_at
+          } : null,
+          facilitator: facilitator ? {
+            id: facilitator.id,
+            content: facilitator.content,
+            createdAt: facilitator.created_at
+          } : null,
+          context,
+          decision: {
+            spoke: decisionJson.spoke !== false && !!row.facilitator_message_id,
+            reasoning: decisionJson.reasoning || null,
+            activation: decisionJson.activation ?? null,
+            forced: !!decisionJson.forced,
+            forcedBySoloCadence: !!decisionJson.forcedBySoloCadence,
+            questionPostureMode: decisionJson.questionPostureMode || null,
+            interventionType: decisionJson.interventionType || null,
+            hardConstraintReasons: decisionJson.hardConstraintReasons || [],
+            raw: decisionJson
+          }
+        };
+      })
+      : [];
     const teacherNotesReport = access.canManage
       ? await sessionReportsRepo.getBySessionAndType(session.id, 'teacher_notes')
       : null;
@@ -282,6 +378,8 @@ router.get('/:shortCode/analytics', requireAuth, async (req, res) => {
       canManage: access.canManage,
       teacherNotes: teacherNotesReport?.report_json?.notes || '',
       analytics,
+      transcriptHealth,
+      platoReplay,
       messages: messages.map(m => {
         const row = analyticsByMessageId.get(m.id);
         return {

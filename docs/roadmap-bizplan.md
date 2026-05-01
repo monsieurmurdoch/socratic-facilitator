@@ -1,6 +1,6 @@
 # Expanse Product Board
 
-Updated: 2026-04-30  
+Updated: 2026-05-01  
 Mirror: `~/Documents/Obsidian Vault/Coding/Socratic-Facilitator (Expanse)/roadmap-bizplan.md`
 
 ## Operating Thesis
@@ -74,8 +74,8 @@ Launch a pilot-ready product that can get at least one paying client to run recu
 - [ ] API/WebSocket tests are split from logic tests.
 - [x] Local Postgres test service and deterministic test secrets are documented.
 - [x] Full API/WebSocket suite runs against local Postgres.
-- [ ] Local dev setup documents required secrets, DB, and port assumptions.
-- [ ] Health checks and deployment smoke checks are consistent.
+- [x] Local dev setup documents required secrets, DB, and port assumptions.
+- [x] Health checks and deployment smoke checks are consistent.
 - [ ] Background jobs for priming/reporting/labeling are queued instead of inline.
 
 ## Pilot Launch Gates
@@ -88,7 +88,7 @@ Launch a pilot-ready product that can get at least one paying client to run recu
 - [x] Duplicate display names remain distinct participant records.
 - [x] Reconnect during the grace window preserves participant identity.
 - [ ] 3-client browser smoke: teacher + two students can join, see one another, speak, mute, reconnect, and end only by teacher action.
-- [ ] Jitsi mute stops STT locally and resumes cleanly on unmute.
+- [x] Jitsi mute stops STT locally and resumes cleanly on unmute.
 - [ ] No duplicate Jitsi iframe, local stream, remote video, or STT stream after join/rejoin.
 
 Done When:
@@ -100,11 +100,11 @@ A messy real class can tolerate late arrivals, duplicate first names, page refre
 - [x] Spoken/typed participant turns persist with DB message IDs.
 - [x] Message analytics rows are written from persisted messages.
 - [x] Session analytics response includes transcript messages.
-- [ ] Live transcript, post-session transcript, and analytics modal show the same turns.
-- [ ] Participant message counts match transcript rows.
-- [ ] Speaking time is either measured from reliable audio events or labeled clearly as estimated.
-- [ ] STT failure, muted mic, and transcript gaps are visible to the teacher.
-- [ ] Conversation replay/debug view shows what Plato saw, why it spoke or stayed silent, and which move was selected.
+- [x] Live transcript, post-session transcript, and analytics modal show the same persisted turns.
+- [x] Participant message counts match transcript rows.
+- [x] Speaking time is labeled clearly as estimated.
+- [x] STT failure, muted mic, and transcript gaps are visible to the teacher.
+- [x] Conversation replay/debug view shows what Plato saw, why it spoke or stayed silent, and which move was selected.
 
 Done When:
 
@@ -161,7 +161,7 @@ Status: In progress.
 
 - [ ] One happy-path demo class exists.
 - [ ] One public-domain reading or prompt is preloaded.
-- [ ] Host can create/start/end a session without code changes.
+- [x] Host can create/start/end a session without code changes.
 - [ ] At least two participants can join and speak.
 - [ ] Plato can generate opening, nudges, and closing.
 - [ ] Transcript and report are visible after session.
@@ -364,7 +364,7 @@ The product has evidence that the unit works: people show up, talk to each other
 - [ ] Demo seminar flow.
 - [x] Jest ignore patterns.
 - [ ] Browser-level 3-client smoke test.
-- [ ] Transcript truth checks in analytics/report modal.
+- [x] Transcript truth checks in analytics/report modal.
 - [x] Teacher-facing question-posture control.
 - [ ] Parent/teacher report polish.
 - [ ] Dual-permission parent access model for child-specific transcript/timeline details.
@@ -380,8 +380,8 @@ The product has evidence that the unit works: people show up, talk to each other
 - [ ] Report export.
 - [x] Admin retention controls.
 - [ ] Parent/child/teacher permission grants for timeline comments, favorites, and transcript excerpts.
-- [ ] Conversation replay/debugger for Plato decisions.
-- [ ] Teacher transcript-health indicator.
+- [x] Conversation replay/debugger for Plato decisions.
+- [x] Teacher transcript-health indicator.
 - [x] Persisted intervention-mode controls and telemetry.
 - [ ] Pilot onboarding checklist: reading, roster, consent, schedule, price.
 

@@ -55,6 +55,20 @@ describe("backend data pipeline guardrails", () => {
     expect(manager).toContain("triggerMessageId");
   });
 
+  test("analytics uses persisted transcript rows and exposes Plato replay data", () => {
+    const sessionsRepo = read("server/db/repositories/sessions.js");
+    const routes = read("server/routes/sessions.js");
+    const manager = read("server/sessions/index.js");
+
+    expect(sessionsRepo).toContain("participant_message_stats");
+    expect(sessionsRepo).toContain("LEFT JOIN messages m");
+    expect(routes).toContain("transcriptHealth");
+    expect(routes).toContain("participantMessageCountsMatchTranscript");
+    expect(routes).toContain("platoReplay");
+    expect(manager).toContain("spoke: false");
+    expect(manager).toContain("Failed to save no-speak decision telemetry");
+  });
+
   test("Plato question posture is configurable before and during sessions", () => {
     const config = read("server/config.js");
     const routes = read("server/routes/sessions.js");

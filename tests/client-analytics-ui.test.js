@@ -28,6 +28,22 @@ describe('analytics post-mortem UI guards', () => {
     expect(appSource).toContain("transcriptBody.toggleAttribute('hidden')");
   });
 
+  test('analytics post-mortem surfaces transcript health and estimated speaking time', () => {
+    expect(appSource).toContain('transcriptHealth');
+    expect(appSource).toContain('transcript-health-section');
+    expect(appSource).toContain('STT issue:');
+    expect(appSource).toContain('Est. Speaking');
+    expect(styleSource).toContain('.transcript-health-grid');
+  });
+
+  test('analytics post-mortem includes Plato replay/debug decisions for teachers', () => {
+    expect(appSource).toContain('platoReplay');
+    expect(appSource).toContain('plato-replay-section');
+    expect(appSource).toContain('Recent Transcript Context');
+    expect(appSource).toContain('Suppression Constraints');
+    expect(styleSource).toContain('.plato-replay-item');
+  });
+
   test('teacher notes are persisted through a managed session route', () => {
     expect(appSource).toContain('teacher-notes-input');
     expect(appSource).toContain('/teacher-notes');

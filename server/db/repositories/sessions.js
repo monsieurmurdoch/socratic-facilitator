@@ -259,24 +259,56 @@ async function updateFacilitationPosture(id, facilitationPosture) {
  * Get detailed analytics for a session
  */
 async function getDetailedAnalytics(sessionId, userId) {
-  // Get session participants with their analytics
+  // Get session participants with counts derived from persisted transcript rows.
   const participantsResult = await db.query(`
+    WITH participant_message_stats AS (
+      SELECT
+        p.id AS participant_id,
+        COUNT(m.id) AS message_count,
+        COALESCE(SUM(
+          CASE
+            WHEN NULLIF(BTRIM(m.content), '') IS NULL THEN 0
+            ELSE array_length(regexp_split_to_array(BTRIM(m.content), '\\s+'), 1)
+          END
+        ), 0) AS total_words,
+        COALESCE(SUM(
+          CASE
+            WHEN m.id IS NULL THEN 0
+            ELSE GREATEST(
+              1,
+              (
+                CASE
+                  WHEN NULLIF(BTRIM(m.content), '') IS NULL THEN 0
+                  ELSE array_length(regexp_split_to_array(BTRIM(m.content), '\\s+'), 1)
+                END
+              ) * 60.0 / 150.0
+            )
+          END
+        ), 0) AS speaking_seconds
+      FROM participants p
+      LEFT JOIN messages m
+        ON m.participant_id = p.id
+       AND m.sender_type = 'participant'
+      WHERE p.session_id = $1
+      GROUP BY p.id
+    )
     SELECT
       p.id,
       p.name,
       p.age,
       p.role,
-      COALESCE(sm.message_count, 0) as message_count,
-      COALESCE(sm.total_word_count, 0) as total_words,
-      COALESCE(sm.estimated_speaking_seconds, 0) as speaking_seconds,
+      COALESCE(pms.message_count, 0) as message_count,
+      COALESCE(pms.total_words, 0) as total_words,
+      COALESCE(pms.speaking_seconds, 0) as speaking_seconds,
       ROUND(COALESCE(sm.contribution_score, 0)::numeric, 3) as contribution_score,
       ROUND(COALESCE(sm.engagement_score, 0)::numeric, 3) as engagement_score,
       sm.joined_at,
       sm.left_at
     FROM participants p
     LEFT JOIN session_memberships sm ON sm.participant_id = p.id
+    LEFT JOIN participant_message_stats pms ON pms.participant_id = p.id
     WHERE p.session_id = $1
-    ORDER BY sm.estimated_speaking_seconds DESC
+    ORDER BY pms.speaking_seconds DESC, p.joined_at ASC
   `, [sessionId]);
 
   // Get message analytics summary (robust against missing data/columns)

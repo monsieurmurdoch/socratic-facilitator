@@ -171,6 +171,19 @@ class EnhancedFacilitationEngine {
       activation: decision.activation,
       forced: !!decision.forced,
       forcedBySoloCadence: !!decision.forcedBySoloCadence,
+      telemetry: {
+        model: this.model,
+        promptVersion: FACILITATION_PROMPT_VERSION,
+        move: null,
+        latencyMs: Date.now() - pipelineStartedAt,
+        decisionJson: {
+          spoke: false,
+          reasoning: decision.reason || null,
+          activation: decision.activation ?? null,
+          interventionType: decision.interventionType || decision.type || null,
+          questionPostureMode
+        }
+      },
       analysis,
       responsePolicy
     };

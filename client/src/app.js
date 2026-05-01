@@ -1871,6 +1871,8 @@
 
       case "stt_error":
         console.warn("[STT] Server error:", msg.text);
+        addTranscriptEntry("system", `STT issue: ${msg.text || "speech transcription stopped"}`, false);
+        setFacilitatorStatus(isPlatoInputMuted() ? "muted" : "listening");
         break;
 
       case "stt_flush_now":
@@ -3593,7 +3595,15 @@
 
   function renderAnalyticsContent(data) {
     currentAnalyticsData = data;
-    const { session, analytics, messages = [], canManage = false, teacherNotes = '' } = data;
+    const {
+      session,
+      analytics,
+      messages = [],
+      canManage = false,
+      teacherNotes = '',
+      transcriptHealth = {},
+      platoReplay = []
+    } = data;
     const content = document.getElementById('analytics-content');
 
     const formatDuration = (seconds) => {
@@ -3632,7 +3642,7 @@
       },
       totalSpeaking: {
         title: "Total Speaking",
-        value: `${analytics.overview.totalSpeakingTimeSeconds}s`,
+        value: `${analytics.overview.totalSpeakingTimeSeconds}s est.`,
         body: "Estimated participant speaking time summed across participant turns. Today this is estimated from word count, so it should be read as directional.",
         formula: "sum(max(1s, words / 150 wpm * 60s))"
       },
@@ -3668,6 +3678,85 @@
         <span class="metric-label">${escapeHtml(label)}</span>
       </button>
     `;
+
+    const healthWarnings = Array.isArray(transcriptHealth.warnings) ? transcriptHealth.warnings : [];
+    const healthSignals = Array.isArray(transcriptHealth.teacherVisibleSignals) ? transcriptHealth.teacherVisibleSignals : [];
+    const transcriptHealthHtml = `
+      <div class="analytics-section transcript-health-section">
+        <h3>Transcript Health</h3>
+        <div class="transcript-health-grid">
+          <div><strong>${Number(transcriptHealth.persistedTranscriptRows || messages.length)}</strong><span>Persisted turns</span></div>
+          <div><strong>${Number(transcriptHealth.participantTranscriptRows || 0)}</strong><span>Participant turns</span></div>
+          <div><strong>${Number(transcriptHealth.scoredParticipantRows || 0)}</strong><span>Scored turns</span></div>
+          <div><strong>Estimated</strong><span>Speaking time basis</span></div>
+        </div>
+        ${healthWarnings.length ? `
+          <div class="transcript-health-warnings">
+            ${healthWarnings.map(warning => `<p>${escapeHtml(warning)}</p>`).join('')}
+          </div>
+        ` : '<p class="transcript-health-ok">Transcript rows, participant counts, and analytics counts are aligned.</p>'}
+        ${healthSignals.length ? `
+          <ul class="transcript-health-signals">
+            ${healthSignals.map(signal => `<li>${escapeHtml(signal)}</li>`).join('')}
+          </ul>
+        ` : ''}
+      </div>
+    `;
+
+    const formatReplayContext = (context = []) => context.length
+      ? context.map(turn => `
+          <li>
+            <strong>${escapeHtml(turn.senderName || (turn.senderType === 'facilitator' ? 'Plato' : 'Unknown'))}</strong>
+            <span>${escapeHtml(turn.content || '')}</span>
+          </li>
+        `).join('')
+      : '<li><span>No prior transcript context was captured for this decision.</span></li>';
+
+    const platoReplayHtml = canManage ? `
+      <div class="analytics-section plato-replay-section">
+        <div class="analytics-section-header">
+          <h3>Plato Replay</h3>
+          <span class="analytics-section-note">${platoReplay.length} decision${platoReplay.length === 1 ? '' : 's'}</span>
+        </div>
+        ${platoReplay.length ? platoReplay.map(item => `
+          <details class="plato-replay-item">
+            <summary>
+              <span class="plato-replay-state ${item.spoke ? 'spoke' : 'silent'}">${item.spoke ? 'Spoke' : 'Silent'}</span>
+              <strong>${escapeHtml(item.move || item.decision?.interventionType || 'no move')}</strong>
+              <span>${escapeHtml(item.decision?.reasoning || 'No reasoning recorded')}</span>
+            </summary>
+            <div class="plato-replay-meta">
+              <span>Model: ${escapeHtml(item.model || 'unknown')}</span>
+              <span>Prompt: ${escapeHtml(item.promptVersion || 'unknown')}</span>
+              <span>Latency: ${item.latencyMs == null ? 'unknown' : `${Number(item.latencyMs)}ms`}</span>
+              <span>Posture: ${escapeHtml(item.decision?.questionPostureMode || 'unknown')}</span>
+            </div>
+            ${item.trigger ? `
+              <div class="plato-replay-block">
+                <h4>Trigger Turn</h4>
+                <p><strong>${escapeHtml(item.trigger.senderName || 'Unknown')}:</strong> ${escapeHtml(item.trigger.content || '')}</p>
+              </div>
+            ` : ''}
+            ${item.facilitator ? `
+              <div class="plato-replay-block">
+                <h4>Plato Response</h4>
+                <p>${escapeHtml(item.facilitator.content || '')}</p>
+              </div>
+            ` : ''}
+            <div class="plato-replay-block">
+              <h4>Recent Transcript Context</h4>
+              <ul>${formatReplayContext(item.context || [])}</ul>
+            </div>
+            ${item.decision?.hardConstraintReasons?.length ? `
+              <div class="plato-replay-block">
+                <h4>Suppression Constraints</h4>
+                <p>${escapeHtml(item.decision.hardConstraintReasons.join('; '))}</p>
+              </div>
+            ` : ''}
+          </details>
+        `).join('') : '<p class="empty-state">No Plato decision telemetry has been recorded for this session yet.</p>'}
+      </div>
+    ` : '';
 
     const transcriptHtml = messages.length
       ? messages.map(msg => {
@@ -3729,9 +3818,11 @@
           ${metricCard('participants', analytics.overview.participantCount, 'Participants')}
           ${metricCard('messages', analytics.overview.messageCount, 'Messages')}
           ${metricCard('duration', formatDuration(analytics.overview.durationSeconds), 'Duration')}
-          ${metricCard('totalSpeaking', `${analytics.overview.totalSpeakingTimeSeconds}s`, 'Total Speaking')}
+          ${metricCard('totalSpeaking', `${analytics.overview.totalSpeakingTimeSeconds}s est.`, 'Est. Speaking')}
         </div>
       </div>
+
+      ${transcriptHealthHtml}
 
       <!-- Discussion Quality -->
       <div class="analytics-section">
@@ -3757,7 +3848,7 @@
               <th>Participant</th>
               <th>Role</th>
               <th>Messages</th>
-              <th>Speaking Time</th>
+              <th>Est. Speaking</th>
               <th>Contribution</th>
               <th>Engagement</th>
               <th>Speaking %</th>
@@ -3786,6 +3877,8 @@
           </tbody>
         </table>
       </div>
+
+      ${platoReplayHtml}
 
       <!-- Transcript -->
       <div class="analytics-section">

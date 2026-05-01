@@ -2052,6 +2052,166 @@ body.video-active {
   border-color: var(--accent-light);
 }
 
+.analytics-section-note {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.transcript-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.transcript-health-grid div {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.transcript-health-grid strong,
+.transcript-health-grid span {
+  display: block;
+}
+
+.transcript-health-grid strong {
+  color: var(--accent);
+  font-size: 1.05rem;
+}
+
+.transcript-health-grid span {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  margin-top: 4px;
+}
+
+.transcript-health-ok {
+  color: #166534;
+  font-weight: 700;
+  margin: 0 0 10px;
+}
+
+.transcript-health-warnings {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.transcript-health-warnings p {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  color: #9a3412;
+  margin: 0;
+  padding: 9px 10px;
+}
+
+.transcript-health-signals {
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.plato-replay-section {
+  display: grid;
+  gap: 10px;
+}
+
+.plato-replay-item {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.plato-replay-item summary {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  list-style: none;
+}
+
+.plato-replay-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.plato-replay-item summary span:last-child {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plato-replay-state {
+  border-radius: 999px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+
+.plato-replay-state.spoke {
+  background: var(--accent);
+}
+
+.plato-replay-state.silent {
+  background: #64748b;
+}
+
+.plato-replay-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.plato-replay-meta span {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  padding: 5px 8px;
+}
+
+.plato-replay-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.plato-replay-block h4 {
+  color: var(--text);
+  font-size: 0.78rem;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.plato-replay-block p,
+.plato-replay-block li {
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.plato-replay-block ul {
+  display: grid;
+  gap: 7px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
 .teacher-notes-input {
   width: 100%;
   min-height: 160px;

@@ -658,6 +658,31 @@ class SessionManager {
       // Pipeline already takes 1-3s — no artificial delay needed.
       // Deliver immediately for responsiveness.
       await this.handleFacilitatorMessage(sessionShortCode, decision);
+    } else if (recordedMessage?.dbId) {
+      interventionTelemetryRepo.create({
+        sessionId: session.stateTracker.sessionId,
+        triggerMessageId: recordedMessage.dbId,
+        facilitatorMessageId: null,
+        model: decision.telemetry?.model || null,
+        promptVersion: decision.telemetry?.promptVersion || null,
+        move: decision.move || decision.telemetry?.move || null,
+        latencyMs: decision.telemetry?.latencyMs ?? pipelineLatencyMs,
+        inputTokens: decision.telemetry?.inputTokens ?? null,
+        outputTokens: decision.telemetry?.outputTokens ?? null,
+        estimatedCostUsd: decision.telemetry?.estimatedCostUsd ?? null,
+        sourceChunkIds: decision.telemetry?.sourceChunkIds || [],
+        decisionJson: {
+          ...(decision.telemetry?.decisionJson || {}),
+          spoke: false,
+          reasoning: decision.reasoning || decision.reason || null,
+          activation: decision.activation ?? null,
+          forced: !!decision.forced,
+          forcedBySoloCadence: !!decision.forcedBySoloCadence,
+          hardConstraintReasons: hardConstraints.reasons || []
+        }
+      }).catch(error => {
+        console.warn("[telemetry] Failed to save no-speak decision telemetry:", error.message);
+      });
     }
 
     // Log with neuron info when available
